@@ -54,11 +54,6 @@
             "internalType": "uint48"
           },
           {
-            "name": "feeBps",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
             "name": "condition",
             "type": "tuple",
             "internalType": "struct ICondition.Condition",
@@ -139,6 +134,19 @@
         "name": "",
         "type": "address",
         "internalType": "contract ICondition"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "feeBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ],
     "stateMutability": "view"
@@ -423,11 +431,6 @@
             "internalType": "uint48"
           },
           {
-            "name": "feeBps",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
             "name": "condition",
             "type": "tuple",
             "internalType": "struct ICondition.Condition",
@@ -574,6 +577,19 @@
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "FeeBpsSet",
+    "inputs": [
+      {
+        "name": "feeBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
       }
     ],
     "anonymous": false

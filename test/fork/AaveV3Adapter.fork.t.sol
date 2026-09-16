@@ -52,7 +52,7 @@ contract AaveV3AdapterForkTest is Test {
         validUntil = uint48(block.timestamp + 30 days);
 
         conditions = new ConditionModule();
-        shield = new SignoShield(address(this), conditions);
+        shield = new SignoShield(address(this), conditions, 5); // the launch fee, 5 bps
         adapter = new AaveV3Adapter(address(shield), pool);
         router = new MockRouter();
         shield.setAdapter(address(adapter), true);
@@ -114,7 +114,6 @@ contract AaveV3AdapterForkTest is Test {
         p.maxCumulativeValue = lifetime;
         p.validFrom = 0;
         p.validUntil = validUntil;
-        p.feeBps = 0;
         p.condition = cond;
         p.actionConfig = "";
     }
@@ -188,6 +187,28 @@ contract AaveV3AdapterForkTest is Test {
         vm.prank(agent);
         vm.expectRevert(_blocked(id, ISignoShield.MandateReason.TRIGGER_NOT_MET));
         shield.fire(id, 10e6, "");
+    }
+
+    /// With a recipient set, 5 bps of each firing goes to it and the rest repays.
+    function test_repay_takesTheLaunchFeeWhenARecipientIsSet() public {
+        address treasury = makeAddr("treasury");
+        shield.setFeeRecipient(treasury);
+        bytes32 id = _register(_params(adapter.ACTION_REPAY(), USDT0, 20e6, 40e6, _hfBelow(10e18)));
+        assertEq(shield.getMandate(id).feeBps, 5);
+        uint256 debtBefore = IERC20(V_USDT0).balanceOf(principal);
+        uint256 walletBefore = IERC20(USDT0).balanceOf(principal);
+
+        vm.prank(agent);
+        uint256 spent = shield.fire(id, 10e6, "");
+
+        assertEq(spent, 10e6, "fee plus repayment is what left the wallet");
+        assertEq(IERC20(USDT0).balanceOf(treasury), 5_000, "5 bps of 10 USD-T0");
+        assertApproxEqAbs(
+            debtBefore - IERC20(V_USDT0).balanceOf(principal), 10e6 - 5_000, 2, "the rest repaid"
+        );
+        assertEq(walletBefore - IERC20(USDT0).balanceOf(principal), 10e6);
+        assertEq(shield.getMandate(id).cumulativeUsed, 10e6, "the fee counts against the budget");
+        _assertNothingLeftBehind();
     }
 
     /// Asking for more than is owed repays the debt and returns the rest.

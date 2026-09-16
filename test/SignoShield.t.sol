@@ -32,6 +32,7 @@ contract SignoShieldTest is Test {
     bytes32 internal constant ACTION = keccak256("mock.spend");
     bytes32 internal constant ACTION_OTHER = keccak256("mock.other");
     address internal constant SINK = address(0xdead);
+    uint16 internal constant FEE_BPS = 5;
     uint256 internal constant TX_CAP = 100e6;
     uint256 internal constant LIFETIME = 250e6;
     uint48 internal constant VALID_UNTIL = 2_000_000_000;
@@ -39,7 +40,7 @@ contract SignoShieldTest is Test {
     function setUp() public {
         vm.warp(1_800_000_000);
         conditions = new ConditionModule();
-        shield = new SignoShield(admin, conditions);
+        shield = new SignoShield(admin, conditions, FEE_BPS);
         adapter = new MockAdapter(address(shield));
         token = new MockERC20("Mock USD", "mUSD", 6);
         target = new MockTarget();
@@ -84,7 +85,6 @@ contract SignoShieldTest is Test {
         p.maxCumulativeValue = LIFETIME;
         p.validFrom = 0;
         p.validUntil = VALID_UNTIL;
-        p.feeBps = 0;
         p.condition = _noCondition();
         p.actionConfig = "";
     }
@@ -127,7 +127,6 @@ contract SignoShieldTest is Test {
         ISignoShield.MandateParams memory p = _defaultParams();
         p.condition = _hfBelow(1.5e18);
         p.actionConfig = hex"c0ffee";
-        p.feeBps = 25;
         p.validFrom = uint48(block.timestamp);
 
         bytes32 expectedId = keccak256(abi.encode(block.chainid, address(shield), principal, uint256(0)));
@@ -143,7 +142,7 @@ contract SignoShieldTest is Test {
             cumulativeUsed: 0,
             adapter: address(adapter),
             action: ACTION,
-            feeBps: 25,
+            feeBps: FEE_BPS,
             condition: p.condition,
             actionConfig: p.actionConfig
         });
@@ -163,7 +162,7 @@ contract SignoShieldTest is Test {
         assertEq(m.maxTransactionValue, TX_CAP);
         assertEq(m.maxCumulativeValue, LIFETIME);
         assertEq(m.cumulativeUsed, 0);
-        assertEq(m.feeBps, 25);
+        assertEq(m.feeBps, FEE_BPS, "stamped from the Shield, not chosen");
         assertEq(m.condition.target, address(target));
         assertEq(m.condition.wordOffset, 2);
         assertEq(m.condition.threshold, 1.5e18);
@@ -256,11 +255,18 @@ contract SignoShieldTest is Test {
         p.validFrom = VALID_UNTIL;
         vm.expectRevert(abi.encodeWithSelector(ISignoShield.InvalidParams.selector, "validUntil"));
         _register(p);
+    }
 
-        p = _defaultParams();
-        p.feeBps = shield.MAX_FEE_BPS() + 1;
+    function test_fee_capIsEnforcedOnTheShieldFee() public {
+        uint16 cap = shield.MAX_FEE_BPS();
+        vm.prank(admin);
         vm.expectRevert(abi.encodeWithSelector(ISignoShield.InvalidParams.selector, "feeBps"));
-        _register(p);
+        shield.setFeeBps(cap + 1);
+        vm.expectRevert(abi.encodeWithSelector(ISignoShield.InvalidParams.selector, "feeBps"));
+        new SignoShield(admin, conditions, cap + 1);
+        vm.prank(admin);
+        shield.setFeeBps(cap);
+        assertEq(shield.feeBps(), cap);
     }
 
     function test_register_rejectsHalfSpecifiedCondition() public {
@@ -560,9 +566,10 @@ contract SignoShieldTest is Test {
     // ----------------------------------------------------------------- fees
 
     function test_fee_takenOnlyWhenRecipientSet() public {
-        ISignoShield.MandateParams memory p = _defaultParams();
-        p.feeBps = 100; // 1%
-        bytes32 id = _register(p);
+        vm.prank(admin);
+        shield.setFeeBps(100); // 1%, stamped into the next registration
+        bytes32 id = _register();
+        assertEq(shield.getMandate(id).feeBps, 100);
 
         // No recipient: no fee, whatever the mandate says.
         uint256 spent = _fire(id, 50e6);
@@ -582,9 +589,9 @@ contract SignoShieldTest is Test {
     }
 
     function test_fee_partialSpendStillPaysFeeOnTheWholeAmount() public {
-        ISignoShield.MandateParams memory p = _defaultParams();
-        p.feeBps = 100;
-        bytes32 id = _register(p);
+        vm.prank(admin);
+        shield.setFeeBps(100);
+        bytes32 id = _register();
         vm.prank(admin);
         shield.setFeeRecipient(feeSink);
         adapter.setSpendBps(0);
@@ -685,18 +692,27 @@ contract SignoShieldTest is Test {
         shield.amendMandate(id, p);
     }
 
-    function test_amend_feeCanFallNeverRise() public {
-        ISignoShield.MandateParams memory p = _defaultParams();
-        p.feeBps = 50;
-        bytes32 id = _register(p);
-        p.feeBps = 51;
+    /// The fee is part of what the principal signed: a Shield fee change
+    /// reaches new registrations only, and amendment never touches it.
+    function test_fee_changeReachesNewMandatesOnly() public {
+        bytes32 earlier = _register();
+        vm.expectEmit(true, true, true, true, address(shield));
+        emit ISignoShield.FeeBpsSet(50);
+        vm.prank(admin);
+        shield.setFeeBps(50);
+        bytes32 later = _register();
+        assertEq(shield.getMandate(earlier).feeBps, FEE_BPS);
+        assertEq(shield.getMandate(later).feeBps, 50);
+
         vm.prank(principal);
-        vm.expectRevert(abi.encodeWithSelector(ISignoShield.InvalidParams.selector, "feeBps"));
-        shield.amendMandate(id, p);
-        p.feeBps = 0;
-        vm.prank(principal);
-        shield.amendMandate(id, p);
-        assertEq(shield.getMandate(id).feeBps, 0);
+        shield.amendMandate(earlier, _defaultParams());
+        assertEq(shield.getMandate(earlier).feeBps, FEE_BPS, "amendment keeps the stamped fee");
+
+        vm.prank(admin);
+        shield.setFeeRecipient(feeSink);
+        _fire(earlier, 100e6);
+        _fire(later, 100e6);
+        assertEq(token.balanceOf(feeSink), 0.05e6 + 0.5e6, "5 bps on the old mandate, 50 on the new");
     }
 
     function test_amend_cannotMoveTheCapUnderWhatIsUsed() public {
@@ -782,6 +798,9 @@ contract SignoShieldTest is Test {
         vm.prank(enforcer);
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, enforcer));
         shield.setFeeRecipient(enforcer);
+        vm.prank(enforcer);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, enforcer));
+        shield.setFeeBps(0);
         vm.prank(stranger);
         vm.expectRevert(ISignoShield.NotEnforcer.selector);
         shield.freezeAgent(agent);
@@ -833,6 +852,6 @@ contract SignoShieldTest is Test {
 
     function test_constructor_requiresAConditionModule() public {
         vm.expectRevert(abi.encodeWithSelector(ISignoShield.InvalidParams.selector, "conditionModule"));
-        new SignoShield(admin, ICondition(stranger));
+        new SignoShield(admin, ICondition(stranger), FEE_BPS);
     }
 }

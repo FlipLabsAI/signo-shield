@@ -20,7 +20,9 @@ import {SignoShield} from "contracts/core/SignoShield.sol";
 ///   SHIELD_OWNER=0x... forge script script/Deploy.s.sol:Deploy \
 ///       --rpc-url $RPC_URL --account <keystore> --broadcast
 ///
-/// The Aave pool is chosen by chain id. Any other chain must pass AAVE_V3_POOL.
+/// SHIELD_FEE_BPS (default 5) is stamped into every mandate registered on this
+/// deployment; FEE_RECIPIENT (default: SHIELD_OWNER) receives it. The Aave pool
+/// is chosen by chain id. Any other chain must pass AAVE_V3_POOL.
 /// The broadcast file under `broadcast/` carries the transaction hashes;
 /// `tools/export-artifacts.py --deployments` folds them into the manifest.
 contract Deploy is Script {
@@ -29,14 +31,17 @@ contract Deploy is Script {
 
     function run() external returns (SignoShield shield, ConditionModule conditions, AaveV3Adapter aave) {
         address owner = vm.envAddress("SHIELD_OWNER");
+        address feeRecipient = vm.envOr("FEE_RECIPIENT", owner);
+        uint16 feeBps = uint16(vm.envOr("SHIELD_FEE_BPS", uint256(5)));
         address pool = _poolFor(block.chainid);
 
         vm.startBroadcast();
         (, address deployer,) = vm.readCallers();
         conditions = new ConditionModule();
-        shield = new SignoShield(deployer, conditions);
+        shield = new SignoShield(deployer, conditions, feeBps);
         aave = new AaveV3Adapter(address(shield), IPool(pool));
         shield.setAdapter(address(aave), true);
+        shield.setFeeRecipient(feeRecipient);
         shield.transferOwnership(owner);
         vm.stopBroadcast();
 
@@ -45,6 +50,8 @@ contract Deploy is Script {
         console.log("SignoShield    ", address(shield));
         console.log("AaveV3Adapter  ", address(aave));
         console.log("Aave pool      ", pool);
+        console.log("fee bps        ", feeBps);
+        console.log("fee recipient  ", feeRecipient);
         console.log("pending owner  ", owner);
         console.log("version        ", shield.VERSION());
     }

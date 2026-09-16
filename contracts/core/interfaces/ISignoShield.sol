@@ -67,7 +67,9 @@ interface ISignoShield {
         uint256 maxTransactionValue;
         uint256 maxCumulativeValue;
         uint256 cumulativeUsed;
-        // Signo's own fields.
+        // Signo's own fields. `feeBps` is the Shield's fee at the moment of
+        // registration, stamped into the record: a mandate's fee never changes
+        // for its whole life, whatever the Shield charges new mandates later.
         address adapter;
         bytes32 action;
         uint16 feeBps;
@@ -75,8 +77,9 @@ interface ISignoShield {
         bytes actionConfig;
     }
 
-    /// @notice What the principal signs. Everything except `principal` and the
-    ///         accounting fields.
+    /// @notice What the principal signs. Everything except `principal`, the
+    ///         accounting fields and `feeBps`, which the Shield stamps from its
+    ///         current fee so that no registration can undercut it.
     /// @param condition The on-chain trigger. `condition.target == address(0)`
     ///        means no on-chain trigger: the decision to fire is Signo's alone,
     ///        and the bound is everything else in the record.
@@ -91,7 +94,6 @@ interface ISignoShield {
         uint256 maxCumulativeValue;
         uint48 validFrom;
         uint48 validUntil;
-        uint16 feeBps;
         ICondition.Condition condition;
         bytes actionConfig;
     }
@@ -121,6 +123,8 @@ interface ISignoShield {
     event EnforcerSet(address indexed enforcer, bool enabled);
     event AdapterListed(address indexed adapter, bool listed);
     event FeeRecipientSet(address indexed recipient);
+    /// @notice The fee new mandates will carry. Reaches no live mandate.
+    event FeeBpsSet(uint16 feeBps);
 
     /// @notice The firing was refused; `reason` is what `canFire` would return.
     error MandateBlocked(bytes32 mandateId, MandateReason reason);
@@ -145,8 +149,8 @@ interface ISignoShield {
     function registerMandate(MandateParams calldata params) external returns (bytes32 mandateId);
 
     /// @notice Amend a mandate. Principal only. Cannot change `agent`,
-    ///         `adapter`, `action` or `asset`; cannot raise `feeBps`; cannot
-    ///         set `maxCumulativeValue` below `cumulativeUsed`. Re-renders and
+    ///         `adapter`, `action`, `asset` or `feeBps`; cannot set
+    ///         `maxCumulativeValue` below `cumulativeUsed`. Re-renders and
     ///         emits the whole record.
     function amendMandate(bytes32 mandateId, MandateParams calldata params) external;
 
@@ -183,4 +187,6 @@ interface ISignoShield {
     function isAdapterListed(address adapter) external view returns (bool);
     function conditionModule() external view returns (ICondition);
     function feeRecipient() external view returns (address);
+    /// @notice The fee, in basis points of each firing, stamped into every NEW mandate.
+    function feeBps() external view returns (uint16);
 }

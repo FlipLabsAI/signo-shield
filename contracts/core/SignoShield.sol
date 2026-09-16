@@ -50,6 +50,8 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
     ICondition public immutable conditionModule;
     /// @inheritdoc ISignoShield
     address public feeRecipient;
+    /// @inheritdoc ISignoShield
+    uint16 public feeBps;
     /// @notice Per-principal registration counter; part of the mandate id.
     mapping(address principal => uint256) public nonces;
 
@@ -58,9 +60,10 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
     mapping(address account => bool) private _enforcers;
     mapping(address adapter => bool) private _adapters;
 
-    constructor(address initialOwner, ICondition conditionModule_) Ownable(initialOwner) {
+    constructor(address initialOwner, ICondition conditionModule_, uint16 feeBps_) Ownable(initialOwner) {
         if (address(conditionModule_).code.length == 0) revert InvalidParams("conditionModule");
         conditionModule = conditionModule_;
+        _setFeeBps(feeBps_);
     }
 
     // ---------------------------------------------------------------- principal
@@ -77,6 +80,9 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
         m.adapter = params.adapter;
         m.action = params.action;
         m.asset = params.asset;
+        // The fee is stamped, not chosen: what the Shield charges today is what
+        // this mandate pays for life, shown on the review screen as a number.
+        m.feeBps = feeBps;
         _writeMutable(m, params);
 
         emit MandateRendered(msg.sender, params.agent, mandateId, m);
@@ -93,8 +99,6 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
         if (params.adapter != m.adapter) revert FieldImmutable("adapter");
         if (params.action != m.action) revert FieldImmutable("action");
         if (params.asset != m.asset) revert FieldImmutable("asset");
-        // A fee is part of what the principal signed; it can fall, never rise.
-        if (params.feeBps > m.feeBps) revert InvalidParams("feeBps");
         // cumulativeUsed never resets, so the cap cannot be moved underneath it.
         if (params.maxCumulativeValue < m.cumulativeUsed) revert InvalidParams("maxCumulativeValue");
         // The adapter is pinned, so it is consulted even if it has since been
@@ -251,6 +255,12 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
         emit FeeRecipientSet(recipient);
     }
 
+    /// @notice The fee every NEW mandate is stamped with. Reaches no live
+    ///         mandate: a fee is part of what the principal signed.
+    function setFeeBps(uint16 bps) external onlyOwner {
+        _setFeeBps(bps);
+    }
+
     /// @dev Ownership may never be offered to an enforcer.
     function transferOwnership(address newOwner) public override(Ownable2Step) onlyOwner {
         if (_enforcers[newOwner]) revert AdminCannotBeEnforcer(newOwner);
@@ -300,7 +310,6 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
         if (p.validUntil <= p.validFrom || p.validUntil <= block.timestamp) {
             revert InvalidParams("validUntil");
         }
-        if (p.feeBps > MAX_FEE_BPS) revert InvalidParams("feeBps");
         if (p.condition.target == address(0)) {
             if (p.condition.callData.length != 0) revert InvalidParams("condition");
         } else {
@@ -312,13 +321,18 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
         IShieldAdapter(p.adapter).validateConfig(p.action, p.asset, p.actionConfig);
     }
 
+    function _setFeeBps(uint16 bps) internal {
+        if (bps > MAX_FEE_BPS) revert InvalidParams("feeBps");
+        feeBps = bps;
+        emit FeeBpsSet(bps);
+    }
+
     /// @dev The fields registration and amendment both write.
     function _writeMutable(Mandate storage m, MandateParams calldata p) internal {
         m.maxTransactionValue = p.maxTransactionValue;
         m.maxCumulativeValue = p.maxCumulativeValue;
         m.validFrom = p.validFrom;
         m.validUntil = p.validUntil;
-        m.feeBps = p.feeBps;
         m.condition = p.condition;
         m.actionConfig = p.actionConfig;
     }
