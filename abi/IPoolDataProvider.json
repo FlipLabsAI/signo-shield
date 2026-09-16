@@ -1,0 +1,31 @@
+[
+  {
+    "type": "function",
+    "name": "getReserveTokensAddresses",
+    "inputs": [
+      {
+        "name": "asset",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "aTokenAddress",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "stableDebtTokenAddress",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "variableDebtTokenAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  }
+]

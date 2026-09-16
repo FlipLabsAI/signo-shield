@@ -1,6 +1,13 @@
 # Adapters
 
-Empty on purpose.
+One directory per protocol, one contract per protocol, one entry point per
+action inside it. The mandate pins the pair (adapter, action), so a mandate for
+one action can never reach another, and a bug in one action does not expose
+every mandate on the protocol.
+
+| Adapter | Actions | Notes |
+| --- | --- | --- |
+| `aave-v3/AaveV3Adapter.sol` | `supply`, `repay`, `repayWithCollateral` | Aave V3. Fork-tested against the X Layer market. |
 
 Tier 2, a pinned adapter, is the **exception** in this design, not the rule.
 Tier 1 bounded execution covers ordinary actions with zero new Solidity per
