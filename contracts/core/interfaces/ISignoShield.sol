@@ -128,6 +128,7 @@ interface ISignoShield {
     event AgentUnfrozen(address indexed agent, address indexed enforcer);
     event EnforcerSet(address indexed enforcer, bool enabled);
     event AdapterListed(address indexed adapter, bool listed);
+    event EvaluatorListed(address indexed evaluator, bool listed);
     event FeeRecipientSet(address indexed recipient);
     /// @notice The fee new mandates will carry. Reaches no live mandate.
     event FeeBpsSet(uint16 feeBps);
@@ -145,6 +146,7 @@ interface ISignoShield {
     error NotEnforcer();
     /// @notice The adapter is not on the allowlist for NEW registrations.
     error AdapterNotListed(address adapter);
+    error EvaluatorNotListed(address evaluator);
     /// @notice The adapter does not implement the pinned action.
     error ActionNotSupported(address adapter, bytes32 action);
     /// @notice A parameter failed validation; `field` names it.
@@ -206,6 +208,9 @@ interface ISignoShield {
     function isAgentFrozen(address agent) external view returns (bool);
     function isEnforcer(address account) external view returns (bool);
     function isAdapterListed(address adapter) external view returns (bool);
+    /// @notice True for the default module and for every evaluator the owner
+    ///         has listed for NEW registrations.
+    function isEvaluatorListed(address evaluator) external view returns (bool);
     function conditionModule() external view returns (ICondition);
     function feeRecipient() external view returns (address);
     /// @notice The fee, in basis points of what each firing actually spends,

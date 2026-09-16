@@ -6,6 +6,7 @@ import {console} from "forge-std/console.sol";
 import {AaveV3Adapter} from "contracts/adapters/aave-v3/AaveV3Adapter.sol";
 import {IPool} from "contracts/adapters/aave-v3/interfaces/IAaveV3.sol";
 import {ConditionModule} from "contracts/core/ConditionModule.sol";
+import {CompoundCondition} from "contracts/core/CompoundCondition.sol";
 import {SignoShield} from "contracts/core/SignoShield.sol";
 
 /// Deploy the condition module, the Shield and the Aave V3 adapter, list the
@@ -31,7 +32,10 @@ contract Deploy is Script {
     uint256 internal constant XLAYER = 196;
     uint256 internal constant ARBITRUM_ONE = 42_161;
 
-    function run() external returns (SignoShield shield, ConditionModule conditions, AaveV3Adapter aave) {
+    function run()
+        external
+        returns (SignoShield shield, ConditionModule conditions, AaveV3Adapter aave, CompoundCondition compound)
+    {
         address owner = vm.envAddress("SHIELD_OWNER");
         return deployWith(
             owner,
@@ -45,7 +49,7 @@ contract Deploy is Script {
     /// touching the process environment.
     function deployWith(address owner, address feeRecipient, address enforcer, uint256 feeBpsRaw)
         public
-        returns (SignoShield shield, ConditionModule conditions, AaveV3Adapter aave)
+        returns (SignoShield shield, ConditionModule conditions, AaveV3Adapter aave, CompoundCondition compound)
     {
         if (feeBpsRaw > type(uint16).max) revert("SHIELD_FEE_BPS out of range");
         uint16 feeBps = uint16(feeBpsRaw);
@@ -60,6 +64,8 @@ contract Deploy is Script {
         shield = new SignoShield(deployer, conditions, feeBps);
         aave = new AaveV3Adapter(address(shield), IPool(pool));
         shield.setAdapter(address(aave), true);
+        compound = new CompoundCondition(conditions);
+        shield.setEvaluator(address(compound), true);
         shield.setFeeRecipient(feeRecipient);
         if (enforcer != address(0)) shield.setEnforcer(enforcer, true);
         shield.transferOwnership(owner);
@@ -67,6 +73,7 @@ contract Deploy is Script {
 
         console.log("chainId        ", block.chainid);
         console.log("ConditionModule", address(conditions));
+        console.log("CompoundCondition", address(compound));
         console.log("SignoShield    ", address(shield));
         console.log("AaveV3Adapter  ", address(aave));
         console.log("Aave pool      ", pool);

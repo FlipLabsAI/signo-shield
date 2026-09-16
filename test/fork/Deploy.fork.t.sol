@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {AaveV3Adapter} from "contracts/adapters/aave-v3/AaveV3Adapter.sol";
 import {ConditionModule} from "contracts/core/ConditionModule.sol";
+import {CompoundCondition} from "contracts/core/CompoundCondition.sol";
 import {SignoShield} from "contracts/core/SignoShield.sol";
 import {ISignoShield} from "contracts/core/interfaces/ISignoShield.sol";
 import {Deploy} from "script/Deploy.s.sol";
@@ -21,8 +22,10 @@ contract DeployForkTest is Test {
     }
 
     function test_deploy_wiresEverythingAndHandsOff() public {
-        (SignoShield shield, ConditionModule conditions, AaveV3Adapter aave) =
+        (SignoShield shield, ConditionModule conditions, AaveV3Adapter aave, CompoundCondition compound) =
             new Deploy().deployWith(owner, treasury, enforcer, 10);
+        assertTrue(shield.isEvaluatorListed(address(compound)), "the compound evaluator is listed with the set");
+        assertEq(address(compound.leafModule()), address(conditions));
         (, address deployer,) = vm.readCallers();
 
         assertEq(address(shield.conditionModule()), address(conditions));

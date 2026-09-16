@@ -12,6 +12,12 @@ endpoints at pinned blocks (`XLAYER_RPC_URL`, `ARBITRUM_RPC_URL` override).
 | --- | --- | --- |
 | Core | `test/SignoShield.t.sol` | Local EVM, configurable mock adapter |
 | Condition module | `test/ConditionModule.t.sol` | Local EVM |
+| Compound evaluator | `test/CompoundCondition.t.sol` | Local EVM, mock target |
+| Pluggable evaluators on the core | `test/SignoShieldEvaluators.t.sol` | Local EVM, listing, pinning, the dry-run through a compound |
+| Generic executor | `test/GenericExecutor.t.sol` | Local EVM, mock router and oracle; the whole path through the real Shield |
+| Generic executor, ERC-4626 rule | `test/GenericExecutor4626.t.sol` | Local EVM, mock vault with movable share price and a fee |
+| Generic executor, X Layer | `test/fork/GenericExecutor.fork.t.sol` | Aave supply and a real OKX swap through the sandbox on X Layer |
+| Generic executor, sDAI | `test/fork/GenericExecutor4626.fork.t.sol` | Sky's sDAI on Ethereum mainnet, forked at latest (`MAINNET_RPC_URL`) |
 | Aave adapter, X Layer | `test/fork/AaveV3Adapter.fork.t.sol` | Aave V3 on X Layer, block 70752723 |
 | Aave adapter, OKX router | `test/fork/AaveV3Adapter.okx.fork.t.sol` | Real OKX aggregator calldata replayed on X Layer, block 70756518 |
 | Aave adapter, Arbitrum | `test/fork/AaveV3Adapter.arbitrum.fork.t.sol` | Aave V3 on Arbitrum One, block 505617500 |

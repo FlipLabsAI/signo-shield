@@ -27,12 +27,20 @@ interface ICondition {
     /// @param wordOffset  which 32-byte word of the return data carries the value
     /// @param comparator  how the value is compared to `threshold`
     /// @param threshold   the number the value is compared against
+    /// @param evaluator   which listed ICondition judges this condition.
+    ///        `address(0)` is the Shield's default module, the plain reader
+    ///        above. Any other value must be listed on the Shield
+    ///        (`setEvaluator`) and is pinned into the record at registration,
+    ///        so delisting it later reaches no live mandate — the same rule
+    ///        as adapters. A compound "A and B" is a listed evaluator whose
+    ///        `callData` carries the leaves; see CompoundCondition.
     struct Condition {
         address target;
         bytes callData;
         uint8 wordOffset;
         Comparator comparator;
         uint256 threshold;
+        address evaluator;
     }
 
     /// @notice True when the pinned reading satisfies the comparator.

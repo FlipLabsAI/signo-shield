@@ -60,6 +60,10 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
     mapping(address agent => bool) private _frozen;
     mapping(address account => bool) private _enforcers;
     mapping(address adapter => bool) private _adapters;
+    /// @dev Evaluators the owner has listed beside the default module. A
+    ///      mandate pins its evaluator in `condition.evaluator`; this map is
+    ///      consulted only at registration and amendment.
+    mapping(address evaluator => bool) private _evaluators;
 
     constructor(address initialOwner, ICondition conditionModule_, uint16 feeBps_) Ownable(initialOwner) {
         if (address(conditionModule_).code.length == 0) revert InvalidParams("conditionModule");
@@ -257,6 +261,10 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
     function isAdapterListed(address adapter) external view returns (bool) {
         return _adapters[adapter];
     }
+    /// @inheritdoc ISignoShield
+    function isEvaluatorListed(address evaluator) external view returns (bool) {
+        return _isEvaluatorListed(evaluator);
+    }
 
     // ----------------------------------------------------------------- enforcer
 
@@ -295,6 +303,17 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
         if (listed && adapter.code.length == 0) revert InvalidParams("adapter");
         _adapters[adapter] = listed;
         emit AdapterListed(adapter, listed);
+    }
+    /// @notice List or delist a condition evaluator for NEW registrations —
+    ///         a compound "A and B", a time-weighted price, whatever judges a
+    ///         trigger in a way the default module does not. Reaches no live
+    ///         mandate: each one pinned its evaluator when it was signed. The
+    ///         default module needs no listing and cannot be delisted.
+    function setEvaluator(address evaluator, bool listed) external onlyOwner {
+        if (evaluator == address(0) || evaluator == address(conditionModule)) revert InvalidParams("evaluator");
+        if (listed && evaluator.code.length == 0) revert InvalidParams("evaluator");
+        _evaluators[evaluator] = listed;
+        emit EvaluatorListed(evaluator, listed);
     }
 
     /// @notice Where fees go. `address(0)` disables fee collection entirely,
@@ -368,7 +387,7 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
             return MandateReason.INSUFFICIENT_ALLOWANCE;
         }
         if (IERC20(m.asset).balanceOf(m.principal) < need) return MandateReason.INSUFFICIENT_BALANCE;
-        if (m.condition.target != address(0) && !conditionModule.isMet(m.condition)) {
+        if (m.condition.target != address(0) && !_evaluatorFor(m.condition).isMet(m.condition)) {
             return MandateReason.TRIGGER_NOT_MET;
         }
         return MandateReason.OK;
@@ -393,20 +412,40 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
             revert InvalidParams("validUntil");
         }
         if (p.condition.target == address(0)) {
-            if (p.condition.callData.length != 0) revert InvalidParams("condition");
+            // No trigger: nothing else about the condition may be set either.
+            if (p.condition.callData.length != 0 || p.condition.evaluator != address(0)) {
+                revert InvalidParams("condition");
+            }
         } else {
             if (p.condition.callData.length < 4) revert InvalidParams("condition");
-            // Dry-run the trigger: a target without code, a wrong selector or a
-            // word past the return data would make a mandate that can never
-            // fire, signed and paid for. The module reverts on every such case;
-            // the answer itself is not the point.
+            // The evaluator is pinned into the record, so it is checked here,
+            // where the owner is signing, and never again.
+            if (p.condition.evaluator != address(0) && !_isEvaluatorListed(p.condition.evaluator)) {
+                revert EvaluatorNotListed(p.condition.evaluator);
+            }
+            // Dry-run the trigger through its own evaluator: a target without
+            // code, a wrong selector, a word past the return data, or a
+            // compound with an unreadable leaf would make a mandate that can
+            // never fire, signed and paid for. Every evaluator reverts on every
+            // such case; the answer itself is not the point.
             // forge-lint: disable-next-line(unused-return)
-            conditionModule.isMet(p.condition);
+            _evaluatorFor(p.condition).isMet(p.condition);
         }
         if (!IShieldAdapter(p.adapter).supportsAction(p.action)) {
             revert ActionNotSupported(p.adapter, p.action);
         }
         IShieldAdapter(p.adapter).validateConfig(p.action, p.asset, p.actionConfig);
+    }
+
+    /// @dev The default module needs no listing and cannot be delisted.
+    function _isEvaluatorListed(address evaluator) internal view returns (bool) {
+        return evaluator == address(conditionModule) || _evaluators[evaluator];
+    }
+
+    /// @dev Which contract judges this condition: the pinned evaluator, or the
+    ///      default module when none was pinned.
+    function _evaluatorFor(ICondition.Condition memory c) internal view returns (ICondition) {
+        return c.evaluator == address(0) ? conditionModule : ICondition(c.evaluator);
     }
 
     function _setFeeBps(uint16 bps) internal {

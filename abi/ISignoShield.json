@@ -82,6 +82,11 @@
                 "name": "threshold",
                 "type": "uint256",
                 "internalType": "uint256"
+              },
+              {
+                "name": "evaluator",
+                "type": "address",
+                "internalType": "address"
               }
             ]
           },
@@ -345,6 +350,11 @@
                 "name": "threshold",
                 "type": "uint256",
                 "internalType": "uint256"
+              },
+              {
+                "name": "evaluator",
+                "type": "address",
+                "internalType": "address"
               }
             ]
           },
@@ -402,6 +412,25 @@
     "inputs": [
       {
         "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isEvaluatorListed",
+    "inputs": [
+      {
+        "name": "evaluator",
         "type": "address",
         "internalType": "address"
       }
@@ -493,6 +522,11 @@
                 "name": "threshold",
                 "type": "uint256",
                 "internalType": "uint256"
+              },
+              {
+                "name": "evaluator",
+                "type": "address",
+                "internalType": "address"
               }
             ]
           },
@@ -608,6 +642,25 @@
       },
       {
         "name": "enabled",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "EvaluatorListed",
+    "inputs": [
+      {
+        "name": "evaluator",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "listed",
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
@@ -807,6 +860,11 @@
                 "name": "threshold",
                 "type": "uint256",
                 "internalType": "uint256"
+              },
+              {
+                "name": "evaluator",
+                "type": "address",
+                "internalType": "address"
               }
             ]
           },
@@ -872,6 +930,17 @@
     "inputs": [
       {
         "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "EvaluatorNotListed",
+    "inputs": [
+      {
+        "name": "evaluator",
         "type": "address",
         "internalType": "address"
       }

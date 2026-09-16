@@ -1,0 +1,157 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "leafModule_",
+        "type": "address",
+        "internalType": "contract ICondition"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "MAX_LEAVES",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "encode",
+    "inputs": [
+      {
+        "name": "op",
+        "type": "uint8",
+        "internalType": "enum CompoundCondition.Op"
+      },
+      {
+        "name": "leaves",
+        "type": "tuple[]",
+        "internalType": "struct ICondition.Condition[]",
+        "components": [
+          {
+            "name": "target",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "callData",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "wordOffset",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "comparator",
+            "type": "uint8",
+            "internalType": "enum ICondition.Comparator"
+          },
+          {
+            "name": "threshold",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "evaluator",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "isMet",
+    "inputs": [
+      {
+        "name": "condition",
+        "type": "tuple",
+        "internalType": "struct ICondition.Condition",
+        "components": [
+          {
+            "name": "target",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "callData",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "wordOffset",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "comparator",
+            "type": "uint8",
+            "internalType": "enum ICondition.Comparator"
+          },
+          {
+            "name": "threshold",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "evaluator",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "leafModule",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract ICondition"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "error",
+    "name": "BadCompound",
+    "inputs": [
+      {
+        "name": "field",
+        "type": "string",
+        "internalType": "string"
+      }
+    ]
+  }
+]

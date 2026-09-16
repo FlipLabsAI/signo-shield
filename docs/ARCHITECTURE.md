@@ -60,6 +60,19 @@ vault share price are one contract.
 This is the part that is not standard practice: all nine ERC-7579 SmartSessions
 policies inspect the call being made. None of them read protocol state.
 
+The evaluator is pluggable per mandate. A condition names which listed
+`ICondition` judges it (`condition.evaluator`); the zero address is the
+default module above. The owner lists evaluators the way adapters are
+listed (`setEvaluator`), and a mandate pins its evaluator at registration,
+so delisting reaches no live mandate. The first listed evaluator is
+`CompoundCondition`: "A and B" or "A or B" over up to eight plain leaves,
+every leaf read every time with no short-circuit, so a leaf that cannot be
+read reverts the whole trigger instead of hiding behind a true sibling — and
+the registration dry-run exercises every leaf, so a dead one is refused at
+signing. Leaves only, one level deep: eight flat leaves cover "health factor
+below X and price above Y and balance over Z", and nesting would make a
+trigger's cost unbounded and its meaning hard to put on a review screen.
+
 ## Amendment
 
 Raising a cap, extending an expiry or changing a trigger is one owner
@@ -163,7 +176,10 @@ into a mandate that could never fire; and the lifetime cap must hold one
 firing at the per-firing cap plus its fee.
 
 **`ConditionModule`** is the generic trigger described above, as one
-`staticcall` reader.
+`staticcall` reader, and the Shield's default evaluator.
+
+**`CompoundCondition`** is the first listed evaluator: `and` / `or` over
+plain leaves, each judged by the default module, every leaf every time.
 
 **`AaveV3Adapter`** is the first Tier 2 adapter: one contract for the protocol,
 one entry point per action, callable only by the Shield, holding no state.

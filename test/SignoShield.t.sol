@@ -65,7 +65,8 @@ contract SignoShieldTest is Test {
             callData: "",
             wordOffset: 0,
             comparator: ICondition.Comparator.LessThan,
-            threshold: 0
+            threshold: 0,
+            evaluator: address(0)
         });
     }
 
@@ -76,7 +77,8 @@ contract SignoShieldTest is Test {
             callData: abi.encodeCall(MockTarget.read, ()),
             wordOffset: 2,
             comparator: ICondition.Comparator.LessThan,
-            threshold: threshold
+            threshold: threshold,
+            evaluator: address(0)
         });
     }
 

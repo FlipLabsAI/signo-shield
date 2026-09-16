@@ -82,7 +82,8 @@ contract AaveV3AdapterArbitrumForkTest is Test {
             callData: abi.encodeCall(IPool.getUserAccountData, (principal)),
             wordOffset: 5,
             comparator: ICondition.Comparator.LessThan,
-            threshold: threshold
+            threshold: threshold,
+            evaluator: address(0)
         });
     }
 

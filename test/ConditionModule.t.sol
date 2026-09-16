@@ -26,7 +26,8 @@ contract ConditionModuleTest is Test {
             callData: abi.encodeCall(MockTarget.read, ()),
             wordOffset: word,
             comparator: cmp,
-            threshold: threshold
+            threshold: threshold,
+            evaluator: address(0)
         });
     }
 
@@ -47,7 +48,8 @@ contract ConditionModuleTest is Test {
             callData: abi.encodeCall(MockTarget.one, ()),
             wordOffset: 0,
             comparator: ICondition.Comparator.GreaterThanOrEqual,
-            threshold: 10
+            threshold: 10,
+            evaluator: address(0)
         });
         assertTrue(module.isMet(c));
     }

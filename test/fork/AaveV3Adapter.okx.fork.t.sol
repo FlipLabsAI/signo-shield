@@ -89,7 +89,8 @@ contract AaveV3AdapterOkxForkTest is Test {
             callData: abi.encodeCall(IPool.getUserAccountData, (principal)),
             wordOffset: 5,
             comparator: ICondition.Comparator.LessThan,
-            threshold: 1.6e18
+            threshold: 1.6e18,
+            evaluator: address(0)
         });
         p.actionConfig = abi.encode(
             AaveV3Adapter.RepayWithCollateralConfig({

@@ -504,7 +504,8 @@ contract GenericExecutorTest is Test {
             callData: "",
             wordOffset: 0,
             comparator: ICondition.Comparator.LessThan,
-            threshold: 0
+            threshold: 0,
+            evaluator: address(0)
         });
         p.actionConfig = _floorCfg(2400e6);
         vm.prank(principal);

@@ -32,6 +32,11 @@
             "name": "threshold",
             "type": "uint256",
             "internalType": "uint256"
+          },
+          {
+            "name": "evaluator",
+            "type": "address",
+            "internalType": "address"
           }
         ]
       }
