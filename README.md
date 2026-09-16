@@ -48,10 +48,12 @@ If you cloned without `--recursive`:
 git submodule update --init --recursive
 ```
 
-`forge test` runs the unit suites and the X Layer fork suite. The fork suite
-reads the public X Layer RPC at a pinned block (70752723); set `XLAYER_RPC_URL`
-to use another endpoint, and `forge test --no-match-path "test/fork/*"` to skip
-it offline. `forge lint` and Slither (`slither .`) both run clean of anything
+`forge test` runs the unit suites and the X Layer fork suites. The fork suites
+read the public X Layer RPC at pinned blocks; set `XLAYER_RPC_URL` to use
+another endpoint, and `forge test --no-match-path "test/fork/*"` to skip them
+offline. One fork test replays real OKX DEX aggregator calldata through the
+adapter (`test/fork/AaveV3Adapter.okx.fork.t.sol`); the calldata is pinned in
+the test, and `tools/okx-fixture.py` regenerates it with an OKX API key. `forge lint` and Slither (`slither .`) both run clean of anything
 that is not a documented design choice; the triage is in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#static-analysis).
 

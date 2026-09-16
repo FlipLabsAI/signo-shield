@@ -7,7 +7,7 @@ every mandate on the protocol.
 
 | Adapter | Actions | Notes |
 | --- | --- | --- |
-| `aave-v3/AaveV3Adapter.sol` | `supply`, `repay`, `repayWithCollateral` | Aave V3. Fork-tested against the X Layer market. |
+| `aave-v3/AaveV3Adapter.sol` | `supply`, `repay`, `repayWithCollateral` | Aave V3. Fork-tested against the X Layer market; the swap leg replays real OKX DEX aggregator calldata (router `0x7c5BEE2A…aeAf`, approval contract `0x8b773D83…F000` on X Layer). |
 
 Tier 2, a pinned adapter, is the **exception** in this design, not the rule.
 Tier 1 bounded execution covers ordinary actions with zero new Solidity per
