@@ -10,6 +10,10 @@ Addresses on X Layer (chain 196), source commit `fe47fdb`:
 SignoShield `0x9331264a9e1C0573D920cD8403031cC9761AC60A`,
 AaveV3Adapter `0xB42Fe2Cf2358BEDD7E4a47eF63a91828606Fc36f`,
 ConditionModule `0x6a9f8bE79f617FCD97A09E2A0CAac54c06EF8cFc`.
+Tier 1, source commit `d9464c9` (reviewed 2026-09-16, findings fixed):
+GenericExecutor `0x073673675d069342892eCA30FBbC4D8Bc0649D27`, its clone
+template `0xd07115a525cD8793180758d645b9461Be89e7227`; listed on the Shield
+only by the admin's `setAdapter`. See `docs/TIER1.md` for what it bounds.
 
 ## The parties
 
@@ -20,6 +24,7 @@ ConditionModule `0x6a9f8bE79f617FCD97A09E2A0CAac54c06EF8cFc`.
 | **Admin** (`Ownable2Step` owner) | the admin seat | list and delist adapters for **new** registrations; appoint and remove enforcers; set the fee rate for **new** registrations; set the fee recipient, which reaches live mandates only by turning collection off, on, or elsewhere | move funds; change, freeze or revoke a live mandate; raise a live mandate's fee; point the fee at the Shield or a listed adapter; be an enforcer (as an address; a person with two keys can, so the seat belongs behind a multisig before real users); renounce the seat |
 | **Enforcer** | a role granted by the admin | freeze and unfreeze an agent address, which halts every mandate it holds | anything else: no funds, no mandate changes, no revocation |
 | **Adapter** (AaveV3Adapter) | tokens only inside one `fire` call | execute one pinned action for the Shield, and revert unless the outcome check passes | be called by anyone but the Shield; keep tokens between calls; keep an approval after returning; under-charge the budget (the Shield measures what left the principal itself, so a listed adapter that mis-reports is still charged for what it took, and taking more than the amount reverts the firing) |
+| **Generic executor** (Tier 1) | tokens only inside one `fire` call, in a single-use clone | run the agent's calldata against the one target and spender the owner pinned, then require the pinned output token to rise on the owner by the bound the owner's rule computes (fixed rate, oracle less slippage, or a floor) | pick the target, the spender, the output token or the rate; keep an approval; run a clone twice; count output paid to anyone but the owner; count tokens a stranger parked at the sandbox as a refund; read the oracle after the agent's call |
 | **Fee recipient** | the fee on each firing | receive `feeBps` of what a firing spent | pull anything; affect a firing |
 | **Anyone** | nothing | read every mandate; call `canFire` | everything else |
 
