@@ -2,7 +2,7 @@
 # the submission needs ABIs a judge can read without running the toolchain.
 out/
 cache/
-broadcast/*/dry-run/
+
 
 # lib/ is NOT ignored: forge-std is a pinned git submodule so a clean
 # `git clone --recursive` builds with no network fetch beyond the clone.
@@ -14,3 +14,4 @@ docs/book/
 
 .DS_Store
 node_modules/
+broadcast/**/dry-run/

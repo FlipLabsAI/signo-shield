@@ -21,8 +21,10 @@ import {SignoShield} from "contracts/core/SignoShield.sol";
 ///       --rpc-url $RPC_URL --account <keystore> --broadcast
 ///
 /// SHIELD_FEE_BPS (default 10) is stamped into every mandate registered on this
-/// deployment; FEE_RECIPIENT (default: SHIELD_OWNER) receives it. The Aave pool
-/// is chosen by chain id. Any other chain must pass AAVE_V3_POOL.
+/// deployment; FEE_RECIPIENT (default: SHIELD_OWNER) receives it. ENFORCER, if
+/// set, is appointed before the hand-off so the freeze switch is armed from
+/// the first block; it must be neither the deployer nor the owner. The Aave
+/// pool is chosen by chain id. Any other chain must pass AAVE_V3_POOL.
 /// The broadcast file under `broadcast/` carries the transaction hashes;
 /// `tools/export-artifacts.py --deployments` folds them into the manifest.
 contract Deploy is Script {
@@ -31,17 +33,35 @@ contract Deploy is Script {
 
     function run() external returns (SignoShield shield, ConditionModule conditions, AaveV3Adapter aave) {
         address owner = vm.envAddress("SHIELD_OWNER");
-        address feeRecipient = vm.envOr("FEE_RECIPIENT", owner);
-        uint16 feeBps = uint16(vm.envOr("SHIELD_FEE_BPS", uint256(10)));
+        return deployWith(
+            owner,
+            vm.envOr("FEE_RECIPIENT", owner),
+            vm.envOr("ENFORCER", address(0)),
+            vm.envOr("SHIELD_FEE_BPS", uint256(10))
+        );
+    }
+
+    /// The deployment itself, parameterised so a test can drive it without
+    /// touching the process environment.
+    function deployWith(address owner, address feeRecipient, address enforcer, uint256 feeBpsRaw)
+        public
+        returns (SignoShield shield, ConditionModule conditions, AaveV3Adapter aave)
+    {
+        if (feeBpsRaw > type(uint16).max) revert("SHIELD_FEE_BPS out of range");
+        uint16 feeBps = uint16(feeBpsRaw);
         address pool = _poolFor(block.chainid);
 
         vm.startBroadcast();
         (, address deployer,) = vm.readCallers();
+        if (enforcer != address(0) && (enforcer == deployer || enforcer == owner)) {
+            revert("ENFORCER must be neither deployer nor owner");
+        }
         conditions = new ConditionModule();
         shield = new SignoShield(deployer, conditions, feeBps);
         aave = new AaveV3Adapter(address(shield), IPool(pool));
         shield.setAdapter(address(aave), true);
         shield.setFeeRecipient(feeRecipient);
+        if (enforcer != address(0)) shield.setEnforcer(enforcer, true);
         shield.transferOwnership(owner);
         vm.stopBroadcast();
 
@@ -52,6 +72,7 @@ contract Deploy is Script {
         console.log("Aave pool      ", pool);
         console.log("fee bps        ", feeBps);
         console.log("fee recipient  ", feeRecipient);
+        console.log("enforcer       ", enforcer);
         console.log("pending owner  ", owner);
         console.log("version        ", shield.VERSION());
     }
