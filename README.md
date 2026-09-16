@@ -12,13 +12,23 @@ Full design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Status
 
-**This repository is a scaffold.** `contracts/core/SignoShield.sol` compiles,
-deploys and reverts `NotImplemented` on every entry point. The interfaces in
-`contracts/core/interfaces/` carry the agreed design; the enforcement logic
-lands in the tickets that follow.
+**Core and Aave adapter built; not yet deployed.** The contracts enforce the
+design in `docs/ARCHITECTURE.md`:
 
-A scaffold that half-enforced a bound would be worse than one that plainly
-refuses, because a half-enforced bound reads as protection.
+- `contracts/core/SignoShield.sol`: the mandate record, budget accounting,
+  reason codes, amendment rules, revocation, the enforcer freeze and the
+  adapter allowlist. FLIP-191.
+- `contracts/core/ConditionModule.sol`: the one generic on-chain trigger.
+- `contracts/adapters/aave-v3/AaveV3Adapter.sol`: `supply`, `repay` and
+  `repayWithCollateral` against Aave V3, each with its outcome check. FLIP-192.
+
+Unit tests cover every reason code and rejection path with mocks. Fork tests
+run the adapter against the real Aave V3 market on X Layer at a pinned block,
+where an agent repays real debt for a borrower that is not the caller and every
+boundary case reverts with its reason code. See [Build and test](#build-and-test).
+
+Not built: the Tier 1 bounded executor (research scope), the execution signer,
+the app integration. Nothing is deployed; `deployments/manifest.json` is empty.
 
 ## Build and test
 
@@ -38,13 +48,20 @@ If you cloned without `--recursive`:
 git submodule update --init --recursive
 ```
 
+`forge test` runs the unit suites and the X Layer fork suite. The fork suite
+reads the public X Layer RPC at a pinned block (70752723); set `XLAYER_RPC_URL`
+to use another endpoint, and `forge test --no-match-path "test/fork/*"` to skip
+it offline. `forge lint` and Slither (`slither .`) both run clean of anything
+that is not a documented design choice; the triage is in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#static-analysis).
+
 ## Layout
 
 ```
-contracts/core/        the Shield and its interfaces
-contracts/adapters/    Tier 2 pinned adapters — the exception, see the README there
-test/                  Foundry tests
-script/                deployment scripts
+contracts/core/        the Shield, the condition module and the interfaces
+contracts/adapters/    Tier 2 pinned adapters — one per protocol, see the README there
+test/                  unit suites, test/mocks, and test/fork for pinned-chain suites
+script/                deployment script
 abi/                   generated ABIs, checked in so they can be read without the toolchain
 deployments/           manifest keyed by chain id, generated from broadcast files
 docs/                  architecture, and the reuse and attribution record
@@ -81,10 +98,12 @@ application and are not part of this repository.
 the interfaces as written here, the contracts, the tests, the deployment
 script, the artifact export and CI.
 
-**Reused from third parties.** None, other than forge-std as a test-time
-dependency. [`docs/REUSE.md`](docs/REUSE.md) records that, and is where any
-future third-party code is listed with its upstream source, pinned revision,
-licence and retained notice before it lands.
+**Reused from third parties.** OpenZeppelin Contracts v5.7.0 (MIT) for
+`Ownable2Step`, `ReentrancyGuard` and `SafeERC20`, and forge-std as a test-time
+dependency. No third-party contract code has been copied or adapted.
+[`docs/REUSE.md`](docs/REUSE.md) records both, and is where any future
+third-party code is listed with its upstream source, pinned revision, licence
+and retained notice before it lands.
 
 ## Licence
 

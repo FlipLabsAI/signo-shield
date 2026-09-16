@@ -93,8 +93,79 @@ The ceiling on action-agnosticism is the protocols, not this contract:
   reward claiming is not delegable.
 - Solana and cross-chain execution are a separate model, not this contract.
 
+## What is built
+
+**`SignoShield`** holds the mandate record and enforces it. Field names follow
+ERC-8226 where they mean the same thing (`principal`, `agent`, `asset`,
+`validFrom`, `validUntil`, `revoked`, `maxTransactionValue`,
+`maxCumulativeValue`, `cumulativeUsed`); the rest is ours: the pinned pair
+(`adapter`, `action`), the trigger `condition`, an opaque `actionConfig` the
+adapter validates, and `feeBps`. The contract is interface-aligned with
+ERC-8226, never conformant.
+
+The agent's entire authority is `fire(mandateId, amount, data)`. Every firing
+runs the same fixed sequence, and `canFire(mandateId, amount)` reports the
+first failing step as a reason code so a relayer and a UI can say why before
+sending anything:
+
+```
+NONEXISTENT → AGENT_FROZEN → NOT_AGENT → NOT_YET_VALID → EXPIRED → REVOKED
+→ ZERO_AMOUNT → OVER_TX_CAP → OVER_CUMULATIVE_CAP → TRIGGER_NOT_MET
+```
+
+Then: reserve `amount` against the budget, pull it from the principal with the
+allowance the principal granted the Shield, hand it to the pinned adapter,
+require the adapter's outcome check to pass, reconcile the budget to what was
+actually spent, emit the receipt. A failed outcome reverts the whole
+transaction. The Shield holds no funds between transactions and has no
+withdrawal function. A trigger that cannot be read reverts rather than
+reporting "not met".
+
+Three roles, kept apart. The **principal** registers, amends and revokes its
+own mandates; amendment cannot change `agent`, `adapter`, `action` or `asset`,
+cannot raise the fee, cannot move the lifetime cap under what is used, and
+re-emits the whole record. The **admin** (`Ownable2Step`) lists adapters for
+new registrations, appoints enforcers and sets the fee recipient; it cannot
+move funds, touch a live mandate, or freeze. An **enforcer** can freeze and
+unfreeze an agent and nothing else, and the admin can never be one. A mandate
+pins its adapter at registration, so listing or delisting later reaches no
+live mandate.
+
+**`ConditionModule`** is the generic trigger described above, as one
+`staticcall` reader.
+
+**`AaveV3Adapter`** is the first Tier 2 adapter: one contract for the protocol,
+one entry point per action, callable only by the Shield, holding no state.
+`supply` requires the principal's aToken balance to rise by the amount.
+`repay` clamps to the debt actually owed, returns the rest, and requires the
+variable debt to fall by what was repaid; the rate mode is pinned to variable.
+`repayWithCollateral` takes a slice of the collateral aToken, withdraws it,
+swaps it through the router pinned in the mandate with the agent's calldata,
+bounded by a minimum output from the Aave oracle and the mandate's slippage
+limit, repays, returns any dust, and requires the health factor to end at or
+above the pinned target. Aave itself refuses a collateral transfer that would
+leave the position under-collateralised, so a slice that breaks the loan never
+reaches the swap. Every approval an action grants is cleared before it returns.
+
+## Static analysis
+
+`forge lint` runs as part of `forge build` and is clean. Slither reports
+twenty-two findings on the contracts, all of them the design stated above,
+each left in place on purpose:
+
+| Finding | Where | Why it stays |
+| --- | --- | --- |
+| arbitrary `from` in `transferFrom` | `SignoShield.fire` | The principal granted the Shield the allowance so that exactly this, bounded by the checks above, can happen without their signature. |
+| reentrancy (balance, events, no-eth) | `fire`, adapter actions | `fire` is `nonReentrant`; the adapter keeps no state; receipts are emitted after the checked outcome on purpose. |
+| strict equality on a balance | adapter `debt == 0` | A zero debt is refused, not compared for a payout. |
+| unused return | `getUserAccountData` | Only the health-factor word is needed. |
+| missing zero check | `setFeeRecipient`, adapter constructor | `address(0)` disables fees by design; the constructor's code-length check refuses it. |
+| timestamp comparison | validity window | Mandate validity is a timestamp window, as in ERC-8226. |
+| assembly, low-level call | condition module, swap leg | The generic reader and the pinned-router call are the design; both are bounded by balance checks. |
+| naming | `ADDRESSES_PROVIDER` | Aave's own function name. |
+
 ## Status
 
-This repository is the scaffold (FLIP-190). `contracts/core/SignoShield.sol` is
-a stub whose entry points revert, and the interfaces carry the design above.
-The enforcement lands in the tickets this one blocks.
+Core, condition module and Aave V3 adapter are built and tested (unit suites
+plus an X Layer fork suite at a pinned block). Nothing is deployed. The Tier 1
+bounded executor stays research scope.
