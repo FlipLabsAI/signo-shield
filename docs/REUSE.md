@@ -33,12 +33,15 @@ automation are different things, and only the first is free.
 
 | Dependency | Version / commit | Licence | Why |
 |---|---|---|---|
+| [OpenZeppelin Contracts](https://github.com/OpenZeppelin/openzeppelin-contracts) | v5.7.0, commit `cab19933c33c2ad1d4c7a84864a3601dddfd16f3` (pinned submodule) | MIT | `Ownable2Step` (the admin role), `ReentrancyGuard` (`fire`), `SafeERC20` (every token movement), `ERC20` in test mocks only. Inherited and imported, never copied. |
 | [forge-std](https://github.com/foundry-rs/forge-std) | v1.9.6 (pinned submodule) | MIT / Apache-2.0 | Foundry's standard test and script library. Test-time only; no production bytecode depends on it. |
 
 ## What is Signo's own work
 
 Everything under `contracts/`, `test/`, `script/` and `tools/` in this
-repository is original. The design it implements — bounded execution with
+repository is original. The core inherits OpenZeppelin's `Ownable2Step` and
+`ReentrancyGuard` and uses `SafeERC20`, as listed above; no OpenZeppelin source
+is copied into this tree. The design it implements — bounded execution with
 post-conditions and a disposable clone, one generic condition module, pinned
 adapters as the exception — is Signo's, and is described in
 `docs/ARCHITECTURE.md`.
