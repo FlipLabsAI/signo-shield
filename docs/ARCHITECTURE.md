@@ -11,7 +11,7 @@ It is called a Shield rather than a Guardian because it is something the agent
 uses, not another agent. The owner signs a mandate. The agent fires a mandate
 through the Shield.
 
-## Tier 1 — bounded execution (the design; not built)
+## Tier 1 — bounded execution (built as `GenericExecutor`; see `docs/TIER1.md`)
 
 Three pieces, none of which parse calldata.
 
@@ -217,5 +217,7 @@ fork suites on X Layer and Arbitrum One at pinned blocks, a replay of real OKX
 aggregator calldata through the swap leg, a parity check against the app's own
 action-plan calldata, the deployment script on a fork, and the slippage
 arithmetic across token decimals (`docs/TESTS.md`). `tools/demo-fork.sh` runs
-the whole story on a local fork. The Tier 1 bounded executor stays research
-scope.
+the whole story on a local fork. The Tier 1 generic executor
+(`contracts/executors/`) is built and fork-proven (a real OKX swap and a real
+Aave supply through a disposable sandbox on X Layer, `test/fork/GenericExecutor.fork.t.sol`);
+it is not deployed or listed until its own review (docs/TIER1.md, last section).
