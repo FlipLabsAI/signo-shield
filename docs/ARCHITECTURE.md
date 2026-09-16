@@ -101,7 +101,7 @@ ERC-8226 where they mean the same thing (`principal`, `agent`, `asset`,
 `maxCumulativeValue`, `cumulativeUsed`); the rest is ours: the pinned pair
 (`adapter`, `action`), the trigger `condition`, an opaque `actionConfig` the
 adapter validates, and `feeBps`. The fee is the Shield's current rate stamped
-into the record at registration (5 bps at launch), never changed for the life
+into the record at registration (10 bps at launch), never changed for the life
 of a mandate; a rate change reaches new registrations only, and a fee
 recipient of `address(0)` disables collection entirely. The contract is
 interface-aligned with ERC-8226, never conformant.

@@ -32,7 +32,7 @@ contract SignoShieldTest is Test {
     bytes32 internal constant ACTION = keccak256("mock.spend");
     bytes32 internal constant ACTION_OTHER = keccak256("mock.other");
     address internal constant SINK = address(0xdead);
-    uint16 internal constant FEE_BPS = 5;
+    uint16 internal constant FEE_BPS = 10;
     uint256 internal constant TX_CAP = 100e6;
     uint256 internal constant LIFETIME = 250e6;
     uint48 internal constant VALID_UNTIL = 2_000_000_000;
@@ -712,7 +712,7 @@ contract SignoShieldTest is Test {
         shield.setFeeRecipient(feeSink);
         _fire(earlier, 100e6);
         _fire(later, 100e6);
-        assertEq(token.balanceOf(feeSink), 0.05e6 + 0.5e6, "5 bps on the old mandate, 50 on the new");
+        assertEq(token.balanceOf(feeSink), 0.1e6 + 0.5e6, "10 bps on the old mandate, 50 on the new");
     }
 
     function test_amend_cannotMoveTheCapUnderWhatIsUsed() public {

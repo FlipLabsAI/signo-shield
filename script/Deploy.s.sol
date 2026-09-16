@@ -20,7 +20,7 @@ import {SignoShield} from "contracts/core/SignoShield.sol";
 ///   SHIELD_OWNER=0x... forge script script/Deploy.s.sol:Deploy \
 ///       --rpc-url $RPC_URL --account <keystore> --broadcast
 ///
-/// SHIELD_FEE_BPS (default 5) is stamped into every mandate registered on this
+/// SHIELD_FEE_BPS (default 10) is stamped into every mandate registered on this
 /// deployment; FEE_RECIPIENT (default: SHIELD_OWNER) receives it. The Aave pool
 /// is chosen by chain id. Any other chain must pass AAVE_V3_POOL.
 /// The broadcast file under `broadcast/` carries the transaction hashes;
@@ -32,7 +32,7 @@ contract Deploy is Script {
     function run() external returns (SignoShield shield, ConditionModule conditions, AaveV3Adapter aave) {
         address owner = vm.envAddress("SHIELD_OWNER");
         address feeRecipient = vm.envOr("FEE_RECIPIENT", owner);
-        uint16 feeBps = uint16(vm.envOr("SHIELD_FEE_BPS", uint256(5)));
+        uint16 feeBps = uint16(vm.envOr("SHIELD_FEE_BPS", uint256(10)));
         address pool = _poolFor(block.chainid);
 
         vm.startBroadcast();
