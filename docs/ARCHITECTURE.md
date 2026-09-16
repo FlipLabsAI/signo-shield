@@ -143,10 +143,11 @@ one entry point per action, callable only by the Shield, holding no state.
 `repay` clamps to the debt actually owed, returns the rest, and requires the
 variable debt to fall by what was repaid; the rate mode is pinned to variable.
 `repayWithCollateral` takes a slice of the collateral aToken, withdraws it,
-swaps it through the router pinned in the mandate with the agent's calldata,
-bounded by a minimum output from the Aave oracle and the mandate's slippage
-limit, repays, returns any dust, and requires the health factor to end at or
-above the pinned target. Aave itself refuses a collateral transfer that would
+swaps it through the router pinned in the mandate with the agent's calldata
+(the collateral is approved to a separately pinned spender, since aggregators
+such as OKX pull through their own approval contract), bounded by a minimum
+output from the Aave oracle and the mandate's slippage limit, repays, returns
+any dust, and requires the health factor to end at or above the pinned target. Aave itself refuses a collateral transfer that would
 leave the position under-collateralised, so a slice that breaks the loan never
 reaches the swap. Every approval an action grants is cleared before it returns.
 

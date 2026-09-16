@@ -70,12 +70,16 @@ contract AaveV3Adapter is IShieldAdapter {
     ///                           principal ends at or above it
     /// @param maxSlippageBps    haircut on the oracle-fair output the swap must clear
     /// @param router            the only contract the swap calldata may be sent to
+    /// @param spender           the contract the collateral is approved to for the
+    ///                          swap; aggregators (OKX among them) pull through a
+    ///                          separate approval contract, so it is pinned on its own
     struct RepayWithCollateralConfig {
         address collateral;
         address debtAsset;
         uint256 targetHealthFactor;
         uint16 maxSlippageBps;
         address router;
+        address spender;
     }
 
     event Supplied(
@@ -152,6 +156,9 @@ contract AaveV3Adapter is IShieldAdapter {
             }
             if (c.router.code.length == 0 || c.router == address(pool) || c.router == shield) {
                 revert ConfigInvalid("router");
+            }
+            if (c.spender.code.length == 0 || c.spender == address(pool) || c.spender == shield) {
+                revert ConfigInvalid("spender");
             }
         } else {
             revert UnsupportedAction(action);
@@ -257,7 +264,7 @@ contract AaveV3Adapter is IShieldAdapter {
     ///      underlying (withdraw-all takes exactly the aTokens this adapter
     ///      holds, which is what the Shield just sent), then it is swapped
     ///      through the pinned router. The calldata is the agent's; the router,
-    ///      the approval ceiling and the minimum output are not.
+    ///      the spender, the approval ceiling and the minimum output are not.
     function _withdrawAndSwap(RepayWithCollateralConfig memory c, address principal, bytes calldata data)
         internal
         returns (uint256 sold, uint256 received)
@@ -266,18 +273,20 @@ contract AaveV3Adapter is IShieldAdapter {
         IERC20 debtAsset = IERC20(c.debtAsset);
 
         uint256 withdrawn = pool.withdraw(c.collateral, type(uint256).max, address(this));
-        uint256 minOut = _minOut(c, withdrawn);
         uint256 debtAssetBefore = debtAsset.balanceOf(address(this));
 
-        collateral.forceApprove(c.router, withdrawn);
+        collateral.forceApprove(c.spender, withdrawn);
         (bool ok, bytes memory reason) = c.router.call(data);
         if (!ok) revert SwapFailed(reason);
-        _clearApproval(collateral, c.router);
+        _clearApproval(collateral, c.spender);
 
-        received = debtAsset.balanceOf(address(this)) - debtAssetBefore;
-        if (received < minOut) revert SwapOutputBelowMinimum(received, minOut);
-        // Unsold collateral goes back to the owner's wallet as the underlying.
+        // Unsold collateral goes back to the owner's wallet as the underlying;
+        // it is not a loss, so the slippage bound is measured on what was sold.
+        // Selling too little to matter is caught by the health-factor target.
         sold = withdrawn - _returnBalance(collateral, principal);
+        received = debtAsset.balanceOf(address(this)) - debtAssetBefore;
+        uint256 minOut = _minOut(c, sold);
+        if (received < minOut) revert SwapOutputBelowMinimum(received, minOut);
     }
 
     /// @dev Step 3: repay from what the swap delivered, clamped to what is owed.

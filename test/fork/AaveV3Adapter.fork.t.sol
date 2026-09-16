@@ -136,7 +136,7 @@ contract AaveV3AdapterForkTest is Test {
         assertEq(IERC20(A_XETH).balanceOf(address(shield)), 0, "shield aXETH");
         assertEq(IERC20(XETH).allowance(address(adapter), POOL), 0, "approval xETH->pool");
         assertEq(IERC20(USDT0).allowance(address(adapter), POOL), 0, "approval USDT0->pool");
-        assertEq(IERC20(XETH).allowance(address(adapter), address(router)), 0, "approval xETH->router");
+        assertEq(IERC20(XETH).allowance(address(adapter), address(router)), 0, "approval xETH->spender");
     }
 
     /// The "agent's" swap calldata: sell `amountIn` xETH for `amountOut` USD-T0, paid to `to`.
@@ -331,7 +331,8 @@ contract AaveV3AdapterForkTest is Test {
                 debtAsset: USDT0,
                 targetHealthFactor: targetHf,
                 maxSlippageBps: 100,
-                router: address(router)
+                router: address(router),
+                spender: address(router)
             })
         );
     }
@@ -450,7 +451,8 @@ contract AaveV3AdapterForkTest is Test {
                 debtAsset: USDT0,
                 targetHealthFactor: 0.9e18,
                 maxSlippageBps: 100,
-                router: address(router)
+                router: address(router),
+                spender: address(router)
             })
         );
         vm.prank(principal);
@@ -463,7 +465,8 @@ contract AaveV3AdapterForkTest is Test {
                 debtAsset: USDT0,
                 targetHealthFactor: 1.7e18,
                 maxSlippageBps: 1_001,
-                router: address(router)
+                router: address(router),
+                spender: address(router)
             })
         );
         vm.prank(principal);
@@ -476,11 +479,26 @@ contract AaveV3AdapterForkTest is Test {
                 debtAsset: USDT0,
                 targetHealthFactor: 1.7e18,
                 maxSlippageBps: 100,
-                router: POOL
+                router: POOL,
+                spender: address(router)
             })
         );
         vm.prank(principal);
         vm.expectRevert(abi.encodeWithSelector(AaveV3Adapter.ConfigInvalid.selector, "router"));
+        shield.registerMandate(p);
+
+        p.actionConfig = abi.encode(
+            AaveV3Adapter.RepayWithCollateralConfig({
+                collateral: XETH,
+                debtAsset: USDT0,
+                targetHealthFactor: 1.7e18,
+                maxSlippageBps: 100,
+                router: address(router),
+                spender: stranger
+            })
+        );
+        vm.prank(principal);
+        vm.expectRevert(abi.encodeWithSelector(AaveV3Adapter.ConfigInvalid.selector, "spender"));
         shield.registerMandate(p);
     }
 
