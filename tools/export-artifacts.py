@@ -81,11 +81,14 @@ def export_deployments() -> int:
             for tx in data.get("transactions", []):
                 if tx.get("transactionType") != "CREATE":
                     continue
+                # Foundry records the commit the broadcast was made from; that is
+                # the commit the bytecode was built from. HEAD is only a fallback
+                # (and carries -dirty when the tree is not clean).
                 entry = {
                     "contract": tx.get("contractName"),
                     "address": tx.get("contractAddress"),
                     "deployTx": tx.get("hash"),
-                    "sourceCommit": source_commit(),
+                    "sourceCommit": data.get("commit") or source_commit(),
                     "timestamp": data.get("timestamp"),
                 }
                 rows = [r for r in manifest.get(chain, []) if r.get("contract") != entry["contract"]]
