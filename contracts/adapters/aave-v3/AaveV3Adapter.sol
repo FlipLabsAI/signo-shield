@@ -154,10 +154,13 @@ contract AaveV3Adapter is IShieldAdapter {
             if (c.maxSlippageBps == 0 || c.maxSlippageBps > MAX_SLIPPAGE_BPS) {
                 revert ConfigInvalid("maxSlippageBps");
             }
-            if (c.router.code.length == 0 || c.router == address(pool) || c.router == shield) {
+            // The router and the spender are the two addresses the swap leg
+            // talks to. Neither may be a token or a protocol contract the
+            // adapter holds authority over during a firing.
+            if (c.router.code.length == 0 || _isReserved(c.router, c, asset, variableDebt)) {
                 revert ConfigInvalid("router");
             }
-            if (c.spender.code.length == 0 || c.spender == address(pool) || c.spender == shield) {
+            if (c.spender.code.length == 0 || _isReserved(c.spender, c, asset, variableDebt)) {
                 revert ConfigInvalid("spender");
             }
         } else {
@@ -239,6 +242,12 @@ contract AaveV3Adapter is IShieldAdapter {
         if (debtBefore == 0) revert NoDebt();
 
         (uint256 sold, uint256 received) = _withdrawAndSwap(c, ctx.principal, data);
+        // Sizing is done against a quote, so a sale may overshoot the debt by
+        // the slippage bound; past that a "repay" would be a withdrawal of
+        // collateral into the wallet, which this action is not.
+        if (received > debtBefore + (debtBefore * c.maxSlippageBps) / BPS) {
+            revert OutcomeFailed("sold more collateral than the debt needs");
+        }
         uint256 repaid = _repayFromOwnBalance(c.debtAsset, received, debtBefore, ctx.principal);
 
         // Outcome: the debt fell, and the position is where the owner said it must be.
@@ -257,7 +266,10 @@ contract AaveV3Adapter is IShieldAdapter {
         emit RepaidWithCollateral(
             ctx.mandateId, ctx.principal, c.collateral, sold, c.debtAsset, repaid, healthFactor
         );
-        return amount - aTokenLeft;
+        // What left the position for good is what was sold (aTokens and the
+        // underlying are 1:1); the unsold part is back in the position, and
+        // any aToken dust withdraw-all could not take went home above.
+        return sold + aTokenLeft > amount ? amount : sold;
     }
 
     /// @dev Steps 1 and 2 of repay-with-collateral. The slice becomes the
@@ -269,24 +281,59 @@ contract AaveV3Adapter is IShieldAdapter {
         internal
         returns (uint256 sold, uint256 received)
     {
+        uint256 withdrawn = pool.withdraw(c.collateral, type(uint256).max, address(this));
+        (sold, received) = _swap(c, withdrawn, data);
+        uint256 minOut = _minOut(c, sold);
+        if (received < minOut) revert SwapOutputBelowMinimum(received, minOut);
+        // The unsold part of the slice goes back INTO the position, never to
+        // the wallet: a repay-with-collateral that left collateral idle would
+        // be a withdrawal wearing a repay's name.
+        if (withdrawn > sold) _resupply(IERC20(c.collateral), withdrawn - sold, principal);
+    }
+
+    /// @dev The router call. The calldata is the agent's; the router, the
+    ///      spender and the approval ceiling are not. What the router took is
+    ///      the drop in this adapter's own balance across the call, so tokens
+    ///      anyone parked here beforehand neither block a firing nor loosen
+    ///      its bound; the slippage bound is measured on that.
+    function _swap(RepayWithCollateralConfig memory c, uint256 approved, bytes calldata data)
+        internal
+        returns (uint256 sold, uint256 received)
+    {
         IERC20 collateral = IERC20(c.collateral);
         IERC20 debtAsset = IERC20(c.debtAsset);
-
-        uint256 withdrawn = pool.withdraw(c.collateral, type(uint256).max, address(this));
+        uint256 collateralBefore = collateral.balanceOf(address(this));
         uint256 debtAssetBefore = debtAsset.balanceOf(address(this));
 
-        collateral.forceApprove(c.spender, withdrawn);
+        collateral.forceApprove(c.spender, approved);
         (bool ok, bytes memory reason) = c.router.call(data);
         if (!ok) revert SwapFailed(reason);
         _clearApproval(collateral, c.spender);
 
-        // Unsold collateral goes back to the owner's wallet as the underlying;
-        // it is not a loss, so the slippage bound is measured on what was sold.
-        // Selling too little to matter is caught by the health-factor target.
-        sold = withdrawn - _returnBalance(collateral, principal);
+        uint256 collateralAfter = collateral.balanceOf(address(this));
+        sold = collateralAfter < collateralBefore ? collateralBefore - collateralAfter : 0;
+        if (sold == 0) revert OutcomeFailed("nothing sold");
         received = debtAsset.balanceOf(address(this)) - debtAssetBefore;
-        uint256 minOut = _minOut(c, sold);
-        if (received < minOut) revert SwapOutputBelowMinimum(received, minOut);
+    }
+
+    function _resupply(IERC20 collateral, uint256 amount, address principal) internal {
+        collateral.forceApprove(address(pool), amount);
+        pool.supply(address(collateral), amount, principal, 0);
+        _clearApproval(collateral, address(pool));
+    }
+
+    /// @dev Addresses the swap leg must never be pointed at: the tokens and
+    ///      protocol contracts this adapter holds authority over during a firing.
+    function _isReserved(
+        address candidate,
+        RepayWithCollateralConfig memory c,
+        address aToken,
+        address variableDebt
+    ) internal view returns (bool) {
+        return candidate == address(pool) || candidate == shield || candidate == address(this)
+            || candidate == c.collateral || candidate == c.debtAsset || candidate == aToken
+            || candidate == variableDebt || candidate == address(addressesProvider)
+            || candidate == addressesProvider.getPriceOracle();
     }
 
     /// @dev Step 3: repay from what the swap delivered, clamped to what is owed.
