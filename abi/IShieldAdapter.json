@@ -1,0 +1,105 @@
+[
+  {
+    "type": "function",
+    "name": "execute",
+    "inputs": [
+      {
+        "name": "ctx",
+        "type": "tuple",
+        "internalType": "struct IShieldAdapter.Context",
+        "components": [
+          {
+            "name": "mandateId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "principal",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "agent",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "action",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "asset",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "actionConfig",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "data",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "spent",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "supportsAction",
+    "inputs": [
+      {
+        "name": "action",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "validateConfig",
+    "inputs": [
+      {
+        "name": "action",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "asset",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "actionConfig",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "view"
+  }
+]

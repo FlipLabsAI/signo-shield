@@ -1,67 +1,186 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {ICondition} from "./ICondition.sol";
+
 /// @title ISignoShield
 /// @notice The execution surface an owner grants to an agent.
 ///
-/// The design rule this interface exists to encode: **the contract enforces the
-/// BOUND, Signo decides the ACTION.** Anything that is a number goes on chain,
+/// The design rule this interface encodes: **the contract enforces the BOUND,
+/// Signo decides the ACTION.** Anything that is a number goes on chain,
 /// because a number is enforceable without understanding anything. Anything
 /// that is a judgement stays off chain.
 ///
-/// Tier 1, bounded execution, is the default and needs zero new Solidity per
-/// protocol. Three pieces, none of which parse calldata:
-///   1. the agent holds no allowance; the Shield does, and pulls at most
-///      `amount` per firing;
-///   2. the call runs from a fresh disposable minimal-proxy clone that holds no
-///      allowance, so no standing approval survives the transaction;
-///   3. a POST-CONDITION on the owner's balances. The owner pins input token,
-///      output token, direction and a minimum rate at registration; the agent
-///      supplies only a number, a target and calldata; the contract computes
-///      the bound itself.
+/// A mandate is one standing permission: who may fire it (`agent`), for whom
+/// (`principal`, always the registering wallet), what it pulls (`asset`), how
+/// much per firing and in total, when it is valid, under which on-chain
+/// condition, and which pinned execution implementation performs the action.
+/// The agent's entire authority is `fire(mandateId, amount, data)`.
 ///
-/// Why this is not a calldata filter: a filter parses the call and is fooled by
-/// batching and delegatecall. A post-condition measures the owner's balances at
-/// the end, so there is no parser to fool. Worst-case loss is tolerance times
-/// budget, not a full per-action cap.
+/// Field names follow ERC-8226 (Regulated Agent Mandate) wherever they mean
+/// the same thing: `principal`, `agent`, `asset`, `validFrom`, `validUntil`,
+/// `revoked`, `maxTransactionValue`, `maxCumulativeValue`, `cumulativeUsed`.
+/// Two of its rules come with the names and are kept here: `cumulativeUsed`
+/// never resets when a mandate is extended, and an amendment re-renders the
+/// whole permission rather than merging a delta. This contract is
+/// interface-aligned with ERC-8226, never conformant: it has no compliance
+/// provider, and it carries a trigger and an outcome check, which no standard
+/// on that list does.
 ///
-/// Tier 2, a pinned adapter, is the exception. It is reserved for the demo
-/// mandate and for obligation-shaped grants where a balance check cannot see
-/// the harm: credit delegation and operator bits.
-///
-/// NOT IMPLEMENTED HERE. FLIP-190 is the repository scaffold; the contracts
-/// land in the tickets it blocks. This interface is the agreed shape they
-/// build against, not a suggestion.
+/// Tiers. A mandate pins an execution implementation (`adapter`, `action`).
+/// Tier 2 pins a protocol adapter that builds the protocol call itself
+/// (`contracts/adapters/`). Tier 1, bounded execution through a disposable
+/// clone and a post-condition on the owner's balances, is a further
+/// implementation behind the same entry point and is research scope
+/// (FLIP-217), not built here.
 interface ISignoShield {
-    /// @notice Raised by every entry point in the scaffold build.
-    /// @dev Removed by the first implementation ticket. Present so that a
-    ///      clean clone compiles, deploys and tests without the scaffold
-    ///      pretending to enforce anything.
-    error NotImplemented();
+    /// @notice Why a firing is refused. `canFire` returns the FIRST failing
+    ///         check in a fixed order; `fire` reverts with the same code.
+    /// @dev Append-only. The numeric order carries no meaning; the check order
+    ///      is documented on `canFire`. `POSTCONDITION_FAILED` is execution-time
+    ///      only and is never returned by `canFire`.
+    enum MandateReason {
+        OK,
+        NONEXISTENT,
+        AGENT_FROZEN,
+        NOT_AGENT,
+        NOT_YET_VALID,
+        EXPIRED,
+        REVOKED,
+        ZERO_AMOUNT,
+        OVER_TX_CAP,
+        OVER_CUMULATIVE_CAP,
+        TRIGGER_NOT_MET,
+        POSTCONDITION_FAILED
+    }
 
-    /// @notice A mandate was registered, amended or widened.
-    /// @dev Every amendment re-renders the WHOLE resulting permission, never
-    ///      the delta, so an indexer and a user read the same thing. Widening
-    ///      emits this same shape. `agent` can never change under amendment.
-    event MandateRendered(address indexed owner, address indexed agent, bytes32 indexed mandateId);
+    /// @notice The stored record. `principal` is `msg.sender` at registration
+    ///         and is never a parameter.
+    struct Mandate {
+        // ERC-8226-aligned fields.
+        address principal;
+        address agent;
+        address asset;
+        uint48 validFrom;
+        uint48 validUntil;
+        bool revoked;
+        uint256 maxTransactionValue;
+        uint256 maxCumulativeValue;
+        uint256 cumulativeUsed;
+        // Signo's own fields.
+        address adapter;
+        bytes32 action;
+        uint16 feeBps;
+        ICondition.Condition condition;
+        bytes actionConfig;
+    }
 
-    /// @notice One firing of a mandate by its agent.
-    event MandateFired(bytes32 indexed mandateId, address indexed agent, address indexed target);
+    /// @notice What the principal signs. Everything except `principal` and the
+    ///         accounting fields.
+    /// @param condition The on-chain trigger. `condition.target == address(0)`
+    ///        means no on-chain trigger: the decision to fire is Signo's alone,
+    ///        and the bound is everything else in the record.
+    /// @param actionConfig Opaque to the core. Validated and interpreted by the
+    ///        pinned adapter.
+    struct MandateParams {
+        address agent;
+        address adapter;
+        bytes32 action;
+        address asset;
+        uint256 maxTransactionValue;
+        uint256 maxCumulativeValue;
+        uint48 validFrom;
+        uint48 validUntil;
+        uint16 feeBps;
+        ICondition.Condition condition;
+        bytes actionConfig;
+    }
 
-    /// @notice Register a mandate. Owner-signed.
-    function registerMandate(bytes calldata mandate) external returns (bytes32 mandateId);
+    /// @notice A mandate was registered or amended. Carries the WHOLE resulting
+    ///         record, never a delta, so a user and an indexer read the same
+    ///         thing. Amendment emits this same shape.
+    event MandateRendered(
+        address indexed principal, address indexed agent, bytes32 indexed mandateId, Mandate mandate
+    );
+    /// @notice The principal revoked a mandate. Irreversible.
+    event MandateRevoked(bytes32 indexed mandateId, address indexed principal);
+    /// @notice One firing. `amount` is what the agent asked for, `spent` what
+    ///         left the principal's wallet for good (fee included), `fee` the
+    ///         part that went to the fee recipient.
+    event MandateFired(
+        bytes32 indexed mandateId,
+        address indexed agent,
+        address indexed adapter,
+        bytes32 action,
+        uint256 amount,
+        uint256 spent,
+        uint256 fee
+    );
+    event AgentFrozen(address indexed agent, address indexed enforcer);
+    event AgentUnfrozen(address indexed agent, address indexed enforcer);
+    event EnforcerSet(address indexed enforcer, bool enabled);
+    event AdapterListed(address indexed adapter, bool listed);
+    event FeeRecipientSet(address indexed recipient);
 
-    /// @notice Amend a mandate: raise a cap, extend expiry, change the trigger,
-    ///         add a Tier 1 action. Owner-signed, one transaction.
-    /// @dev Adding a new INPUT TOKEN also needs an ERC-20 approve, so it is one
-    ///      signature in an ERC-5792 batching wallet and two elsewhere.
-    function amendMandate(bytes32 mandateId, bytes calldata mandate) external;
+    /// @notice The firing was refused; `reason` is what `canFire` would return.
+    error MandateBlocked(bytes32 mandateId, MandateReason reason);
+    /// @notice Only the mandate's principal may amend or revoke it.
+    error NotPrincipal();
+    /// @notice Only an enforcer may freeze or unfreeze an agent.
+    error NotEnforcer();
+    /// @notice The adapter is not on the allowlist for NEW registrations.
+    error AdapterNotListed(address adapter);
+    /// @notice The adapter does not implement the pinned action.
+    error ActionNotSupported(address adapter, bytes32 action);
+    /// @notice A parameter failed validation; `field` names it.
+    error InvalidParams(string field);
+    /// @notice An amendment tried to change a field that can never change.
+    error FieldImmutable(string field);
+    /// @notice The admin role and the enforcer role may never coincide.
+    error AdminCannotBeEnforcer(address account);
+    /// @notice The adapter reported consuming more than it was given.
+    error SpendExceedsAmount(uint256 spent, uint256 amount);
 
-    /// @notice Revoke a mandate. Owner-signed, immediate.
+    /// @notice Register a mandate. `msg.sender` becomes the principal.
+    function registerMandate(MandateParams calldata params) external returns (bytes32 mandateId);
+
+    /// @notice Amend a mandate. Principal only. Cannot change `agent`,
+    ///         `adapter`, `action` or `asset`; cannot raise `feeBps`; cannot
+    ///         set `maxCumulativeValue` below `cumulativeUsed`. Re-renders and
+    ///         emits the whole record.
+    function amendMandate(bytes32 mandateId, MandateParams calldata params) external;
+
+    /// @notice Revoke a mandate. Principal only, immediate, irreversible. Works
+    ///         whether or not Signo is running.
     function revokeMandate(bytes32 mandateId) external;
 
-    /// @notice Fire a mandate. Agent-signed. The Shield pulls at most the
-    ///         mandate's per-firing amount, runs `data` against `target` from a
-    ///         disposable clone, then enforces the post-condition.
-    function fire(bytes32 mandateId, address target, uint256 amount, bytes calldata data) external;
+    /// @notice Fire a mandate. Agent only. Runs every check in `canFire`'s
+    ///         order, reserves `amount` against the budget, pulls it from the
+    ///         principal, hands it to the pinned adapter, then reconciles the
+    ///         budget to what was actually spent.
+    /// @param data Per-firing input for the adapter (for example aggregator
+    ///        calldata). Empty for most actions.
+    /// @return spent What left the principal's wallet for good, fee included.
+    function fire(bytes32 mandateId, uint256 amount, bytes calldata data) external returns (uint256 spent);
+
+    /// @notice Would `fire(mandateId, amount)` by the mandate's agent pass?
+    ///         Returns the first failing check, in this fixed order:
+    ///         NONEXISTENT, AGENT_FROZEN, NOT_AGENT, NOT_YET_VALID, EXPIRED,
+    ///         REVOKED, ZERO_AMOUNT, OVER_TX_CAP, OVER_CUMULATIVE_CAP,
+    ///         TRIGGER_NOT_MET. A trigger that cannot be evaluated reverts
+    ///         rather than reporting false.
+    function canFire(bytes32 mandateId, uint256 amount) external view returns (bool ok, MandateReason reason);
+
+    function getMandate(bytes32 mandateId) external view returns (Mandate memory);
+
+    /// @notice Halt every mandate `agent` holds, for every principal, in one
+    ///         transaction. Enforcer only. Reversible with `unfreezeAgent`.
+    ///         Cannot revoke, cannot move funds, cannot widen anything.
+    function freezeAgent(address agent) external;
+    function unfreezeAgent(address agent) external;
+    function isAgentFrozen(address agent) external view returns (bool);
+    function isEnforcer(address account) external view returns (bool);
+    function isAdapterListed(address adapter) external view returns (bool);
+    function conditionModule() external view returns (ICondition);
+    function feeRecipient() external view returns (address);
 }
