@@ -17,6 +17,13 @@
         "timestamp": 1789558496717
       },
       {
+        "contract": "GenericExecutor",
+        "address": "0x073673675d069342892eca30fbbc4d8bc0649d27",
+        "deployTx": "0x635eba45ff0fa208f2161949b5d47527f0d4147c204bb993ceb01eda134e26b6",
+        "sourceCommit": "d9464c98879fda22ab994b1fca7ff7ff8e60ab85",
+        "timestamp": 1789564043233
+      },
+      {
         "contract": "SignoShield",
         "address": "0x9331264a9e1c0573d920cd8403031cc9761ac60a",
         "deployTx": "0x32bb42d2f2464851e16fd2e9727c562acd9c4b30435f520fee15fdf81a2b8a1b",
