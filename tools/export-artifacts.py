@@ -42,6 +42,16 @@ def source_commit() -> str:
         return "unknown"
 
 
+def full_sha(short: str | None) -> str | None:
+    """Foundry stores the short commit; the manifest carries the full one."""
+    if not short:
+        return None
+    try:
+        return subprocess.run(["git", "rev-parse", "--verify", f"{short}^{{commit}}"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
+    except Exception:
+        return short
+
+
 def export_abis() -> list[str]:
     if not OUT.is_dir():
         sys.exit("out/ not found — run `forge build` first")
@@ -88,7 +98,7 @@ def export_deployments() -> int:
                     "contract": tx.get("contractName"),
                     "address": tx.get("contractAddress"),
                     "deployTx": tx.get("hash"),
-                    "sourceCommit": data.get("commit") or source_commit(),
+                    "sourceCommit": full_sha(data.get("commit")) or source_commit(),
                     "timestamp": data.get("timestamp"),
                 }
                 rows = [r for r in manifest.get(chain, []) if r.get("contract") != entry["contract"]]
