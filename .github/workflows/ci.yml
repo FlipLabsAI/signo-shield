@@ -1,0 +1,51 @@
+name: ci
+
+# A clean clone must build and test with no private dependency, no Signo
+# database and no secrets. This workflow is the proof of that claim, so it
+# deliberately uses nothing an outside contributor could not run locally.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # forge-std is a pinned submodule; without this the build cannot resolve it.
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Show toolchain
+        run: forge --version
+
+      - name: Build
+        run: forge build --sizes
+
+      - name: Test
+        run: forge test -vvv
+
+      - name: Formatting
+        run: forge fmt --check
+
+      - name: Exported ABIs are current
+        # The submission ships ABIs a judge can read without the toolchain, so a
+        # contract change that does not regenerate them is a broken artifact.
+        # Regenerate and fail if anything moved.
+        run: |
+          python3 tools/export-artifacts.py
+          if ! git diff --exit-code -- abi/; then
+            echo "::error::abi/ is stale — run: forge build && python3 tools/export-artifacts.py"
+            exit 1
+          fi
