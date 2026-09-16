@@ -103,7 +103,10 @@ ERC-8226 where they mean the same thing (`principal`, `agent`, `asset`,
 adapter validates, and `feeBps`. The fee is the Shield's current rate stamped
 into the record at registration (10 bps at launch), never changed for the life
 of a mandate; a rate change reaches new registrations only, and a fee
-recipient of `address(0)` disables collection entirely. The contract is
+recipient of `address(0)` disables collection entirely. It is charged on what
+a firing actually spends, on top of the amount, and the lifetime cap covers
+both: the worst case (all of the amount spent, fee on all of it) is what has
+to fit, and what is reserved before the adapter runs. The contract is
 interface-aligned with ERC-8226, never conformant.
 
 The agent's entire authority is `fire(mandateId, amount, data)`. Every firing
@@ -116,23 +119,28 @@ NONEXISTENT → AGENT_FROZEN → NOT_AGENT → NOT_YET_VALID → EXPIRED → REV
 → ZERO_AMOUNT → OVER_TX_CAP → OVER_CUMULATIVE_CAP → TRIGGER_NOT_MET
 ```
 
-Then: reserve `amount` against the budget, pull it from the principal with the
-allowance the principal granted the Shield, hand it to the pinned adapter,
-require the adapter's outcome check to pass, reconcile the budget to what was
-actually spent, emit the receipt. A failed outcome reverts the whole
-transaction. The Shield holds no funds between transactions and has no
-withdrawal function. A trigger that cannot be read reverts rather than
-reporting "not met".
+Then: reserve the worst case against the budget, pull `amount` from the
+principal with the allowance the principal granted the Shield, hand it to the
+pinned adapter, take the fee on what the adapter spent, reconcile the budget
+to spend plus fee, emit the receipt. Any adapter-side revert surfaces as
+`OutcomeRejected(mandateId, POSTCONDITION_FAILED, adapterError)`: one typed
+code for a relayer, the adapter's own revert data for whoever has to read it,
+and the whole transaction reverts. `canFireBy(mandateId, caller, amount)` is
+`canFire` for a specific caller, `NOT_AGENT` included. The Shield holds no
+funds between transactions and has no withdrawal function. A trigger that
+cannot be read reverts rather than reporting "not met".
 
 Three roles, kept apart. The **principal** registers, amends and revokes its
 own mandates; amendment cannot change `agent`, `adapter`, `action` or `asset`,
 cannot raise the fee, cannot move the lifetime cap under what is used, and
 re-emits the whole record. The **admin** (`Ownable2Step`) lists adapters for
-new registrations, appoints enforcers and sets the fee recipient; it cannot
-move funds, touch a live mandate, or freeze. An **enforcer** can freeze and
-unfreeze an agent and nothing else, and the admin can never be one. A mandate
-pins its adapter at registration, so listing or delisting later reaches no
-live mandate.
+new registrations, appoints enforcers and sets the fee rate and recipient; it
+cannot move funds, touch a live mandate, freeze, or renounce the seat. An
+**enforcer** can freeze and unfreeze an agent and nothing else, and the admin
+can never be one; the deployment script appoints one before handing the seat
+over, so the freeze switch is armed from the first block. A mandate pins its
+adapter at registration, so listing or delisting later reaches no live
+mandate.
 
 **`ConditionModule`** is the generic trigger described above, as one
 `staticcall` reader.
@@ -146,16 +154,25 @@ variable debt to fall by what was repaid; the rate mode is pinned to variable.
 swaps it through the router pinned in the mandate with the agent's calldata
 (the collateral is approved to a separately pinned spender, since aggregators
 such as OKX pull through their own approval contract), bounded by a minimum
-output from the Aave oracle and the mandate's slippage limit, repays, returns
-any dust, and requires the health factor to end at or above the pinned target. Aave itself refuses a collateral transfer that would
-leave the position under-collateralised, so a slice that breaks the loan never
-reaches the swap. Every approval an action grants is cleared before it returns.
+output from the Aave oracle and the mandate's slippage limit, repays, and
+requires the health factor to end at or above the pinned target. What the
+router took is measured as the drop in the adapter's own balance across the
+call, so tokens anyone parks on the adapter neither block a firing nor loosen
+its bound; the unsold part of the slice goes back into the position, never to
+the wallet; a sale that overshoots the debt by more than the slippage bound
+is refused. Aave itself refuses a collateral transfer that would leave the
+position under-collateralised, so a slice that breaks the loan never reaches
+the swap. The router and the spender may not be any token or protocol
+contract the adapter holds authority over. Every approval an action grants is
+cleared before it returns.
 
 ## Static analysis
 
 `forge lint` runs as part of `forge build` and is clean. Slither reports
-twenty-two findings on the contracts, all of them the design stated above,
-each left in place on purpose:
+twenty-three findings on the contracts, all of them the design stated above,
+each left in place on purpose. An independent review before the first
+deployment (recorded on FLIP-201) found one medium and four low issues, all
+fixed and pinned with tests; its findings and the fixes are listed there.
 
 | Finding | Where | Why it stays |
 | --- | --- | --- |
@@ -172,7 +189,8 @@ each left in place on purpose:
 
 Core, condition module and Aave V3 adapter are built and tested: unit suites,
 fork suites on X Layer and Arbitrum One at pinned blocks, a replay of real OKX
-aggregator calldata through the swap leg, and a parity check against the app's
-own action-plan calldata (`docs/TESTS.md`). `tools/demo-fork.sh` runs the
-whole story on a local fork. Nothing is deployed. The Tier 1 bounded executor
-stays research scope.
+aggregator calldata through the swap leg, a parity check against the app's own
+action-plan calldata, the deployment script on a fork, and the slippage
+arithmetic across token decimals (`docs/TESTS.md`). `tools/demo-fork.sh` runs
+the whole story on a local fork. The Tier 1 bounded executor stays research
+scope.

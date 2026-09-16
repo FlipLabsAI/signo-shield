@@ -53,7 +53,7 @@ git submodule update --init --recursive
 
 `forge test` runs the unit suites and the fork suites: Aave V3 on X Layer at
 a pinned block, the same through the real OKX DEX aggregator router with
-replayed calldata, and Aave V3 on Arbitrum One. The fork suites read public
+replayed calldata, Aave V3 on Arbitrum One, and the deployment script itself. The fork suites read public
 archive endpoints; `XLAYER_RPC_URL` and `ARBITRUM_RPC_URL` override them, and
 `forge test --no-match-path "test/fork/*"` skips them offline.
 [`docs/TESTS.md`](docs/TESTS.md) maps every boundary and accounting case to
