@@ -6,10 +6,10 @@ have had two internal reviews with every finding fixed and pinned by a test
 (FLIP-201 records them), Slither and `forge lint` are clean, and nobody
 outside the team has audited them.
 
-Addresses on X Layer (chain 196), source commit `c8f9aef`:
-SignoShield `0xc9f83d96ee711C06dE80A532785d3BaEA966de97`,
-AaveV3Adapter `0xc428a88A92Ecec99414152Ad2A5fd4244b222B15`,
-ConditionModule `0xE0377C8C1742FCbe885E99d8d746F56eE7982f6F`.
+Addresses on X Layer (chain 196), source commit `fe47fdb`:
+SignoShield `0x9331264a9e1C0573D920cD8403031cC9761AC60A`,
+AaveV3Adapter `0xB42Fe2Cf2358BEDD7E4a47eF63a91828606Fc36f`,
+ConditionModule `0x6a9f8bE79f617FCD97A09E2A0CAac54c06EF8cFc`.
 
 ## The parties
 
