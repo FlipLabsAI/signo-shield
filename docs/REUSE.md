@@ -10,26 +10,24 @@ Anything copied, adapted or depended upon is recorded here **before it lands**,
 with its source, the pinned upstream revision, and its licence. A dependency
 that is not in this file is not in the repository.
 
-## Reference implementation
+## Third-party code
 
-[defisaver/defisaver-v3-contracts](https://github.com/defisaver/defisaver-v3-contracts)
-is the implementation reference for this project.
+**None.** No third-party contract code has been copied or adapted into this
+repository. Everything under `contracts/` is original work.
 
-- Root licence: MIT. It permits use, modification and distribution provided the
-  copyright and permission notices are retained.
-- Individual file headers and transitive dependency licences are checked
-  separately from the root licence, because a permissive root does not make
-  every file in a tree permissive.
-- **No DeFi Saver code has been copied into this repository yet.** When any is,
-  it is listed in the table below with the file path, the upstream path and the
-  pinned commit, and the upstream notice is retained in the file header.
-- Public source is not permission to route transactions through DeFi Saver's
-  production automation. Their Strategy Executor entry point is BotAuth gated.
-  We reference the design; we do not call their deployments.
+If that changes, the entry goes in the table below before the code lands, with
+the upstream path, the pinned upstream revision and the licence, and the
+upstream notice is retained in the file header. A permissive licence at the
+root of an upstream project does not make every file in it permissive, so file
+headers and transitive dependencies are checked separately.
+
+Public source is also not permission to call someone's production deployments.
+Referencing a design and routing transactions through another protocol's
+automation are different things, and only the first is free.
 
 | This repo | Upstream file | Upstream commit | Licence | Notes |
 |---|---|---|---|---|
-| _(none yet)_ | | | | |
+| _(none)_ | | | | |
 
 ## Dependencies
 
@@ -40,7 +38,7 @@ is the implementation reference for this project.
 ## What is Signo's own work
 
 Everything under `contracts/`, `test/`, `script/` and `tools/` in this
-repository is original unless the table above says otherwise. The design it
-implements — bounded execution with post-conditions and a disposable clone, one
-generic condition module, pinned adapters as the exception — is Signo's, and is
-described in `docs/ARCHITECTURE.md`.
+repository is original. The design it implements — bounded execution with
+post-conditions and a disposable clone, one generic condition module, pinned
+adapters as the exception — is Signo's, and is described in
+`docs/ARCHITECTURE.md`.

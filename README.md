@@ -81,12 +81,10 @@ application and are not part of this repository.
 the interfaces as written here, the contracts, the tests, the deployment
 script, the artifact export and CI.
 
-**Reused from third parties.** Recorded in [`docs/REUSE.md`](docs/REUSE.md),
-with the upstream source, the pinned revision and the licence for each entry.
-[DeFi Saver](https://github.com/defisaver/defisaver-v3-contracts) is the
-implementation reference for this project; no code has been copied from it at
-the time of writing, and anything copied later is listed there with its notice
-retained.
+**Reused from third parties.** None, other than forge-std as a test-time
+dependency. [`docs/REUSE.md`](docs/REUSE.md) records that, and is where any
+future third-party code is listed with its upstream source, pinned revision,
+licence and retained notice before it lands.
 
 ## Licence
 
