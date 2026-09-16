@@ -516,4 +516,161 @@ contract AaveV3AdapterForkTest is Test {
         vm.expectRevert(AaveV3Adapter.NotShield.selector);
         adapter.execute(ctx, 1e6, "");
     }
+
+    // ------------------------------------------- FLIP-193 named cases
+
+    /// "Fire on behalf of a different borrower" is not expressible: `fire`
+    /// has no borrower parameter and the adapter repays `ctx.principal` only.
+    /// Two borrowers, one mandate: the other borrower's debt does not move.
+    function test_rejection_wrongBorrowerIsNotExpressible() public {
+        address other = makeAddr("other-borrower");
+        vm.prank(A_XETH);
+        IERC20(XETH).transfer(other, 1e18);
+        vm.startPrank(other);
+        IERC20(XETH).approve(POOL, type(uint256).max);
+        pool.supply(XETH, COLLATERAL, other, 0);
+        pool.borrow(USDT0, DEBT, 2, 0, other);
+        vm.stopPrank();
+
+        bytes32 id = _register(_params(adapter.ACTION_REPAY(), USDT0, 20e6, 40e6, _hfBelow(10e18)));
+        uint256 otherDebt = IERC20(V_USDT0).balanceOf(other);
+        uint256 myDebt = IERC20(V_USDT0).balanceOf(principal);
+        vm.prank(agent);
+        shield.fire(id, 10e6, "");
+        assertEq(IERC20(V_USDT0).balanceOf(other), otherDebt, "the other borrower is untouched");
+        assertApproxEqAbs(myDebt - IERC20(V_USDT0).balanceOf(principal), 10e6, 2, "the principal was repaid");
+    }
+
+    /// "Wrong action": the action is pinned in the mandate. A supply mandate
+    /// fired by the agent supplies and can never repay, whatever the agent
+    /// sends; an action the adapter does not implement cannot be registered.
+    function test_rejection_wrongActionIsPinned() public {
+        vm.prank(principal);
+        IERC20(XETH).approve(address(shield), type(uint256).max);
+        bytes32 id = _register(_params(adapter.ACTION_SUPPLY(), XETH, 0.01e18, 0.02e18, _noCondition()));
+        uint256 debt = IERC20(V_USDT0).balanceOf(principal);
+        vm.prank(agent);
+        shield.fire(id, 0.01e18, "");
+        assertEq(IERC20(V_USDT0).balanceOf(principal), debt, "a supply mandate never touches debt");
+        assertEq(shield.getMandate(id).action, adapter.ACTION_SUPPLY());
+
+        bytes32 borrow = keccak256("aave-v3.borrow");
+        ISignoShield.MandateParams memory p = _params(borrow, USDT0, 1, 1, _noCondition());
+        vm.prank(principal);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISignoShield.ActionNotSupported.selector, address(adapter), borrow)
+        );
+        shield.registerMandate(p);
+    }
+
+    /// "Wrong asset": the asset is pinned. A USD-T0 repay mandate pulls
+    /// USD-T0 and nothing else, even with other tokens approved to the Shield,
+    /// and cannot be amended onto another asset.
+    function test_rejection_wrongAssetIsPinned() public {
+        vm.prank(principal);
+        IERC20(XETH).approve(address(shield), type(uint256).max);
+        bytes32 id = _register(_params(adapter.ACTION_REPAY(), USDT0, 20e6, 40e6, _hfBelow(10e18)));
+        uint256 xeth = IERC20(XETH).balanceOf(principal);
+        uint256 aXeth = IERC20(A_XETH).balanceOf(principal);
+        vm.prank(agent);
+        shield.fire(id, 10e6, "");
+        assertEq(IERC20(XETH).balanceOf(principal), xeth, "xETH untouched");
+        assertEq(IERC20(A_XETH).balanceOf(principal), aXeth, "aXETH untouched");
+
+        ISignoShield.MandateParams memory p =
+            _params(adapter.ACTION_REPAY(), XETH, 20e6, 40e6, _hfBelow(10e18));
+        vm.prank(principal);
+        vm.expectRevert(abi.encodeWithSelector(ISignoShield.FieldImmutable.selector, "asset"));
+        shield.amendMandate(id, p);
+    }
+
+    /// "Changed token allowance mid mandate": the allowance is the second
+    /// bound and the counter the first; neither resets the other.
+    function test_accounting_allowanceChangedMidMandate() public {
+        bytes32 id = _register(_params(adapter.ACTION_REPAY(), USDT0, 20e6, 40e6, _hfBelow(10e18)));
+        vm.prank(agent);
+        shield.fire(id, 10e6, "");
+
+        // The principal cuts the allowance under the next firing: the pull fails, nothing moves.
+        vm.prank(principal);
+        IERC20(USDT0).approve(address(shield), 5e6);
+        uint256 debt = IERC20(V_USDT0).balanceOf(principal);
+        uint256 wallet = IERC20(USDT0).balanceOf(principal);
+        vm.prank(agent);
+        vm.expectRevert();
+        shield.fire(id, 10e6, "");
+        assertEq(IERC20(V_USDT0).balanceOf(principal), debt);
+        assertEq(IERC20(USDT0).balanceOf(principal), wallet);
+        assertEq(shield.getMandate(id).cumulativeUsed, 10e6, "a failed pull uses no budget");
+
+        // Raising it again hands back no budget.
+        vm.prank(principal);
+        IERC20(USDT0).approve(address(shield), type(uint256).max);
+        vm.prank(agent);
+        shield.fire(id, 20e6, "");
+        assertEq(shield.getMandate(id).cumulativeUsed, 30e6);
+        (bool ok, ISignoShield.MandateReason r) = shield.canFire(id, 10e6 + 1);
+        assertFalse(ok);
+        assertEq(uint8(r), uint8(ISignoShield.MandateReason.OVER_CUMULATIVE_CAP));
+    }
+
+    /// "Attempt to alter the execution implementation of an active mandate":
+    /// the adapter is pinned per mandate; neither the principal nor the admin
+    /// can move a live mandate onto another one.
+    function test_accounting_executionImplementationCannotBeAltered() public {
+        bytes32 id = _register(_params(adapter.ACTION_REPAY(), USDT0, 20e6, 40e6, _hfBelow(10e18)));
+        AaveV3Adapter other = new AaveV3Adapter(address(shield), pool);
+        shield.setAdapter(address(other), true);
+
+        ISignoShield.MandateParams memory p =
+            _params(adapter.ACTION_REPAY(), USDT0, 20e6, 40e6, _hfBelow(10e18));
+        p.adapter = address(other);
+        vm.prank(principal);
+        vm.expectRevert(abi.encodeWithSelector(ISignoShield.FieldImmutable.selector, "adapter"));
+        shield.amendMandate(id, p);
+
+        shield.setAdapter(address(adapter), false);
+        vm.prank(agent);
+        shield.fire(id, 10e6, "");
+        assertEq(shield.getMandate(id).adapter, address(adapter), "still the adapter it was signed with");
+    }
+
+    // -------------------------------------------------------------- parity
+
+    /// `Pool.repay(USD-T0, 10e6, 2, principal)` as treasury-dashboard's own
+    /// action-plan encoder builds it (`lib/exec/encoders.ts` `encodeRepay("aave",
+    /// ...)` at origin/main ad4c8189), for the principal this suite uses.
+    bytes internal constant APP_REPAY_CALLDATA =
+        hex"573ade81000000000000000000000000779ded0c9e1022225f8e0630b35a9b54be713736000000000000000000000000000000000000000000000000000000000098968000000000000000000000000000000000000000000000000000000000000000020000000000000000000000006b9470599cb23a06988c6332abe964d6608a50ca";
+
+    /// The app's action plan (the user signs the encoder's transaction) and
+    /// the Shield firing (the agent fires the mandate) must do the same thing
+    /// to the position: same block, same state, same deltas.
+    function test_parity_shieldRepayMatchesTheAppsActionPlan() public {
+        assertEq(principal, 0x6b9470599cb23a06988C6332ABE964d6608A50ca, "the calldata names this principal");
+        uint256 debt0 = IERC20(V_USDT0).balanceOf(principal);
+        uint256 wallet0 = IERC20(USDT0).balanceOf(principal);
+        uint256 snapshot = vm.snapshotState();
+
+        // Path A: the user's wallet sends what the app built.
+        vm.startPrank(principal);
+        IERC20(USDT0).approve(POOL, 10e6);
+        (bool ok,) = POOL.call(APP_REPAY_CALLDATA);
+        vm.stopPrank();
+        assertTrue(ok, "app-built repay");
+        uint256 debtDeltaA = debt0 - IERC20(V_USDT0).balanceOf(principal);
+        uint256 walletDeltaA = wallet0 - IERC20(USDT0).balanceOf(principal);
+        uint256 hfA = _healthFactor(principal);
+
+        vm.revertToState(snapshot);
+
+        // Path B: the agent fires a repay mandate for the same intent.
+        bytes32 id = _register(_params(adapter.ACTION_REPAY(), USDT0, 20e6, 40e6, _hfBelow(10e18)));
+        vm.prank(agent);
+        shield.fire(id, 10e6, "");
+
+        assertEq(debt0 - IERC20(V_USDT0).balanceOf(principal), debtDeltaA, "same debt delta");
+        assertEq(wallet0 - IERC20(USDT0).balanceOf(principal), walletDeltaA, "same wallet delta");
+        assertEq(_healthFactor(principal), hfA, "same health factor");
+    }
 }
