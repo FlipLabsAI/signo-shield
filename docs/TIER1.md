@@ -24,7 +24,7 @@ The amount (within the caps) and calldata for the target. Nothing else. A
 minimum the agent would like to pass is not a parameter: the contract
 computes the bound from the rule the owner pinned.
 
-## The three rate rules
+## The four rate rules
 
 - **Fixed**: `minOut = amount × rate / 1e18`, less one basis point plus one
   unit of rounding slack (real 1:1 receipts such as aTokens mint a wei
@@ -39,6 +39,21 @@ computes the bound from the rule the owner pinned.
   so a partial sale is refused by construction, and the mandate fires as
   often as its caps allow, each time at the full count. "Once" is the app's
   firing policy and the lifetime cap, not this rule.
+- **Erc4626**: `minOut = amount × convertToShares(one unit of the input) /
+  one unit`, read from the vault BEFORE the agent's call, less the pinned
+  fee allowance and the same rounding slack as a fixed rate. `tokenOut` is
+  the ERC-4626 vault, and it must also be the target and the spender: by the
+  standard the vault is the receipt token and the deposit surface in one, and
+  pinning the surface to it means no third party's call can sit between the
+  price snapshot and the mint. At registration the executor asks the vault
+  for its `asset()` and refuses the mandate unless it is the token being
+  spent — the wrong-receipt check, inside the contract, for every vault.
+  Why a rule and not a fixed pin: a share is not 1:1 with the underlying and
+  its price rises as the vault earns, so a rate fixed at registration would
+  refuse a good deposit a month later. `convertToShares` must round down and
+  must exclude fees (EIP-4626), so it is a lower bound on the mint for a
+  fee-less vault; `maxSlippageBps` is the owner's allowance for one that
+  charges a fee.
 
 The bound is computed on what was actually sold (measured, see below). It
 never rounds up. A fixed rate is short by the stated tolerance (one basis
@@ -77,7 +92,7 @@ Anything a balance check on the owner cannot see: borrowing, withdrawing
 collateral, leverage loops, liquidity positions, credit delegation and
 operator bits, bridges (a source-chain transaction cannot revert for a
 destination failure), multi-call routes, any output token without a pinned
-rate source, debt reduction (a repay is the adapter's shape: the executor
+rate source (an ERC-4626 vault carries its own, see the fourth rule), debt reduction (a repay is the adapter's shape: the executor
 only knows "the output token must rise"), native-coin output, and other
 execution models (Solana). Those are protocol adapters
 (`contracts/adapters/`) or nothing.

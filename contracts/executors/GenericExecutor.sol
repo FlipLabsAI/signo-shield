@@ -9,6 +9,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IShieldAdapter} from "contracts/core/interfaces/IShieldAdapter.sol";
 import {DisposableClone} from "./DisposableClone.sol";
 import {IPriceOracle} from "./interfaces/IPriceOracle.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 /// @title GenericExecutor
 /// @notice Tier 1 bounded execution (FLIP-217 / FLIP-238): one adapter that
@@ -53,7 +54,22 @@ contract GenericExecutor is IShieldAdapter {
         /// minOut = amount * price(in) / price(out), decimals adjusted, less slippage.
         Oracle,
         /// minOut = the pinned number, whatever the amount (an owner-named floor).
-        Floor
+        Floor,
+        /// minOut = the vault's own answer to "how many shares for this much
+        /// underlying", read BEFORE the agent's call, less the pinned fee
+        /// allowance and rounding slack. `tokenOut` is the ERC-4626 vault
+        /// itself, and it is also the target and the spender: by the standard
+        /// the vault is the receipt token and the deposit surface in one.
+        ///
+        /// Why a rule and not a Fixed pin: a share is not 1:1 with the
+        /// underlying, its price rises as the vault earns, so a rate fixed at
+        /// registration would refuse good deposits a month later. Why not the
+        /// Oracle rule through a wrapper: two feeds in two bases where one
+        /// direct read exists. `convertToShares` MUST round down and MUST NOT
+        /// include fees (EIP-4626), so it is a lower bound on the mint for a
+        /// fee-less vault; `maxSlippageBps` is the owner's allowance for a
+        /// vault that does charge one.
+        Erc4626
     }
 
     /// @notice Pinned at registration for `generic.transform`. The input token
@@ -85,6 +101,9 @@ contract GenericExecutor is IShieldAdapter {
         /// route could move in the same transaction is not read after it moved.
         uint256 priceIn;
         uint256 priceOut;
+        /// ERC-4626: shares per one whole unit of the input, read before the
+        /// agent's call for the same reason as the oracle prices.
+        uint256 sharesPerUnit;
         uint256 inBefore;
         uint256 outBefore;
     }
@@ -158,8 +177,14 @@ contract GenericExecutor is IShieldAdapter {
                 revert ConfigInvalid("tokenOut");
             }
             if (!_answersBalanceOf(asset)) revert ConfigInvalid("asset");
-            if (_isReserved(c.target, asset, c.tokenOut)) revert ConfigInvalid("target");
-            if (_isReserved(c.spender, asset, c.tokenOut)) revert ConfigInvalid("spender");
+            // For a verified 4626 vault the receipt token IS the surface, so
+            // `target == tokenOut` is the correct shape rather than the attack
+            // `_isReserved` guards against; the vault check runs first so the
+            // exception only ever applies to something that proved it is one.
+            bool vault = c.rateKind == RateKind.Erc4626;
+            if (vault && _vaultAsset(c.tokenOut) != asset) revert ConfigInvalid("vault:asset");
+            if (_isReserved(c.target, asset, vault ? address(0) : c.tokenOut)) revert ConfigInvalid("target");
+            if (_isReserved(c.spender, asset, vault ? address(0) : c.tokenOut)) revert ConfigInvalid("spender");
             if (c.rateKind == RateKind.Fixed) {
                 if (c.rateOrFloor == 0 || c.rateOrFloor > MAX_FIXED_RATE) revert ConfigInvalid("rate");
             } else if (c.rateKind == RateKind.Oracle) {
@@ -178,6 +203,16 @@ contract GenericExecutor is IShieldAdapter {
                 IERC20Metadata(asset).decimals();
                 // forge-lint: disable-next-line(unused-return)
                 IERC20Metadata(c.tokenOut).decimals();
+            } else if (c.rateKind == RateKind.Erc4626) {
+                // The surface IS the vault. Anything else would put a third
+                // party's call between the share-price snapshot and the mint.
+                if (c.target != c.tokenOut || c.spender != c.tokenOut) revert ConfigInvalid("vault:surface");
+                // No other rate source may be smuggled in beside the vault.
+                if (c.oracle != address(0)) revert ConfigInvalid("oracle");
+                if (c.rateOrFloor != 0) revert ConfigInvalid("rate");
+                if (c.maxSlippageBps > MAX_SLIPPAGE_BPS) revert ConfigInvalid("maxSlippageBps");
+                // Dry-run the one read the firing makes.
+                if (_sharesPerUnit(c, asset) == 0) revert ConfigInvalid("vault:rate");
             } else {
                 if (c.rateOrFloor == 0) revert ConfigInvalid("floor");
             }
@@ -216,6 +251,7 @@ contract GenericExecutor is IShieldAdapter {
         f.inBefore = IERC20(ctx.asset).balanceOf(ctx.principal);
         f.outBefore = IERC20(c.tokenOut).balanceOf(ctx.principal);
         if (c.rateKind == RateKind.Oracle) (f.priceIn, f.priceOut) = _prices(c, ctx.asset);
+        if (c.rateKind == RateKind.Erc4626) f.sharesPerUnit = _sharesPerUnit(c, ctx.asset);
 
         // A fresh sandbox, funded with exactly the amount, one call, swept.
         _runSandbox(ctx, c, f, amount, data);
@@ -252,7 +288,7 @@ contract GenericExecutor is IShieldAdapter {
         uint256 spent,
         uint256 received
     ) internal {
-        uint256 minOut = _minOut(c, ctx.asset, spent, f.priceIn, f.priceOut);
+        uint256 minOut = _minOut(c, ctx.asset, spent, f);
         // Never zero. Fixed and Oracle rates round down, and for a dust-sized
         // sale the rounding slack can exceed the exact figure, leaving a bound
         // of 0 that `received = 0` satisfies: something sold, nothing back,
@@ -283,26 +319,49 @@ contract GenericExecutor is IShieldAdapter {
     /// @dev The bound, from the pinned rule and what was actually sold. It never
     ///      rounds up; a fixed rate is short by the tolerance, an oracle rate by
     ///      at most one unit of the output token.
-    function _minOut(
-        TransformConfig memory c,
-        address tokenIn,
-        uint256 spent,
-        uint256 priceIn,
-        uint256 priceOut
-    ) internal view returns (uint256) {
+    function _minOut(TransformConfig memory c, address tokenIn, uint256 spent, Firing memory f)
+        internal
+        view
+        returns (uint256)
+    {
         if (c.rateKind == RateKind.Fixed) {
-            uint256 exact = Math.mulDiv(spent, c.rateOrFloor, WAD);
-            uint256 tolerance = Math.mulDiv(exact, ROUNDING_TOLERANCE_BPS, BPS) + 1;
-            return exact > tolerance ? exact - tolerance : 0;
+            return _lessRounding(Math.mulDiv(spent, c.rateOrFloor, WAD));
         }
         if (c.rateKind == RateKind.Floor) return c.rateOrFloor;
+        if (c.rateKind == RateKind.Erc4626) {
+            // The vault's own lower bound on the mint, scaled to what was sold,
+            // less the owner's fee allowance, less rounding slack.
+            uint256 exact = Math.mulDiv(spent, f.sharesPerUnit, 10 ** IERC20Metadata(tokenIn).decimals());
+            return _lessRounding(Math.mulDiv(exact, BPS - c.maxSlippageBps, BPS));
+        }
         // One division: value in, scaled to output units, then the slippage.
         uint256 fair = Math.mulDiv(
             spent,
-            priceIn * 10 ** IERC20Metadata(c.tokenOut).decimals(),
-            priceOut * 10 ** IERC20Metadata(tokenIn).decimals()
+            f.priceIn * 10 ** IERC20Metadata(c.tokenOut).decimals(),
+            f.priceOut * 10 ** IERC20Metadata(tokenIn).decimals()
         );
         return Math.mulDiv(fair, BPS - c.maxSlippageBps, BPS);
+    }
+
+    /// @dev One basis point plus one unit of slack, the same for every rule
+    ///      that is a lower bound by construction rather than a market price.
+    function _lessRounding(uint256 exact) internal pure returns (uint256) {
+        uint256 tolerance = Math.mulDiv(exact, ROUNDING_TOLERANCE_BPS, BPS) + 1;
+        return exact > tolerance ? exact - tolerance : 0;
+    }
+
+    /// @dev Shares the vault would mint for one whole unit of `tokenIn`, read
+    ///      before the agent's call. Zero means the vault cannot price it.
+    function _sharesPerUnit(TransformConfig memory c, address tokenIn) internal view returns (uint256) {
+        return IERC4626(c.tokenOut).convertToShares(10 ** IERC20Metadata(tokenIn).decimals());
+    }
+
+    /// @dev The vault's underlying, or the zero address for anything that does
+    ///      not answer `asset()` — a plain token, a router, an EOA.
+    function _vaultAsset(address vault) internal view returns (address) {
+        (bool ok, bytes memory ret) = vault.staticcall(abi.encodeCall(IERC4626.asset, ()));
+        if (!ok || ret.length < 32) return address(0);
+        return abi.decode(ret, (address));
     }
 
     /// @dev Both oracle prices, read before the agent's call.
