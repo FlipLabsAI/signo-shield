@@ -23,9 +23,12 @@ design in `docs/ARCHITECTURE.md`:
   `repayWithCollateral` against Aave V3, each with its outcome check. FLIP-192.
 
 Unit tests cover every reason code and rejection path with mocks. Fork tests
-run the adapter against the real Aave V3 market on X Layer at a pinned block,
-where an agent repays real debt for a borrower that is not the caller and every
-boundary case reverts with its reason code. See [Build and test](#build-and-test).
+run the adapter against the real Aave V3 markets on X Layer and Arbitrum One
+at pinned blocks, where an agent repays real debt for a borrower that is not
+the caller, every boundary case reverts with its reason code, real OKX
+aggregator calldata is replayed through the swap leg, and the Shield firing is
+shown to do exactly what the app's own action plan does. See
+[Build and test](#build-and-test) and [`docs/TESTS.md`](docs/TESTS.md).
 
 Not built: the Tier 1 bounded executor (research scope), the execution signer,
 the app integration. Nothing is deployed; `deployments/manifest.json` is empty.
@@ -48,12 +51,27 @@ If you cloned without `--recursive`:
 git submodule update --init --recursive
 ```
 
-`forge test` runs the unit suites and the X Layer fork suites. The fork suites
-read the public X Layer RPC at pinned blocks; set `XLAYER_RPC_URL` to use
-another endpoint, and `forge test --no-match-path "test/fork/*"` to skip them
-offline. One fork test replays real OKX DEX aggregator calldata through the
-adapter (`test/fork/AaveV3Adapter.okx.fork.t.sol`); the calldata is pinned in
-the test, and `tools/okx-fixture.py` regenerates it with an OKX API key. `forge lint` and Slither (`slither .`) both run clean of anything
+`forge test` runs the unit suites and the fork suites: Aave V3 on X Layer at
+a pinned block, the same through the real OKX DEX aggregator router with
+replayed calldata, and Aave V3 on Arbitrum One. The fork suites read public
+archive endpoints; `XLAYER_RPC_URL` and `ARBITRUM_RPC_URL` override them, and
+`forge test --no-match-path "test/fork/*"` skips them offline.
+[`docs/TESTS.md`](docs/TESTS.md) maps every boundary and accounting case to
+its named test. `tools/okx-fixture.py` regenerates the OKX calldata with an
+OKX API key; the suite itself needs none.
+
+## Run the demo on a fork
+
+```bash
+tools/demo-fork.sh
+```
+
+Starts a local fork of X Layer, funds a demo wallet, deploys the contracts,
+has the user open a small Aave position and sign one mandate, and has the
+agent fire it. Prints the debt, the health factor, `canFire` and the budget
+before and after; the second `canFire` is refused because the repay lifted the
+health factor past the trigger. Needs Foundry (anvil, forge, cast) and
+python3, nothing else. `forge lint` and Slither (`slither .`) both run clean of anything
 that is not a documented design choice; the triage is in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#static-analysis).
 
@@ -63,7 +81,8 @@ that is not a documented design choice; the triage is in
 contracts/core/        the Shield, the condition module and the interfaces
 contracts/adapters/    Tier 2 pinned adapters — one per protocol, see the README there
 test/                  unit suites, test/mocks, and test/fork for pinned-chain suites
-script/                deployment script
+script/                deployment script, and the register-and-fire demo script
+tools/                 artifact export, the fork demo, the OKX fixture generator
 abi/                   generated ABIs, checked in so they can be read without the toolchain
 deployments/           manifest keyed by chain id, generated from broadcast files
 docs/                  architecture, and the reuse and attribution record

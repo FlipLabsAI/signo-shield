@@ -170,6 +170,9 @@ each left in place on purpose:
 
 ## Status
 
-Core, condition module and Aave V3 adapter are built and tested (unit suites
-plus an X Layer fork suite at a pinned block). Nothing is deployed. The Tier 1
-bounded executor stays research scope.
+Core, condition module and Aave V3 adapter are built and tested: unit suites,
+fork suites on X Layer and Arbitrum One at pinned blocks, a replay of real OKX
+aggregator calldata through the swap leg, and a parity check against the app's
+own action-plan calldata (`docs/TESTS.md`). `tools/demo-fork.sh` runs the
+whole story on a local fork. Nothing is deployed. The Tier 1 bounded executor
+stays research scope.
