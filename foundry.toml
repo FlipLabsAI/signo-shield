@@ -21,6 +21,12 @@ cbor_metadata = false
 # on clone reads as unfinished.
 deny = "warnings"
 
+[lint]
+# Mandate validity is a timestamp window by design (ERC-8226 uses the same
+# `validFrom` / `validUntil` seconds). A validator can nudge a block by seconds,
+# not by the days a window spans, so the comparison is the intended check.
+exclude_lints = ["block-timestamp"]
+
 [profile.ci]
 verbosity = 3
 fuzz = { runs = 512 }
