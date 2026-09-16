@@ -10,6 +10,7 @@ import {SignoShield} from "contracts/core/SignoShield.sol";
 import {ConditionModule} from "contracts/core/ConditionModule.sol";
 import {ISignoShield} from "contracts/core/interfaces/ISignoShield.sol";
 import {ICondition} from "contracts/core/interfaces/ICondition.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 import {MockRouter} from "./mocks/MockRouter.sol";
 import {MockAaveOracle} from "./mocks/MockAave.sol";
@@ -24,6 +25,26 @@ contract ReenteringRouter {
 
     function attack(IShieldAdapter.Context calldata ctx) external {
         executor.execute(ctx, 1, "");
+    }
+}
+
+/// A router that moves the pinned oracle in the same transaction, then pays
+/// what the moved price would justify. The bound must have been fixed before.
+contract OracleMovingRouter {
+    using SafeERC20 for IERC20;
+
+    MockAaveOracle internal immutable oracle;
+
+    constructor(MockAaveOracle oracle_) {
+        oracle = oracle_;
+    }
+
+    function swap(address tokenIn, uint256 amountIn, address tokenOut, uint256 amountOut, address to)
+        external
+    {
+        oracle.set(tokenIn, 250e8); // 10x cheaper than the pinned feed said a block ago
+        IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
+        IERC20(tokenOut).safeTransfer(to, amountOut);
     }
 }
 
@@ -272,6 +293,72 @@ contract GenericExecutorTest is Test {
         );
     }
 
+    /// Review finding M-1 (2026-09-16): anyone could send tokenIn to the
+    /// predicted sandbox; the sweep returned it to the owner, "returned" swallowed
+    /// the sale, every firing read NothingSold and the counter never moved.
+    /// Parked tokens are the owner's windfall, never this firing's refund.
+    function test_transform_parkedTokenInAtThePredictedSandboxDoesNotBrickTheMandate() public {
+        address clone = executor.nextClone(MANDATE);
+        tokenIn.mint(clone, 1e18); // a stranger parks a full firing's worth
+        // A full sale at the amount: charged in full, the owner gets the output and the parked tokens.
+        uint256 spent = _fire(_floorCfg(1), 1e18, _swap(1e18, address(tokenOut), 100e6, clone));
+        assertEq(spent, 1e18, "the sale is charged, not hidden by the parked refund");
+        assertEq(tokenIn.balanceOf(principal), 1e18, "the parked tokens land with the owner");
+        assertEq(tokenOut.balanceOf(principal), 100e6);
+        assertTrue(executor.nextClone(MANDATE) != clone, "the counter moved on");
+        // A partial sale with more parked: only what was sold is charged.
+        clone = executor.nextClone(MANDATE);
+        tokenIn.mint(clone, 5e18);
+        spent = _fire(_floorCfg(1), 1e18, _swap(0.4e18, address(tokenOut), 40e6, clone));
+        assertEq(spent, 0.4e18);
+        assertEq(tokenIn.balanceOf(principal), 1e18 + 5e18 + 0.6e18);
+    }
+
+    /// Review finding L-2: the oracle is read before the agent's call, so a
+    /// feed the route can move in the same transaction bounds nothing less.
+    function test_transform_oracleIsReadBeforeTheCall() public {
+        oracle.set(address(tokenIn), 2500e8);
+        oracle.set(address(tokenOut), 1e8);
+        OracleMovingRouter mover = new OracleMovingRouter(oracle);
+        tokenOut.mint(address(mover), 1_000_000e6);
+        GenericExecutor.TransformConfig memory c =
+            abi.decode(_oracleCfg(100), (GenericExecutor.TransformConfig));
+        c.target = address(mover);
+        c.spender = address(mover);
+        address clone = executor.nextClone(MANDATE);
+        // 250 OUT would satisfy the moved price (247.5 min); the pinned one wants 2475.
+        _fireExpecting(
+            abi.encode(c),
+            1e18,
+            abi.encodeCall(
+                OracleMovingRouter.swap, (address(tokenIn), 1e18, address(tokenOut), 250e6, clone)
+            ),
+            abi.encodeWithSelector(GenericExecutor.OutputBelowMinimum.selector, 250e6, 2475e6)
+        );
+    }
+
+    /// Review finding I-1: one division, so the bound is short by at most one
+    /// unit of the output token (was: one unit of oracle value, 1e10 wei here).
+    function test_transform_oracleBoundIsOneDivision() public {
+        oracle.set(address(tokenIn), 2500e8);
+        oracle.set(address(tokenOut18), 1e8);
+        GenericExecutor.TransformConfig memory c =
+            abi.decode(_oracleCfg(100), (GenericExecutor.TransformConfig));
+        c.tokenOut = address(tokenOut18);
+        // 3,999,999 wei at 2500:1 = 9,999,997,500 wei fair; 1 % under = 9,899,997,525.
+        uint256 minOut = 9_899_997_525;
+        address clone = executor.nextClone(MANDATE);
+        _fireExpecting(
+            abi.encode(c),
+            3_999_999,
+            _swap(3_999_999, address(tokenOut18), minOut - 1, clone),
+            abi.encodeWithSelector(GenericExecutor.OutputBelowMinimum.selector, minOut - 1, minOut)
+        );
+        clone = executor.nextClone(MANDATE);
+        _fire(abi.encode(c), 3_999_999, _swap(3_999_999, address(tokenOut18), minOut, clone));
+        assertEq(tokenOut18.balanceOf(principal), minOut);
+    }
+
     function test_transform_fixedRateIsExactUpToRounding() public {
         // One basis point plus one unit of slack: real 1:1 receipts mint a wei short.
         uint256 minOut = 1e18 - (1e18 / 10_000 + 1);
@@ -324,7 +411,17 @@ contract GenericExecutorTest is Test {
 
         c.tokenOut = address(tokenIn);
         _expectInvalid(T, abi.encode(c), "tokenOut");
+        c.tokenOut = address(executor);
+        _expectInvalid(T, abi.encode(c), "tokenOut");
+        c.tokenOut = executor.cloneTemplate();
+        _expectInvalid(T, abi.encode(c), "tokenOut");
+        c.tokenOut = address(this); // the Shield
+        _expectInvalid(T, abi.encode(c), "tokenOut");
+        c.tokenOut = address(router); // code, but no balanceOf
+        _expectInvalid(T, abi.encode(c), "tokenOut");
         c.tokenOut = address(tokenOut);
+        vm.expectRevert(abi.encodeWithSelector(GenericExecutor.ConfigInvalid.selector, "asset"));
+        executor.validateConfig(T, address(router), abi.encode(c));
         c.target = address(tokenIn);
         _expectInvalid(T, abi.encode(c), "target");
         c.target = address(this); // the Shield
@@ -341,6 +438,11 @@ contract GenericExecutorTest is Test {
         _expectInvalid(T, abi.encode(c), "floor");
         c.rateKind = GenericExecutor.RateKind.Fixed;
         _expectInvalid(T, abi.encode(c), "rate");
+        c.rateOrFloor = executor.MAX_FIXED_RATE() + 1; // would panic in the bound for any real amount
+        _expectInvalid(T, abi.encode(c), "rate");
+        c.rateOrFloor = executor.MAX_FIXED_RATE();
+        executor.validateConfig(T, address(tokenIn), abi.encode(c));
+        c.rateOrFloor = 0;
         c.rateKind = GenericExecutor.RateKind.Oracle;
         c.maxSlippageBps = 50;
         _expectInvalid(T, abi.encode(c), "oracle");
@@ -362,6 +464,9 @@ contract GenericExecutorTest is Test {
             X, abi.encode(GenericExecutor.TransferConfig({recipient: address(tokenIn)})), "recipient"
         );
         _expectInvalid(X, abi.encode(GenericExecutor.TransferConfig({recipient: address(this)})), "recipient");
+        _expectInvalid(
+            X, abi.encode(GenericExecutor.TransferConfig({recipient: executor.cloneTemplate()})), "recipient"
+        );
         executor.validateConfig(
             X, address(tokenIn), abi.encode(GenericExecutor.TransferConfig({recipient: attacker}))
         );

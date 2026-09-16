@@ -42,6 +42,8 @@ contract GenericExecutor is IShieldAdapter {
     uint16 public constant MAX_SLIPPAGE_BPS = 1_000;
     /// @notice What a fixed-rate receipt may fall short by: one basis point plus one unit.
     uint256 public constant ROUNDING_TOLERANCE_BPS = 1;
+    /// @notice The largest fixed rate the bound can compute for any amount under 2^128 units.
+    uint256 public constant MAX_FIXED_RATE = uint256(type(uint128).max) * WAD;
 
     /// @notice How the minimum output is computed. The agent has no say.
     enum RateKind {
@@ -69,6 +71,22 @@ contract GenericExecutor is IShieldAdapter {
     /// @notice Pinned at registration for `generic.transfer`.
     struct TransferConfig {
         address recipient;
+    }
+
+    /// @dev What one transform firing reads before the sandbox runs.
+    struct Firing {
+        address clone;
+        /// Input token already sitting at the predicted sandbox before this
+        /// firing funded it. Anyone can put it there; it is swept to the owner
+        /// with the rest and must not read as "returned", or a stranger could
+        /// brick a mandate for the price of one firing's worth of tokens.
+        uint256 parked;
+        /// Oracle prices, read before the agent's call runs so a feed the
+        /// route could move in the same transaction is not read after it moved.
+        uint256 priceIn;
+        uint256 priceOut;
+        uint256 inBefore;
+        uint256 outBefore;
     }
 
     address public immutable shield;
@@ -133,11 +151,17 @@ contract GenericExecutor is IShieldAdapter {
     function validateConfig(bytes32 action, address asset, bytes calldata actionConfig) external view {
         if (action == ACTION_TRANSFORM) {
             TransformConfig memory c = abi.decode(actionConfig, (TransformConfig));
-            if (c.tokenOut.code.length == 0 || c.tokenOut == asset) revert ConfigInvalid("tokenOut");
+            if (
+                c.tokenOut == asset || c.tokenOut == shield || c.tokenOut == address(this)
+                    || c.tokenOut == cloneTemplate || !_answersBalanceOf(c.tokenOut)
+            ) {
+                revert ConfigInvalid("tokenOut");
+            }
+            if (!_answersBalanceOf(asset)) revert ConfigInvalid("asset");
             if (_isReserved(c.target, asset, c.tokenOut)) revert ConfigInvalid("target");
             if (_isReserved(c.spender, asset, c.tokenOut)) revert ConfigInvalid("spender");
             if (c.rateKind == RateKind.Fixed) {
-                if (c.rateOrFloor == 0) revert ConfigInvalid("rate");
+                if (c.rateOrFloor == 0 || c.rateOrFloor > MAX_FIXED_RATE) revert ConfigInvalid("rate");
             } else if (c.rateKind == RateKind.Oracle) {
                 if (c.oracle.code.length == 0) revert ConfigInvalid("oracle");
                 if (c.maxSlippageBps == 0 || c.maxSlippageBps > MAX_SLIPPAGE_BPS) {
@@ -161,7 +185,7 @@ contract GenericExecutor is IShieldAdapter {
             TransferConfig memory c = abi.decode(actionConfig, (TransferConfig));
             if (
                 c.recipient == address(0) || c.recipient == asset || c.recipient == shield
-                    || c.recipient == address(this)
+                    || c.recipient == address(this) || c.recipient == cloneTemplate
             ) {
                 revert ConfigInvalid("recipient");
             }
@@ -188,39 +212,47 @@ contract GenericExecutor is IShieldAdapter {
         returns (uint256 spent)
     {
         TransformConfig memory c = abi.decode(ctx.actionConfig, (TransformConfig));
-        uint256 inBefore = IERC20(ctx.asset).balanceOf(ctx.principal);
-        uint256 outBefore = IERC20(c.tokenOut).balanceOf(ctx.principal);
+        Firing memory f;
+        f.inBefore = IERC20(ctx.asset).balanceOf(ctx.principal);
+        f.outBefore = IERC20(c.tokenOut).balanceOf(ctx.principal);
+        if (c.rateKind == RateKind.Oracle) (f.priceIn, f.priceOut) = _prices(c, ctx.asset);
 
         // A fresh sandbox, funded with exactly the amount, one call, swept.
-        address clone = _runSandbox(ctx, c, amount, data);
+        _runSandbox(ctx, c, f, amount, data);
 
-        // Measured on the owner, never reported by the call.
-        uint256 received = IERC20(c.tokenOut).balanceOf(ctx.principal) - outBefore;
-        uint256 returned = IERC20(ctx.asset).balanceOf(ctx.principal) - inBefore;
+        // Measured on the owner, never reported by the call. What was already
+        // parked at the sandbox came back too, but was never this firing's.
+        uint256 received = IERC20(c.tokenOut).balanceOf(ctx.principal) - f.outBefore;
+        uint256 returned = IERC20(ctx.asset).balanceOf(ctx.principal) - f.inBefore;
+        returned = returned > f.parked ? returned - f.parked : 0;
         spent = returned >= amount ? 0 : amount - returned;
         if (spent == 0) revert NothingSold();
-        _settle(ctx, c, clone, spent, received);
+        _settle(ctx, c, f, spent, received);
     }
 
-    /// @dev Deploy the clone for this firing, fund it, run the one call.
-    function _runSandbox(Context calldata ctx, TransformConfig memory c, uint256 amount, bytes calldata data)
-        internal
-        returns (address clone)
-    {
-        clone = Clones.cloneDeterministic(cloneTemplate, _salt(ctx.mandateId, firings[ctx.mandateId]++));
-        IERC20(ctx.asset).safeTransfer(clone, amount);
-        DisposableClone(clone).run(c.target, c.spender, ctx.asset, amount, data, c.tokenOut, ctx.principal);
+    /// @dev Deploy the clone for this firing, note what already sat there, fund it, run the one call.
+    function _runSandbox(
+        Context calldata ctx,
+        TransformConfig memory c,
+        Firing memory f,
+        uint256 amount,
+        bytes calldata data
+    ) internal {
+        f.clone = Clones.cloneDeterministic(cloneTemplate, _salt(ctx.mandateId, firings[ctx.mandateId]++));
+        f.parked = IERC20(ctx.asset).balanceOf(f.clone);
+        IERC20(ctx.asset).safeTransfer(f.clone, amount);
+        DisposableClone(f.clone).run(c.target, c.spender, ctx.asset, amount, data, c.tokenOut, ctx.principal);
     }
 
     /// @dev The bound, the check, the receipt.
     function _settle(
         Context calldata ctx,
         TransformConfig memory c,
-        address clone,
+        Firing memory f,
         uint256 spent,
         uint256 received
     ) internal {
-        uint256 minOut = _minOut(c, ctx.asset, spent);
+        uint256 minOut = _minOut(c, ctx.asset, spent, f.priceIn, f.priceOut);
         // Never zero. Fixed and Oracle rates round down, and for a dust-sized
         // sale the rounding slack can exceed the exact figure, leaving a bound
         // of 0 that `received = 0` satisfies: something sold, nothing back,
@@ -231,8 +263,10 @@ contract GenericExecutor is IShieldAdapter {
         // After the sandbox ran on purpose: the receipt carries the measured
         // outcome; the Shield is nonReentrant and this contract keeps no state
         // a nested call could reorder.
-        // forge-lint: disable-next-line(reentrancy-events)
-        emit Transformed(ctx.mandateId, ctx.principal, ctx.asset, c.tokenOut, clone, spent, received, minOut);
+        // forge-lint: disable-next-item(reentrancy-events)
+        emit Transformed(
+            ctx.mandateId, ctx.principal, ctx.asset, c.tokenOut, f.clone, spent, received, minOut
+        );
     }
 
     function _transfer(Context calldata ctx, uint256 amount, bytes calldata data) internal returns (uint256) {
@@ -246,28 +280,48 @@ contract GenericExecutor is IShieldAdapter {
 
     // ---------------------------------------------------------------- helpers
 
-    /// @dev The bound, from the pinned rule and what was actually sold. Integer
-    ///      division rounds it down by at most one unit of the output token.
-    function _minOut(TransformConfig memory c, address tokenIn, uint256 spent)
-        internal
-        view
-        returns (uint256)
-    {
+    /// @dev The bound, from the pinned rule and what was actually sold. It never
+    ///      rounds up; a fixed rate is short by the tolerance, an oracle rate by
+    ///      at most one unit of the output token.
+    function _minOut(
+        TransformConfig memory c,
+        address tokenIn,
+        uint256 spent,
+        uint256 priceIn,
+        uint256 priceOut
+    ) internal view returns (uint256) {
         if (c.rateKind == RateKind.Fixed) {
             uint256 exact = Math.mulDiv(spent, c.rateOrFloor, WAD);
             uint256 tolerance = Math.mulDiv(exact, ROUNDING_TOLERANCE_BPS, BPS) + 1;
             return exact > tolerance ? exact - tolerance : 0;
         }
         if (c.rateKind == RateKind.Floor) return c.rateOrFloor;
-        uint256 pIn = IPriceOracle(c.oracle).getAssetPrice(tokenIn);
-        uint256 pOut = IPriceOracle(c.oracle).getAssetPrice(c.tokenOut);
-        if (pIn == 0 || pOut == 0) revert ConfigInvalid("oracle");
+        // One division: value in, scaled to output units, then the slippage.
         uint256 fair = Math.mulDiv(
-            Math.mulDiv(spent, pIn, 10 ** IERC20Metadata(tokenIn).decimals()),
-            10 ** IERC20Metadata(c.tokenOut).decimals(),
-            pOut
+            spent,
+            priceIn * 10 ** IERC20Metadata(c.tokenOut).decimals(),
+            priceOut * 10 ** IERC20Metadata(tokenIn).decimals()
         );
         return Math.mulDiv(fair, BPS - c.maxSlippageBps, BPS);
+    }
+
+    /// @dev Both oracle prices, read before the agent's call.
+    function _prices(TransformConfig memory c, address tokenIn)
+        internal
+        view
+        returns (uint256 priceIn, uint256 priceOut)
+    {
+        priceIn = IPriceOracle(c.oracle).getAssetPrice(tokenIn);
+        priceOut = IPriceOracle(c.oracle).getAssetPrice(c.tokenOut);
+        if (priceIn == 0 || priceOut == 0) revert ConfigInvalid("oracle");
+    }
+
+    /// @dev True when `token` has code and answers `balanceOf` with a word: the
+    ///      one read every firing's measurement depends on.
+    function _answersBalanceOf(address token) internal view returns (bool) {
+        if (token.code.length == 0) return false;
+        (bool ok, bytes memory ret) = token.staticcall(abi.encodeCall(IERC20.balanceOf, (address(this))));
+        return ok && ret.length >= 32;
     }
 
     /// @dev Addresses the surface may never be: the tokens in play, the Shield,

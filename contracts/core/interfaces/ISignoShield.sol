@@ -29,10 +29,9 @@ import {ICondition} from "./ICondition.sol";
 ///
 /// Tiers. A mandate pins an execution implementation (`adapter`, `action`).
 /// Tier 2 pins a protocol adapter that builds the protocol call itself
-/// (`contracts/adapters/`). Tier 1, bounded execution through a disposable
-/// clone and a post-condition on the owner's balances, is a further
-/// implementation behind the same entry point and is research scope
-/// (FLIP-217), not built here.
+/// (`contracts/adapters/`). Tier 1 pins the generic executor
+/// (`contracts/executors/`): bounded execution through a disposable clone and
+/// a post-condition on the owner's balances, behind the same entry point.
 interface ISignoShield {
     /// @notice Why a firing is refused. `canFire` returns the FIRST failing
     ///         check in a fixed order; `fire` reverts with the same code.

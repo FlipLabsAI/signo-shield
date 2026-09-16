@@ -25,9 +25,10 @@ Three pieces, none of which parse calldata.
    The agent supplies only a number, a target and calldata. The contract
    computes the bound itself.
 
-   Repay: the debt token must fall. Supply: the aToken must rise. ERC-4626
-   deposit: shares must rise. Swap: the output token must rise at the owner's
-   limit rate.
+   One rule: the pinned output token must rise on the owner by at least the
+   bound. Supply: the aToken must rise. ERC-4626 deposit: shares must rise.
+   Swap: the output token must rise at the owner's limit rate. A repay (the
+   debt token must fall) is not this shape; it is the Aave adapter's.
 
 **Why this is not a calldata filter.** A filter parses the call, and is fooled
 by batched calls and by delegatecall. A post-condition measures the owner's

@@ -34,11 +34,20 @@ computes the bound from the rule the owner pinned.
   registration and dry-run then: a pair it does not price is refused. Aave's
   oracle has the required shape; any other feed is wrapped into it by a
   contract, never replaced by an agent-supplied quote.
-- **Floor**: `minOut = the pinned number`, whatever the amount. A fire-once
-  order where the owner names the count.
+- **Floor**: `minOut = the pinned number`, whatever the amount. An order
+  where the owner names the count: every firing must clear the whole number,
+  so a partial sale is refused by construction, and the mandate fires as
+  often as its caps allow, each time at the full count. "Once" is the app's
+  firing policy and the lifetime cap, not this rule.
 
-The bound is computed on what was actually sold (measured, see below), and
-integer division rounds it down by at most one unit of the output token.
+The bound is computed on what was actually sold (measured, see below). It
+never rounds up. A fixed rate is short by the stated tolerance (one basis
+point plus one unit; the agent can take that on every firing, and it is
+part of the loss bound alongside the fee); an oracle rate is computed in a
+single division and is short by at most one unit of the output token. A
+bound that rounds to zero is raised to one unit: a sale for nothing is never
+a success. Oracle prices are read before the agent's call runs, so a feed
+the route could move inside the transaction is not read after it moved.
 
 ## What happens in a firing
 
@@ -50,10 +59,15 @@ integer division rounds it down by at most one unit of the output token.
 3. The clone is funded with exactly the amount, approves the spender for it,
    makes one call to the target with the agent's calldata, clears the
    approval, and sends every input and output token it holds to the owner.
-   A clone runs once and is never reused.
+   A clone runs once and is never reused. Any other token a route leaves on
+   a clone stays there; only the agent's own calldata can put it there.
 4. The executor measures the owner's balances: what left for good is the
    amount minus what came back; what arrived is the output token's rise. It
    reverts unless something was sold and the output reached the bound.
+   Input tokens that already sat at the predicted sandbox before the firing
+   (anyone can send them there) are swept to the owner with the rest but do
+   not count as "came back", so a stranger cannot make every firing read as
+   a sale of nothing.
 5. The Shield measures the owner's balance drop itself, charges the fee on
    the measured spend, and reconciles the budget.
 
@@ -63,8 +77,19 @@ Anything a balance check on the owner cannot see: borrowing, withdrawing
 collateral, leverage loops, liquidity positions, credit delegation and
 operator bits, bridges (a source-chain transaction cannot revert for a
 destination failure), multi-call routes, any output token without a pinned
-rate source, and other execution models (Solana). Those are protocol
-adapters (`contracts/adapters/`) or nothing.
+rate source, debt reduction (a repay is the adapter's shape: the executor
+only knows "the output token must rise"), native-coin output, and other
+execution models (Solana). Those are protocol adapters
+(`contracts/adapters/`) or nothing.
+
+Two things the measurement cannot see, so the app must refuse at target
+vetting: a target that pulls from a caller-chosen payer rather than
+`msg.sender` (the owner's standing allowance to it for any token other than
+the two measured would be drained while the firing passes; the two measured
+are safe, a pull of more than the amount reverts the firing), and a
+recipient for `generic.transfer` that is the owner or a contract that
+cannot hold tokens (a round trip that still pays the fee, or a stranding).
+OKX's router and Aave's pool pull from `msg.sender` only.
 
 ## What a review has to try
 
