@@ -1,0 +1,48 @@
+[
+  {
+    "type": "function",
+    "name": "isMet",
+    "inputs": [
+      {
+        "name": "condition",
+        "type": "tuple",
+        "internalType": "struct ICondition.Condition",
+        "components": [
+          {
+            "name": "target",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "callData",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "wordOffset",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "comparator",
+            "type": "uint8",
+            "internalType": "enum ICondition.Comparator"
+          },
+          {
+            "name": "threshold",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  }
+]
