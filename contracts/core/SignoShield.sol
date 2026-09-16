@@ -5,6 +5,7 @@ import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ICondition} from "./interfaces/ICondition.sol";
 import {IShieldAdapter} from "./interfaces/IShieldAdapter.sol";
 import {ISignoShield} from "./interfaces/ISignoShield.sol";
@@ -132,47 +133,59 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
         MandateReason reason = _check(m, msg.sender, amount);
         if (reason != MandateReason.OK) revert MandateBlocked(mandateId, reason);
 
-        // Reserve before any external call. A reentrant or nested firing sees
-        // the budget already taken; the reservation is reconciled below.
-        m.cumulativeUsed += amount;
-
-        address recipient = feeRecipient;
-        uint256 fee = recipient == address(0) ? 0 : (amount * m.feeBps) / BPS;
-        uint256 forwarded = amount - fee;
+        // Reserve the worst case before any external call: the amount plus
+        // the fee it would carry if all of it were spent. A reentrant or
+        // nested firing sees the budget already taken; the reservation is
+        // reconciled to the real figure below.
+        uint256 feeOn = feeRecipient == address(0) ? 0 : m.feeBps;
+        uint256 reserved = amount + Math.mulDiv(amount, feeOn, BPS);
+        m.cumulativeUsed += reserved;
 
         // Pulling from the principal is the whole point: the principal granted
         // this contract the allowance so that exactly this, bounded by the
         // checks above, can happen without their signature.
-        IERC20 asset = IERC20(m.asset);
         // forge-lint: disable-next-line(arbitrary-send-erc20)
-        if (fee != 0) asset.safeTransferFrom(m.principal, recipient, fee);
-        // forge-lint: disable-next-line(arbitrary-send-erc20)
-        asset.safeTransferFrom(m.principal, m.adapter, forwarded);
+        IERC20(m.asset).safeTransferFrom(m.principal, m.adapter, amount);
+        uint256 used = _runAdapter(m, mandateId, amount, data);
 
-        uint256 used = IShieldAdapter(m.adapter)
-            .execute(
-                IShieldAdapter.Context({
-                    mandateId: mandateId,
-                    principal: m.principal,
-                    agent: m.agent,
-                    action: m.action,
-                    asset: m.asset,
-                    actionConfig: m.actionConfig
-                }),
-                forwarded,
-                data
-            );
-        if (used > forwarded) revert SpendExceedsAmount(used, forwarded);
+        // The fee is on what was actually spent, taken only now that the
+        // outcome stands. Anything the adapter did not use is already back
+        // with the principal, so this pull is covered.
+        uint256 fee = Math.mulDiv(used, feeOn, BPS);
+        // forge-lint: disable-next-line(arbitrary-send-erc20)
+        if (fee != 0) IERC20(m.asset).safeTransferFrom(m.principal, feeRecipient, fee);
 
         // Only what left the principal for good counts against the budget.
-        // The fee exists only because this whole transaction succeeded.
         spent = used + fee;
-        m.cumulativeUsed -= amount - spent;
+        m.cumulativeUsed -= reserved - spent;
 
         // After the external call on purpose: the receipt carries the reconciled
         // spend, and `nonReentrant` rules out a nested firing reordering it.
         // forge-lint: disable-next-line(reentrancy-events)
         emit MandateFired(mandateId, msg.sender, m.adapter, m.action, amount, spent, fee);
+    }
+
+    /// @dev The one external call a firing makes. An adapter revert is
+    ///      re-thrown, never swallowed: one typed code for the relayer, the
+    ///      adapter's own revert data for whoever has to read it.
+    function _runAdapter(Mandate storage m, bytes32 mandateId, uint256 amount, bytes calldata data)
+        internal
+        returns (uint256 used)
+    {
+        IShieldAdapter.Context memory ctx = IShieldAdapter.Context({
+            mandateId: mandateId,
+            principal: m.principal,
+            agent: m.agent,
+            action: m.action,
+            asset: m.asset,
+            actionConfig: m.actionConfig
+        });
+        try IShieldAdapter(m.adapter).execute(ctx, amount, data) returns (uint256 consumed) {
+            used = consumed;
+        } catch (bytes memory adapterError) {
+            revert OutcomeRejected(mandateId, MandateReason.POSTCONDITION_FAILED, adapterError);
+        }
+        if (used > amount) revert SpendExceedsAmount(used, amount);
     }
 
     // -------------------------------------------------------------------- views
@@ -185,6 +198,16 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
     {
         Mandate storage m = _mandates[mandateId];
         reason = _check(m, m.agent, amount);
+        ok = reason == MandateReason.OK;
+    }
+
+    /// @inheritdoc ISignoShield
+    function canFireBy(bytes32 mandateId, address caller, uint256 amount)
+        external
+        view
+        returns (bool ok, MandateReason reason)
+    {
+        reason = _check(_mandates[mandateId], caller, amount);
         ok = reason == MandateReason.OK;
     }
 
@@ -274,6 +297,13 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
         super.acceptOwnership();
     }
 
+    /// @dev The admin seat is never abandoned: without it no adapter could be
+    ///      listed and no enforcer appointed, and nothing is gained by it since
+    ///      the admin already cannot reach funds or live mandates.
+    function renounceOwnership() public view override(Ownable) onlyOwner {
+        revert InvalidParams("renounceOwnership");
+    }
+
     // ----------------------------------------------------------------- internal
 
     /// @dev The single check sequence `canFire` reports and `fire` enforces.
@@ -291,7 +321,12 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
         if (m.revoked) return MandateReason.REVOKED;
         if (amount == 0) return MandateReason.ZERO_AMOUNT;
         if (amount > m.maxTransactionValue) return MandateReason.OVER_TX_CAP;
-        if (amount > m.maxCumulativeValue - m.cumulativeUsed) return MandateReason.OVER_CUMULATIVE_CAP;
+        // The lifetime cap covers the fee too, so the worst case (all of the
+        // amount spent, fee on all of it) is what has to fit.
+        uint256 feeOn = feeRecipient == address(0) ? 0 : m.feeBps;
+        if (amount + Math.mulDiv(amount, feeOn, BPS) > m.maxCumulativeValue - m.cumulativeUsed) {
+            return MandateReason.OVER_CUMULATIVE_CAP;
+        }
         if (m.condition.target != address(0) && !conditionModule.isMet(m.condition)) {
             return MandateReason.TRIGGER_NOT_MET;
         }

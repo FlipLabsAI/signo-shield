@@ -127,6 +127,40 @@
   },
   {
     "type": "function",
+    "name": "canFireBy",
+    "inputs": [
+      {
+        "name": "mandateId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "ok",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "reason",
+        "type": "uint8",
+        "internalType": "enum ISignoShield.MandateReason"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "conditionModule",
     "inputs": [],
     "outputs": [
@@ -890,6 +924,27 @@
     "type": "error",
     "name": "NotPrincipal",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OutcomeRejected",
+    "inputs": [
+      {
+        "name": "mandateId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "reason",
+        "type": "uint8",
+        "internalType": "enum ISignoShield.MandateReason"
+      },
+      {
+        "name": "adapterError",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ]
   },
   {
     "type": "error",

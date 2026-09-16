@@ -128,6 +128,11 @@ interface ISignoShield {
 
     /// @notice The firing was refused; `reason` is what `canFire` would return.
     error MandateBlocked(bytes32 mandateId, MandateReason reason);
+    /// @notice The pinned adapter did not produce the required outcome. Every
+    ///         adapter-side revert surfaces as this, with the adapter's own
+    ///         revert data attached, so a relayer reads one typed code and
+    ///         still sees the exact cause.
+    error OutcomeRejected(bytes32 mandateId, MandateReason reason, bytes adapterError);
     /// @notice Only the mandate's principal may amend or revoke it.
     error NotPrincipal();
     /// @notice Only an enforcer may freeze or unfreeze an agent.
@@ -159,9 +164,10 @@ interface ISignoShield {
     function revokeMandate(bytes32 mandateId) external;
 
     /// @notice Fire a mandate. Agent only. Runs every check in `canFire`'s
-    ///         order, reserves `amount` against the budget, pulls it from the
-    ///         principal, hands it to the pinned adapter, then reconciles the
-    ///         budget to what was actually spent.
+    ///         order, reserves `amount` plus the worst-case fee against the
+    ///         budget, pulls `amount` from the principal, hands it to the
+    ///         pinned adapter, takes the fee on what the adapter actually
+    ///         spent, then reconciles the budget to spend plus fee.
     /// @param data Per-firing input for the adapter (for example aggregator
     ///        calldata). Empty for most actions.
     /// @return spent What left the principal's wallet for good, fee included.
@@ -171,9 +177,18 @@ interface ISignoShield {
     ///         Returns the first failing check, in this fixed order:
     ///         NONEXISTENT, AGENT_FROZEN, NOT_AGENT, NOT_YET_VALID, EXPIRED,
     ///         REVOKED, ZERO_AMOUNT, OVER_TX_CAP, OVER_CUMULATIVE_CAP,
-    ///         TRIGGER_NOT_MET. A trigger that cannot be evaluated reverts
-    ///         rather than reporting false.
+    ///         TRIGGER_NOT_MET. Assumes the mandate's agent is the caller, so
+    ///         it never answers NOT_AGENT; `canFireBy` checks a given caller.
+    ///         A trigger that cannot be evaluated reverts rather than
+    ///         reporting false.
     function canFire(bytes32 mandateId, uint256 amount) external view returns (bool ok, MandateReason reason);
+
+    /// @notice `canFire` for a specific caller: what `fire` would answer if
+    ///         `caller` sent it, NOT_AGENT included.
+    function canFireBy(bytes32 mandateId, address caller, uint256 amount)
+        external
+        view
+        returns (bool ok, MandateReason reason);
 
     function getMandate(bytes32 mandateId) external view returns (Mandate memory);
 
@@ -187,6 +202,8 @@ interface ISignoShield {
     function isAdapterListed(address adapter) external view returns (bool);
     function conditionModule() external view returns (ICondition);
     function feeRecipient() external view returns (address);
-    /// @notice The fee, in basis points of each firing, stamped into every NEW mandate.
+    /// @notice The fee, in basis points of what each firing actually spends,
+    ///         stamped into every NEW mandate. Taken on top of the amount and
+    ///         counted against the lifetime cap.
     function feeBps() external view returns (uint16);
 }
