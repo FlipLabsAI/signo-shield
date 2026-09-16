@@ -10,6 +10,8 @@ import {ICondition} from "contracts/core/interfaces/ICondition.sol";
 import {ISignoShield} from "contracts/core/interfaces/ISignoShield.sol";
 import {MockAdapter} from "./mocks/MockAdapter.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IShieldAdapter} from "../contracts/core/interfaces/IShieldAdapter.sol";
 import {MockTarget} from "./mocks/MockTarget.sol";
 
 /// Core enforcement (FLIP-191). Every reason code, every rejection path, the
@@ -656,8 +658,15 @@ contract SignoShieldTest is Test {
         p.actionConfig = hex"01";
         target.set(0, 0, 1e18);
 
-        vm.expectEmit(true, true, true, false, address(shield));
-        emit ISignoShield.MandateRendered(principal, agent, id, shield.getMandate(id));
+        // The emitted record must be the POST-amend one (FLIP-201 I-8).
+        ISignoShield.Mandate memory expected = shield.getMandate(id);
+        expected.maxTransactionValue = 10e6;
+        expected.maxCumulativeValue = 60e6;
+        expected.validUntil = VALID_UNTIL + 1;
+        expected.condition = p.condition;
+        expected.actionConfig = hex"01";
+        vm.expectEmit(true, true, true, true, address(shield));
+        emit ISignoShield.MandateRendered(principal, agent, id, expected);
         vm.prank(principal);
         shield.amendMandate(id, p);
 
@@ -910,5 +919,214 @@ contract SignoShieldTest is Test {
     function test_constructor_requiresAConditionModule() public {
         vm.expectRevert(abi.encodeWithSelector(ISignoShield.InvalidParams.selector, "conditionModule"));
         new SignoShield(admin, ICondition(stranger), FEE_BPS);
+    }
+
+    // ------------------------------------------------- review fixes (FLIP-201)
+
+    /// M-1: the Shield measures what left the principal; an adapter that keeps
+    /// the tokens and reports nothing is charged for everything it took.
+    function test_fire_chargesWhatLeftThePrincipal_notWhatTheAdapterReports() public {
+        DishonestAdapter bad = new DishonestAdapter(address(shield));
+        vm.startPrank(admin);
+        shield.setAdapter(address(bad), true);
+        shield.setFeeRecipient(feeSink);
+        vm.stopPrank();
+        ISignoShield.MandateParams memory p = _defaultParams();
+        p.adapter = address(bad);
+        bytes32 id = _register(p);
+        uint256 before = token.balanceOf(principal);
+
+        assertEq(_fire(id, TX_CAP), 100.1e6, "spent = measured amount + fee on it");
+        assertEq(_fire(id, TX_CAP), 100.1e6);
+        assertEq(shield.getMandate(id).cumulativeUsed, 200.2e6, "counter follows the measurement");
+        assertEq(before - token.balanceOf(principal), 200.2e6, "principal lost exactly the counter");
+        assertEq(token.balanceOf(feeSink), 0.2e6, "fee on the measured spend");
+        // The lifetime cap binds on what actually left, not on the report.
+        _assertReason(id, TX_CAP, ISignoShield.MandateReason.OVER_CUMULATIVE_CAP);
+        vm.prank(agent);
+        vm.expectRevert(_blocked(id, ISignoShield.MandateReason.OVER_CUMULATIVE_CAP));
+        shield.fire(id, TX_CAP, "");
+    }
+
+    /// More than `amount` leaving the principal is a failure of the firing.
+    function test_fire_refusesWhenMoreThanTheAmountLeftThePrincipal() public {
+        GreedyAdapter greedy = new GreedyAdapter(address(shield));
+        vm.prank(admin);
+        shield.setAdapter(address(greedy), true);
+        vm.prank(principal);
+        token.approve(address(greedy), type(uint256).max); // an unrelated allowance the adapter abuses
+        ISignoShield.MandateParams memory p = _defaultParams();
+        p.adapter = address(greedy);
+        bytes32 id = _register(p);
+        vm.prank(agent);
+        vm.expectRevert(abi.encodeWithSelector(ISignoShield.SpendExceedsAmount.selector, 60e6, 50e6));
+        shield.fire(id, 50e6, "");
+    }
+
+    /// L-1: the fee's worst case is out of the principal's wallet before the
+    /// adapter runs, so the adapter's outcome check sees the final state, and
+    /// what was not owed comes back.
+    function test_fire_feeLeavesBeforeTheAdapterAndSettlesAfter() public {
+        WitnessAdapter witness = new WitnessAdapter(address(shield));
+        vm.startPrank(admin);
+        shield.setAdapter(address(witness), true);
+        shield.setFeeRecipient(feeSink);
+        vm.stopPrank();
+        ISignoShield.MandateParams memory p = _defaultParams();
+        p.adapter = address(witness);
+        bytes32 id = _register(p);
+
+        uint256 before = token.balanceOf(principal);
+        uint256 spent = _fire(id, 100e6);
+        // At execute time the principal was already short the amount AND the fee's worst case.
+        assertEq(witness.principalBalanceAtExecute(), before - 100e6 - 0.1e6);
+        // The adapter spent half: fee on half, the rest of the worst case refunded.
+        assertEq(spent, 50e6 + 0.05e6);
+        assertEq(token.balanceOf(principal), before - 50e6 - 0.05e6, "unspent amount and unowed fee are back");
+        assertEq(token.balanceOf(feeSink), 0.05e6);
+        assertEq(token.balanceOf(address(shield)), 0, "the Shield holds nothing between transactions");
+    }
+
+    /// L-3: allowance and balance shortfalls are reason codes, before the trigger.
+    function test_canFire_reportsAllowanceAndBalanceShortfalls() public {
+        vm.prank(admin);
+        shield.setFeeRecipient(feeSink);
+        bytes32 id = _register();
+        vm.prank(principal);
+        token.approve(address(shield), 50e6);
+        // 50e6 needs 50.05e6 with the fee.
+        _assertReason(id, 50e6, ISignoShield.MandateReason.INSUFFICIENT_ALLOWANCE);
+        vm.prank(admin);
+        shield.setFeeRecipient(address(0));
+        _assertReason(id, 50e6, ISignoShield.MandateReason.OK);
+        vm.prank(principal);
+        token.approve(address(shield), type(uint256).max);
+        vm.prank(principal);
+        token.transfer(stranger, 1_000e6 - 30e6);
+        _assertReason(id, 50e6, ISignoShield.MandateReason.INSUFFICIENT_BALANCE);
+        _assertReason(id, 30e6, ISignoShield.MandateReason.OK);
+        vm.prank(agent);
+        vm.expectRevert(_blocked(id, ISignoShield.MandateReason.INSUFFICIENT_BALANCE));
+        shield.fire(id, 50e6, "");
+    }
+
+    /// L-3: a lifetime cap that cannot hold one firing at the per-firing cap plus its fee is refused.
+    function test_register_rejectsLifetimeCapUnderOneFullFiringWithFee() public {
+        ISignoShield.MandateParams memory p = _defaultParams();
+        p.maxTransactionValue = 100e6;
+        p.maxCumulativeValue = 100e6;
+        vm.prank(principal);
+        vm.expectRevert(abi.encodeWithSelector(ISignoShield.InvalidParams.selector, "maxCumulativeValue"));
+        shield.registerMandate(p);
+        p.maxCumulativeValue = 100.1e6;
+        _register(p);
+    }
+
+    /// I-2: an absurd per-firing cap is a clean rejection, never a panic.
+    function test_register_absurdCapIsRejectedCleanly() public {
+        ISignoShield.MandateParams memory p = _defaultParams();
+        p.maxTransactionValue = type(uint256).max;
+        p.maxCumulativeValue = type(uint256).max;
+        vm.prank(principal);
+        vm.expectRevert(abi.encodeWithSelector(ISignoShield.InvalidParams.selector, "maxCumulativeValue"));
+        shield.registerMandate(p);
+    }
+
+    /// L-4: a trigger that cannot be read is refused at registration.
+    function test_register_dryRunsTheTrigger() public {
+        ISignoShield.MandateParams memory p = _defaultParams();
+        p.condition = _hfBelow(1e18);
+        p.condition.target = stranger; // no code
+        vm.prank(principal);
+        vm.expectRevert();
+        shield.registerMandate(p);
+        p.condition.target = address(target);
+        p.condition.wordOffset = 200; // past the return data
+        vm.prank(principal);
+        vm.expectRevert();
+        shield.registerMandate(p);
+        p.condition.wordOffset = 2;
+        _register(p);
+    }
+
+    /// L-2: the fee can never be pointed where it could not be spent.
+    function test_setFeeRecipient_rejectsTheShieldAndListedAdapters() public {
+        vm.startPrank(admin);
+        vm.expectRevert(abi.encodeWithSelector(ISignoShield.InvalidParams.selector, "feeRecipient"));
+        shield.setFeeRecipient(address(shield));
+        vm.expectRevert(abi.encodeWithSelector(ISignoShield.InvalidParams.selector, "feeRecipient"));
+        shield.setFeeRecipient(address(adapter));
+        shield.setFeeRecipient(feeSink);
+        vm.stopPrank();
+        assertEq(shield.feeRecipient(), feeSink);
+    }
+}
+
+/// A listed adapter that keeps the tokens and reports nothing spent (FLIP-201 M-1).
+contract DishonestAdapter is IShieldAdapter {
+    address public immutable shield;
+    address public constant THIEF = address(0xbad);
+
+    constructor(address shield_) {
+        shield = shield_;
+    }
+
+    function supportsAction(bytes32) external pure returns (bool) {
+        return true;
+    }
+
+    function validateConfig(bytes32, address, bytes calldata) external pure {}
+
+    function execute(Context calldata ctx, uint256 amount, bytes calldata) external returns (uint256) {
+        require(msg.sender == shield, "not shield");
+        IERC20(ctx.asset).transfer(THIEF, amount);
+        return 0;
+    }
+}
+
+/// An adapter that pulls more than the Shield gave it through an unrelated allowance.
+contract GreedyAdapter is IShieldAdapter {
+    address public immutable shield;
+
+    constructor(address shield_) {
+        shield = shield_;
+    }
+
+    function supportsAction(bytes32) external pure returns (bool) {
+        return true;
+    }
+
+    function validateConfig(bytes32, address, bytes calldata) external pure {}
+
+    function execute(Context calldata ctx, uint256 amount, bytes calldata) external returns (uint256) {
+        require(msg.sender == shield, "not shield");
+        IERC20(ctx.asset).transferFrom(ctx.principal, address(0xbad), 10e6);
+        IERC20(ctx.asset).transfer(address(0xbad), amount);
+        return amount;
+    }
+}
+
+/// An adapter that records the principal's balance when it runs and spends half.
+contract WitnessAdapter is IShieldAdapter {
+    address public immutable shield;
+    uint256 public principalBalanceAtExecute;
+
+    constructor(address shield_) {
+        shield = shield_;
+    }
+
+    function supportsAction(bytes32) external pure returns (bool) {
+        return true;
+    }
+
+    function validateConfig(bytes32, address, bytes calldata) external pure {}
+
+    function execute(Context calldata ctx, uint256 amount, bytes calldata) external returns (uint256) {
+        require(msg.sender == shield, "not shield");
+        principalBalanceAtExecute = IERC20(ctx.asset).balanceOf(ctx.principal);
+        uint256 spend = amount / 2;
+        IERC20(ctx.asset).transfer(address(0xdead), spend);
+        IERC20(ctx.asset).transfer(ctx.principal, amount - spend);
+        return spend;
     }
 }

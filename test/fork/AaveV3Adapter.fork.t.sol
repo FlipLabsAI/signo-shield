@@ -219,7 +219,7 @@ contract AaveV3AdapterForkTest is Test {
 
     /// Asking for more than is owed repays the debt and returns the rest.
     function test_repay_clampsToTheDebtAndRefundsTheRest() public {
-        bytes32 id = _register(_params(adapter.ACTION_REPAY(), USDT0, 100e6, 100e6, _noCondition()));
+        bytes32 id = _register(_params(adapter.ACTION_REPAY(), USDT0, 100e6, 100.1e6, _noCondition()));
         uint256 debtBefore = IERC20(V_USDT0).balanceOf(principal);
         uint256 walletBefore = IERC20(USDT0).balanceOf(principal);
 

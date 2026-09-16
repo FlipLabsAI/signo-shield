@@ -72,7 +72,7 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
     /// @inheritdoc ISignoShield
     function registerMandate(MandateParams calldata params) external returns (bytes32 mandateId) {
         if (!_adapters[params.adapter]) revert AdapterNotListed(params.adapter);
-        _validateParams(msg.sender, params);
+        _validateParams(params, feeBps);
 
         mandateId = keccak256(abi.encode(block.chainid, address(this), msg.sender, nonces[msg.sender]++));
         Mandate storage m = _mandates[mandateId];
@@ -86,6 +86,9 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
         m.feeBps = feeBps;
         _writeMutable(m, params);
 
+        // The only external call before this is the trigger dry-run, a
+        // staticcall into our own immutable module: it cannot reenter.
+        // forge-lint: disable-next-line(reentrancy-events)
         emit MandateRendered(msg.sender, params.agent, mandateId, m);
     }
 
@@ -105,9 +108,11 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
         // The adapter is pinned, so it is consulted even if it has since been
         // delisted: delisting gates new registrations, not the principal's
         // right to narrow or extend what it already signed.
-        _validateParams(msg.sender, params);
+        _validateParams(params, m.feeBps);
 
         _writeMutable(m, params);
+        // Same as registration: the dry-run is a staticcall, nothing reenters.
+        // forge-lint: disable-next-line(reentrancy-events)
         emit MandateRendered(msg.sender, m.agent, mandateId, m);
     }
 
@@ -138,31 +143,53 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
         // nested firing sees the budget already taken; the reservation is
         // reconciled to the real figure below.
         uint256 feeOn = feeRecipient == address(0) ? 0 : m.feeBps;
-        uint256 reserved = amount + Math.mulDiv(amount, feeOn, BPS);
-        m.cumulativeUsed += reserved;
+        uint256 feeMax = Math.mulDiv(amount, feeOn, BPS);
+        m.cumulativeUsed += amount + feeMax;
 
-        // Pulling from the principal is the whole point: the principal granted
-        // this contract the allowance so that exactly this, bounded by the
-        // checks above, can happen without their signature.
+        // The fee's worst case is taken first and settled after the outcome
+        // stands, so every check the adapter makes sees the principal's final
+        // state (a repay-with-collateral's health factor included); what was
+        // not owed goes straight back.
         // forge-lint: disable-next-line(arbitrary-send-erc20)
-        IERC20(m.asset).safeTransferFrom(m.principal, m.adapter, amount);
-        uint256 used = _runAdapter(m, mandateId, amount, data);
+        if (feeMax != 0) IERC20(m.asset).safeTransferFrom(m.principal, address(this), feeMax);
+        uint256 used = _pullAndRun(m, mandateId, amount, data);
 
-        // The fee is on what was actually spent, taken only now that the
-        // outcome stands. Anything the adapter did not use is already back
-        // with the principal, so this pull is covered.
         uint256 fee = Math.mulDiv(used, feeOn, BPS);
-        // forge-lint: disable-next-line(arbitrary-send-erc20)
-        if (fee != 0) IERC20(m.asset).safeTransferFrom(m.principal, feeRecipient, fee);
+        if (fee != 0) IERC20(m.asset).safeTransfer(feeRecipient, fee);
+        if (feeMax > fee) IERC20(m.asset).safeTransfer(m.principal, feeMax - fee);
 
         // Only what left the principal for good counts against the budget.
         spent = used + fee;
-        m.cumulativeUsed -= reserved - spent;
+        m.cumulativeUsed -= (amount + feeMax) - spent;
 
         // After the external call on purpose: the receipt carries the reconciled
         // spend, and `nonReentrant` rules out a nested firing reordering it.
         // forge-lint: disable-next-line(reentrancy-events)
         emit MandateFired(mandateId, msg.sender, m.adapter, m.action, amount, spent, fee);
+    }
+
+    /// @dev Pull the amount to the adapter, run it, and MEASURE what left the
+    ///      principal: the adapter reports what it spent, the principal's
+    ///      balance says what actually left, and the larger of the two is
+    ///      what counts. A listed adapter can therefore under-report but
+    ///      never under-charge the budget, and more than `amount` leaving is
+    ///      a failure of the firing, not a charge.
+    function _pullAndRun(Mandate storage m, bytes32 mandateId, uint256 amount, bytes calldata data)
+        internal
+        returns (uint256 used)
+    {
+        IERC20 asset = IERC20(m.asset);
+        uint256 before = asset.balanceOf(m.principal);
+        // Pulling from the principal is the whole point: the principal granted
+        // this contract the allowance so that exactly this, bounded by the
+        // checks above, can happen without their signature.
+        // forge-lint: disable-next-line(arbitrary-send-erc20)
+        asset.safeTransferFrom(m.principal, m.adapter, amount);
+        used = _runAdapter(m, mandateId, amount, data);
+        uint256 after_ = asset.balanceOf(m.principal);
+        uint256 left = before > after_ ? before - after_ : 0;
+        if (left > amount) revert SpendExceedsAmount(left, amount);
+        if (left > used) used = left;
     }
 
     /// @dev The one external call a firing makes. An adapter revert is
@@ -271,9 +298,14 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
     }
 
     /// @notice Where fees go. `address(0)` disables fee collection entirely,
-    ///         whatever a mandate's `feeBps` says.
+    ///         whatever a mandate's `feeBps` says. This is the one admin lever
+    ///         that reaches live mandates: it turns collection on or off and
+    ///         moves where the fee goes. It can only lower what a principal
+    ///         pays (the rate is stamped), and it can never point at this
+    ///         contract or a listed adapter, where a fee could not be spent.
     // forge-lint: disable-next-item(missing-zero-check)
     function setFeeRecipient(address recipient) external onlyOwner {
+        if (recipient == address(this) || _adapters[recipient]) revert InvalidParams("feeRecipient");
         feeRecipient = recipient;
         emit FeeRecipientSet(recipient);
     }
@@ -322,11 +354,20 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
         if (amount == 0) return MandateReason.ZERO_AMOUNT;
         if (amount > m.maxTransactionValue) return MandateReason.OVER_TX_CAP;
         // The lifetime cap covers the fee too, so the worst case (all of the
-        // amount spent, fee on all of it) is what has to fit.
+        // amount spent, fee on all of it) is what has to fit. Two steps so an
+        // absurd amount cannot overflow into a panic instead of a reason.
+        uint256 remaining = m.maxCumulativeValue - m.cumulativeUsed;
+        if (amount > remaining) return MandateReason.OVER_CUMULATIVE_CAP;
         uint256 feeOn = feeRecipient == address(0) ? 0 : m.feeBps;
-        if (amount + Math.mulDiv(amount, feeOn, BPS) > m.maxCumulativeValue - m.cumulativeUsed) {
-            return MandateReason.OVER_CUMULATIVE_CAP;
+        uint256 feeMax = Math.mulDiv(amount, feeOn, BPS);
+        if (feeMax > remaining - amount) return MandateReason.OVER_CUMULATIVE_CAP;
+        // The pull needs the principal's allowance and balance for that same
+        // worst case; a relayer learns it here rather than from a bare revert.
+        uint256 need = amount + feeMax;
+        if (IERC20(m.asset).allowance(m.principal, address(this)) < need) {
+            return MandateReason.INSUFFICIENT_ALLOWANCE;
         }
+        if (IERC20(m.asset).balanceOf(m.principal) < need) return MandateReason.INSUFFICIENT_BALANCE;
         if (m.condition.target != address(0) && !conditionModule.isMet(m.condition)) {
             return MandateReason.TRIGGER_NOT_MET;
         }
@@ -335,13 +376,19 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
 
     /// @dev Everything about the params that does not depend on the stored
     ///      record. The adapter gets the last word on (action, asset, config).
-    function _validateParams(address principal, MandateParams calldata p) internal view {
-        if (p.agent == address(0) || p.agent == principal || p.agent == address(this)) {
+    function _validateParams(MandateParams calldata p, uint16 feeBpsFor) internal view {
+        if (p.agent == address(0) || p.agent == msg.sender || p.agent == address(this)) {
             revert InvalidParams("agent");
         }
         if (p.asset == address(0)) revert InvalidParams("asset");
         if (p.maxTransactionValue == 0) revert InvalidParams("maxTransactionValue");
         if (p.maxCumulativeValue < p.maxTransactionValue) revert InvalidParams("maxCumulativeValue");
+        // One firing at the per-firing cap, fee included, must fit the lifetime
+        // cap, or the mandate could never fire at its own cap.
+        if (p.maxCumulativeValue - p.maxTransactionValue < Math.mulDiv(p.maxTransactionValue, feeBpsFor, BPS))
+        {
+            revert InvalidParams("maxCumulativeValue");
+        }
         if (p.validUntil <= p.validFrom || p.validUntil <= block.timestamp) {
             revert InvalidParams("validUntil");
         }
@@ -349,6 +396,12 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
             if (p.condition.callData.length != 0) revert InvalidParams("condition");
         } else {
             if (p.condition.callData.length < 4) revert InvalidParams("condition");
+            // Dry-run the trigger: a target without code, a wrong selector or a
+            // word past the return data would make a mandate that can never
+            // fire, signed and paid for. The module reverts on every such case;
+            // the answer itself is not the point.
+            // forge-lint: disable-next-line(unused-return)
+            conditionModule.isMet(p.condition);
         }
         if (!IShieldAdapter(p.adapter).supportsAction(p.action)) {
             revert ActionNotSupported(p.adapter, p.action);

@@ -51,7 +51,14 @@ interface ISignoShield {
         OVER_TX_CAP,
         OVER_CUMULATIVE_CAP,
         TRIGGER_NOT_MET,
-        POSTCONDITION_FAILED
+        POSTCONDITION_FAILED,
+        /// The principal's allowance to the Shield is short of the worst case
+        /// (amount plus the fee on all of it). Appended after the ERC-8226-shaped
+        /// codes so nothing above renumbers; checked after the caps and before
+        /// the trigger.
+        INSUFFICIENT_ALLOWANCE,
+        /// The principal's balance is short of the same worst case.
+        INSUFFICIENT_BALANCE
     }
 
     /// @notice The stored record. `principal` is `msg.sender` at registration

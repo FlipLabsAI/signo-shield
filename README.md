@@ -31,7 +31,7 @@ shown to do exactly what the app's own action plan does. See
 [Build and test](#build-and-test) and [`docs/TESTS.md`](docs/TESTS.md).
 
 Not built: the Tier 1 bounded executor (research scope), the execution signer,
-the app integration. Nothing is deployed; `deployments/manifest.json` is empty.
+the app integration. Deployed on X Layer (chain 196); `deployments/manifest.json` carries the addresses and the source commit, and `docs/TRUST.md` states what each party can and cannot do.
 
 ## Build and test
 

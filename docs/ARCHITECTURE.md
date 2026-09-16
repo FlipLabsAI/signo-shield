@@ -11,7 +11,7 @@ It is called a Shield rather than a Guardian because it is something the agent
 uses, not another agent. The owner signs a mandate. The agent fires a mandate
 through the Shield.
 
-## Tier 1 — bounded execution (the default)
+## Tier 1 — bounded execution (the design; not built)
 
 Three pieces, none of which parse calldata.
 
@@ -61,10 +61,10 @@ policies inspect the call being made. None of them read protocol state.
 
 ## Amendment
 
-Raising a cap, extending an expiry, changing a trigger or adding a Tier 1
-action is one owner transaction through `amendMandate`. Adding a new input
-token also needs an ERC-20 approve, so it is one signature in an ERC-5792
-batching wallet and two elsewhere.
+Raising a cap, extending an expiry or changing a trigger is one owner
+transaction through `amendMandate`. The asset is immutable: a new input token
+is a new mandate, and it needs its own ERC-20 approve, so that is one
+signature in an ERC-5792 batching wallet and two elsewhere.
 
 Three rules hold for every amendment:
 
@@ -116,13 +116,22 @@ sending anything:
 
 ```
 NONEXISTENT → AGENT_FROZEN → NOT_AGENT → NOT_YET_VALID → EXPIRED → REVOKED
-→ ZERO_AMOUNT → OVER_TX_CAP → OVER_CUMULATIVE_CAP → TRIGGER_NOT_MET
+→ ZERO_AMOUNT → OVER_TX_CAP → OVER_CUMULATIVE_CAP
+→ INSUFFICIENT_ALLOWANCE → INSUFFICIENT_BALANCE → TRIGGER_NOT_MET
 ```
 
-Then: reserve the worst case against the budget, pull `amount` from the
-principal with the allowance the principal granted the Shield, hand it to the
-pinned adapter, take the fee on what the adapter spent, reconcile the budget
-to spend plus fee, emit the receipt. Any adapter-side revert surfaces as
+The allowance and balance checks cover the worst case of the firing (amount
+plus the fee on all of it). What `canFire` cannot see is the adapter's own
+outcome check and the protocol's answer; those surface as `OutcomeRejected`.
+
+Then: reserve the worst case against the budget, take the fee's worst case
+from the principal, pull `amount` with the allowance the principal granted
+the Shield, hand it to the pinned adapter, **measure** what left the
+principal (the larger of the adapter's report and the balance drop counts,
+and more than `amount` leaving reverts), settle the fee on that and refund
+the rest, reconcile the budget to spend plus fee, emit the receipt. The fee
+leaves before the adapter runs so every outcome check the adapter makes sees
+the principal's final state. Any adapter-side revert surfaces as
 `OutcomeRejected(mandateId, POSTCONDITION_FAILED, adapterError)`: one typed
 code for a relayer, the adapter's own revert data for whoever has to read it,
 and the whole transaction reverts. `canFireBy(mandateId, caller, amount)` is
@@ -134,20 +143,31 @@ Three roles, kept apart. The **principal** registers, amends and revokes its
 own mandates; amendment cannot change `agent`, `adapter`, `action` or `asset`,
 cannot raise the fee, cannot move the lifetime cap under what is used, and
 re-emits the whole record. The **admin** (`Ownable2Step`) lists adapters for
-new registrations, appoints enforcers and sets the fee rate and recipient; it
-cannot move funds, touch a live mandate, freeze, or renounce the seat. An
+new registrations, appoints enforcers and sets the fee rate for new
+registrations; it cannot move funds, freeze, or renounce the seat. One admin
+lever reaches live mandates: the fee recipient, which turns collection on or
+off and moves where the fee goes. It can only lower what a principal pays,
+and it can never point at the Shield or a listed adapter. Listing an adapter
+is a trust decision on what the adapter does with the funds inside one
+firing, and only that: the Shield measures what left the principal itself,
+so a listed adapter can under-report but never under-charge the budget. An
 **enforcer** can freeze and unfreeze an agent and nothing else, and the admin
-can never be one; the deployment script appoints one before handing the seat
+address can never be one (a person holding two keys can, which is why the
+admin seat belongs behind a multisig before real users); the deployment script appoints one before handing the seat
 over, so the freeze switch is armed from the first block. A mandate pins its
 adapter at registration, so listing or delisting later reaches no live
-mandate.
+mandate. Registration dry-runs the trigger, so a target without code, a
+wrong selector or a word past the return data is refused rather than signed
+into a mandate that could never fire; and the lifetime cap must hold one
+firing at the per-firing cap plus its fee.
 
 **`ConditionModule`** is the generic trigger described above, as one
 `staticcall` reader.
 
 **`AaveV3Adapter`** is the first Tier 2 adapter: one contract for the protocol,
 one entry point per action, callable only by the Shield, holding no state.
-`supply` requires the principal's aToken balance to rise by the amount.
+`supply` requires the principal's aToken balance to rise by the amount (a
+first supply of a reserve also turns it on as collateral, as Aave does).
 `repay` clamps to the debt actually owed, returns the rest, and requires the
 variable debt to fall by what was repaid; the rate mode is pinned to variable.
 `repayWithCollateral` takes a slice of the collateral aToken, withdraws it,
@@ -155,10 +175,15 @@ swaps it through the router pinned in the mandate with the agent's calldata
 (the collateral is approved to a separately pinned spender, since aggregators
 such as OKX pull through their own approval contract), bounded by a minimum
 output from the Aave oracle and the mandate's slippage limit, repays, and
-requires the health factor to end at or above the pinned target. What the
+requires the health factor to end at or above the pinned target (the fee has
+already left the position when that check runs, so it holds for the final
+state). What the
 router took is measured as the drop in the adapter's own balance across the
 call, so tokens anyone parks on the adapter neither block a firing nor loosen
-its bound; the unsold part of the slice goes back into the position, never to
+its bound (parked debt asset ends up with whichever principal fires next,
+never with the agent); the loss bound of the swap leg is the slippage limit
+times the budget, measured against the Aave oracle, so it carries the
+oracle's own deviation from the market; the unsold part of the slice goes back into the position, never to
 the wallet; a sale that overshoots the debt by more than the slippage bound
 is refused. Aave itself refuses a collateral transfer that would leave the
 position under-collateralised, so a slice that breaks the loan never reaches
@@ -170,9 +195,9 @@ cleared before it returns.
 
 `forge lint` runs as part of `forge build` and is clean. Slither reports
 twenty-three findings on the contracts, all of them the design stated above,
-each left in place on purpose. An independent review before the first
-deployment (recorded on FLIP-201) found one medium and four low issues, all
-fixed and pinned with tests; its findings and the fixes are listed there.
+each left in place on purpose. Two independent reviews (recorded on FLIP-201) found one medium and four low
+issues each, all fixed and pinned with tests; their findings and the fixes are
+listed there. `docs/TRUST.md` states what each party can and cannot do.
 
 | Finding | Where | Why it stays |
 | --- | --- | --- |
