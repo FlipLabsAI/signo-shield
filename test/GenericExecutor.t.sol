@@ -260,6 +260,18 @@ contract GenericExecutorTest is Test {
         );
     }
 
+    /// A one-wei sale under a fixed rate computes exact = 1, slack = 1, bound = 0.
+    /// Before the floor of one unit, a route that took the wei and returned
+    /// nothing passed the post-condition. Review finding, 2026-09-16.
+    function test_transform_dustSaleForNothingIsRefused() public {
+        _fireExpecting(
+            _fixedCfg(1e18),
+            1,
+            _swap(1, address(tokenOut18), 0, principal), // takes the wei, pays nothing
+            abi.encodeWithSelector(GenericExecutor.OutputBelowMinimum.selector, 0, 1)
+        );
+    }
+
     function test_transform_fixedRateIsExactUpToRounding() public {
         // One basis point plus one unit of slack: real 1:1 receipts mint a wei short.
         uint256 minOut = 1e18 - (1e18 / 10_000 + 1);

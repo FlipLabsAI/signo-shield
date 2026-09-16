@@ -221,6 +221,12 @@ contract GenericExecutor is IShieldAdapter {
         uint256 received
     ) internal {
         uint256 minOut = _minOut(c, ctx.asset, spent);
+        // Never zero. Fixed and Oracle rates round down, and for a dust-sized
+        // sale the rounding slack can exceed the exact figure, leaving a bound
+        // of 0 that `received = 0` satisfies: something sold, nothing back,
+        // firing accepted. Bounded to a wei per firing, but "sold for nothing"
+        // is not a shape this contract may ever call success.
+        if (minOut == 0) minOut = 1;
         if (received < minOut) revert OutputBelowMinimum(received, minOut);
         // After the sandbox ran on purpose: the receipt carries the measured
         // outcome; the Shield is nonReentrant and this contract keeps no state
