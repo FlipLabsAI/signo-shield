@@ -110,6 +110,13 @@ contract SignoShieldTest is Test {
         return abi.encodeWithSelector(ISignoShield.MandateBlocked.selector, id, r);
     }
 
+    /// What `fire` reverts with when the adapter reverts with `inner`.
+    function _rejected(bytes32 id, bytes memory inner) internal pure returns (bytes memory) {
+        return abi.encodeWithSelector(
+            ISignoShield.OutcomeRejected.selector, id, ISignoShield.MandateReason.POSTCONDITION_FAILED, inner
+        );
+    }
+
     function _fire(bytes32 id, uint256 amount) internal returns (uint256) {
         vm.prank(agent);
         return shield.fire(id, amount, "");
@@ -492,7 +499,7 @@ contract SignoShieldTest is Test {
         adapter.setShouldRevert(true);
         uint256 before = token.balanceOf(principal);
         vm.prank(agent);
-        vm.expectRevert("mock: outcome failed");
+        vm.expectRevert(_rejected(id, abi.encodeWithSignature("Error(string)", "mock: outcome failed")));
         shield.fire(id, 40e6, "");
         assertEq(token.balanceOf(principal), before);
         assertEq(shield.getMandate(id).cumulativeUsed, 10e6);
@@ -503,8 +510,10 @@ contract SignoShieldTest is Test {
         adapter.setReenter(true);
         vm.prank(agent);
         // The guard runs before any check, so a nested fire is refused whoever
-        // the adapter claims to be, and the whole outer firing reverts with it.
-        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        // the adapter claims to be; the adapter's revert surfaces as a rejected
+        // outcome and the whole outer firing reverts with it.
+        bytes memory guard = abi.encodeWithSelector(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        vm.expectRevert(_rejected(id, guard));
         shield.fire(id, 40e6, "");
         assertEq(shield.getMandate(id).cumulativeUsed, 0);
 
@@ -513,7 +522,7 @@ contract SignoShieldTest is Test {
         p.agent = address(adapter);
         bytes32 id2 = _register(p);
         vm.prank(address(adapter));
-        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        vm.expectRevert(_rejected(id2, guard));
         shield.fire(id2, 40e6, "");
     }
 
@@ -542,9 +551,17 @@ contract SignoShieldTest is Test {
 
     /// Whatever sequence of firings, the counter never exceeds the lifetime cap
     /// and always equals what actually left the principal.
-    function testFuzz_fire_budgetNeverExceedsLifetime(uint256[8] memory amounts, uint16 spendBps) public {
+    function testFuzz_fire_budgetNeverExceedsLifetime(
+        uint256[8] memory amounts,
+        uint16 spendBps,
+        bool withFee
+    ) public {
         spendBps = uint16(bound(spendBps, 0, 10_000));
         adapter.setSpendBps(spendBps);
+        if (withFee) {
+            vm.prank(admin);
+            shield.setFeeRecipient(feeSink);
+        }
         bytes32 id = _register();
         uint256 before = token.balanceOf(principal);
         for (uint256 i = 0; i < amounts.length; i++) {
@@ -580,26 +597,49 @@ contract SignoShieldTest is Test {
         vm.prank(admin);
         shield.setFeeRecipient(feeSink);
         vm.expectEmit(true, true, true, true, address(shield));
-        emit ISignoShield.MandateFired(id, agent, address(adapter), ACTION, 50e6, 50e6, 0.5e6);
+        emit ISignoShield.MandateFired(id, agent, address(adapter), ACTION, 50e6, 50.5e6, 0.5e6);
         spent = _fire(id, 50e6);
-        assertEq(spent, 50e6);
+        assertEq(spent, 50.5e6, "amount spent plus the fee on it");
         assertEq(token.balanceOf(feeSink), 0.5e6);
-        assertEq(adapter.lastAmount(), 49.5e6, "adapter gets amount minus fee");
-        assertEq(shield.getMandate(id).cumulativeUsed, 100e6, "fee counts against the budget");
+        assertEq(adapter.lastAmount(), 50e6, "the adapter gets the whole amount; the fee is on top");
+        assertEq(shield.getMandate(id).cumulativeUsed, 100.5e6, "fee counts against the budget");
     }
 
-    function test_fee_partialSpendStillPaysFeeOnTheWholeAmount() public {
+    /// The fee is on what was spent, not on what was asked for.
+    function test_fee_isOnWhatWasSpent() public {
         vm.prank(admin);
         shield.setFeeBps(100);
         bytes32 id = _register();
         vm.prank(admin);
         shield.setFeeRecipient(feeSink);
-        adapter.setSpendBps(0);
+        adapter.setSpendBps(2_500);
         uint256 before = token.balanceOf(principal);
         uint256 spent = _fire(id, 50e6);
-        assertEq(spent, 0.5e6);
-        assertEq(before - token.balanceOf(principal), 0.5e6);
-        assertEq(shield.getMandate(id).cumulativeUsed, 0.5e6);
+        assertEq(spent, 12.5e6 + 0.125e6);
+        assertEq(token.balanceOf(feeSink), 0.125e6, "1% of the 12.5 spent, not of the 50 asked");
+        assertEq(before - token.balanceOf(principal), 12.625e6);
+        assertEq(shield.getMandate(id).cumulativeUsed, 12.625e6);
+
+        adapter.setSpendBps(0);
+        spent = _fire(id, 50e6);
+        assertEq(spent, 0, "nothing spent, no fee");
+        assertEq(token.balanceOf(feeSink), 0.125e6);
+    }
+
+    /// The lifetime cap covers the fee: the worst case (all spent, fee on all)
+    /// is what has to fit, and what is reserved before the adapter runs.
+    function test_fee_worstCaseIsReservedAgainstTheLifetimeCap() public {
+        vm.prank(admin);
+        shield.setFeeRecipient(feeSink);
+        bytes32 id = _register(); // 10 bps, lifetime 250e6
+        _fire(id, TX_CAP);
+        _fire(id, TX_CAP);
+        assertEq(shield.getMandate(id).cumulativeUsed, 200.2e6);
+        _assertReason(id, 49e6, ISignoShield.MandateReason.OK); // 49.049 fits in 49.8
+        _assertReason(id, 49.8e6, ISignoShield.MandateReason.OVER_CUMULATIVE_CAP); // 49.8498 does not
+        _fire(id, 49e6);
+        assertEq(shield.getMandate(id).cumulativeUsed, 249.249e6);
+        assertLe(shield.getMandate(id).cumulativeUsed, LIFETIME);
     }
 
     // ------------------------------------------------------------ amendment
@@ -842,6 +882,23 @@ contract SignoShieldTest is Test {
         vm.prank(stranger);
         vm.expectRevert(abi.encodeWithSelector(ISignoShield.AdminCannotBeEnforcer.selector, stranger));
         shield.setEnforcer(stranger, true);
+    }
+
+    function test_canFireBy_reportsTheCallerCheck() public {
+        bytes32 id = _register();
+        (bool ok, ISignoShield.MandateReason r) = shield.canFireBy(id, stranger, 1);
+        assertFalse(ok);
+        assertEq(uint8(r), uint8(ISignoShield.MandateReason.NOT_AGENT));
+        (ok, r) = shield.canFireBy(id, agent, 1);
+        assertTrue(ok);
+        assertEq(uint8(r), uint8(ISignoShield.MandateReason.OK));
+    }
+
+    function test_roles_ownershipCannotBeRenounced() public {
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(ISignoShield.InvalidParams.selector, "renounceOwnership"));
+        shield.renounceOwnership();
+        assertEq(shield.owner(), admin);
     }
 
     function test_roles_listingRequiresCode() public {

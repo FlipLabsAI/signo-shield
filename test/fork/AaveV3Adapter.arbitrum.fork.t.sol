@@ -227,7 +227,7 @@ contract AaveV3AdapterArbitrumForkTest is Test {
             id, slice, abi.encodeCall(MockRouter.swap, (WETH, amountIn, USDC, amountOut, address(adapter)))
         );
 
-        assertApproxEqAbs(spent, slice, 2);
+        assertApproxEqAbs(spent, amountIn, 2, "what was sold is what was spent");
         assertApproxEqAbs(
             debtBefore - IERC20(V_USDC).balanceOf(principal), amountOut, 2, "debt fell by the swap output"
         );

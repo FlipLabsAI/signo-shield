@@ -127,6 +127,12 @@ contract AaveV3AdapterForkTest is Test {
         return abi.encodeWithSelector(ISignoShield.MandateBlocked.selector, id, r);
     }
 
+    function _rejected(bytes32 id, bytes memory inner) internal pure returns (bytes memory) {
+        return abi.encodeWithSelector(
+            ISignoShield.OutcomeRejected.selector, id, ISignoShield.MandateReason.POSTCONDITION_FAILED, inner
+        );
+    }
+
     function _assertNothingLeftBehind() internal view {
         assertEq(IERC20(XETH).balanceOf(address(adapter)), 0, "adapter xETH");
         assertEq(IERC20(USDT0).balanceOf(address(adapter)), 0, "adapter USDT0");
@@ -189,7 +195,7 @@ contract AaveV3AdapterForkTest is Test {
         shield.fire(id, 10e6, "");
     }
 
-    /// With a recipient set, 10 bps of each firing goes to it and the rest repays.
+    /// With a recipient set, 10 bps of what each firing spends goes to it, on top.
     function test_repay_takesTheLaunchFeeWhenARecipientIsSet() public {
         address treasury = makeAddr("treasury");
         shield.setFeeRecipient(treasury);
@@ -201,13 +207,13 @@ contract AaveV3AdapterForkTest is Test {
         vm.prank(agent);
         uint256 spent = shield.fire(id, 10e6, "");
 
-        assertEq(spent, 10e6, "fee plus repayment is what left the wallet");
-        assertEq(IERC20(USDT0).balanceOf(treasury), 10_000, "10 bps of 10 USD-T0");
+        assertEq(spent, 10.01e6, "the repayment plus the fee on it");
+        assertEq(IERC20(USDT0).balanceOf(treasury), 10_000, "10 bps of the 10 USD-T0 spent");
         assertApproxEqAbs(
-            debtBefore - IERC20(V_USDT0).balanceOf(principal), 10e6 - 10_000, 2, "the rest repaid"
+            debtBefore - IERC20(V_USDT0).balanceOf(principal), 10e6, 2, "the whole amount repaid"
         );
-        assertEq(walletBefore - IERC20(USDT0).balanceOf(principal), 10e6);
-        assertEq(shield.getMandate(id).cumulativeUsed, 10e6, "the fee counts against the budget");
+        assertEq(walletBefore - IERC20(USDT0).balanceOf(principal), 10.01e6);
+        assertEq(shield.getMandate(id).cumulativeUsed, 10.01e6, "the fee counts against the budget");
         _assertNothingLeftBehind();
     }
 
@@ -230,7 +236,7 @@ contract AaveV3AdapterForkTest is Test {
 
         // Nothing left to repay: the adapter refuses rather than pulling funds for nothing.
         vm.prank(agent);
-        vm.expectRevert(AaveV3Adapter.NoDebt.selector);
+        vm.expectRevert(_rejected(id, abi.encodeWithSelector(AaveV3Adapter.NoDebt.selector)));
         shield.fire(id, 1e6, "");
     }
 
@@ -311,7 +317,7 @@ contract AaveV3AdapterForkTest is Test {
         _assertNothingLeftBehind();
 
         vm.prank(agent);
-        vm.expectRevert(AaveV3Adapter.UnexpectedData.selector);
+        vm.expectRevert(_rejected(id, abi.encodeWithSelector(AaveV3Adapter.UnexpectedData.selector)));
         shield.fire(id, 0.01e18, hex"01");
     }
 
@@ -347,7 +353,7 @@ contract AaveV3AdapterForkTest is Test {
     function test_repayWithCollateral_bringsTheHealthFactorToTarget() public {
         bytes32 id = _registerRwc(1.7e18, 0.01e18);
         uint256 slice = 0.008e18; // about 19 USD of the 60 USD-T0 debt
-        uint256 amountIn = slice - 1_000; // the router takes a hair less than withdrawn; the dust goes home
+        uint256 amountIn = slice - 1_000; // the router takes a hair less than withdrawn; the rest is re-supplied
         uint256 amountOut = (_fairUsdt0(amountIn) * 9_950) / 10_000; // 50 bps under fair, inside the 1% bound
         uint256 debtBefore = IERC20(V_USDT0).balanceOf(principal);
         uint256 aBefore = IERC20(A_XETH).balanceOf(principal);
@@ -357,14 +363,14 @@ contract AaveV3AdapterForkTest is Test {
         vm.prank(agent);
         uint256 spent = shield.fire(id, slice, _swapCalldata(amountIn, amountOut, address(adapter)));
 
-        assertApproxEqAbs(spent, slice, 2, "the whole slice was spent");
+        assertApproxEqAbs(spent, amountIn, 2, "what was sold is what was spent");
         assertApproxEqAbs(
-            aBefore - IERC20(A_XETH).balanceOf(principal), slice, 2, "collateral slice left the position"
+            aBefore - IERC20(A_XETH).balanceOf(principal), amountIn, 2, "only the sold part left the position"
         );
         assertApproxEqAbs(
             debtBefore - IERC20(V_USDT0).balanceOf(principal), amountOut, 2, "debt fell by the swap output"
         );
-        assertEq(IERC20(XETH).balanceOf(principal) - xethBefore, 1_000, "unsold dust came home as xETH");
+        assertEq(IERC20(XETH).balanceOf(principal), xethBefore, "nothing came home as idle xETH");
         assertGe(_healthFactor(principal), 1.7e18, "health factor at or above target");
         assertEq(shield.getMandate(id).cumulativeUsed, spent);
         _assertNothingLeftBehind();
@@ -378,17 +384,32 @@ contract AaveV3AdapterForkTest is Test {
         uint256 debtBefore = IERC20(V_USDT0).balanceOf(principal);
         uint256 aBefore = IERC20(A_XETH).balanceOf(principal);
 
-        // 2% under fair: outside the 1% bound the principal signed. (The minimum
-        // is computed on the withdrawn amount, a hair above amountIn, so match the selector.)
+        // 2% under fair: outside the 1% bound the principal signed.
         bytes memory underpaid = _swapCalldata(amountIn, (fair * 9_800) / 10_000, address(adapter));
         vm.prank(agent);
-        vm.expectPartialRevert(AaveV3Adapter.SwapOutputBelowMinimum.selector);
+        vm.expectRevert(
+            _rejected(
+                id,
+                abi.encodeWithSelector(
+                    AaveV3Adapter.SwapOutputBelowMinimum.selector,
+                    (fair * 9_800) / 10_000,
+                    (fair * 9_900) / 10_000
+                )
+            )
+        );
         shield.fire(id, slice, underpaid);
 
         // Output routed to a third party: nothing arrived, so nothing was repaid.
         bytes memory diverted = _swapCalldata(amountIn, fair, stranger);
         vm.prank(agent);
-        vm.expectPartialRevert(AaveV3Adapter.SwapOutputBelowMinimum.selector);
+        vm.expectRevert(
+            _rejected(
+                id,
+                abi.encodeWithSelector(
+                    AaveV3Adapter.SwapOutputBelowMinimum.selector, 0, (fair * 9_900) / 10_000
+                )
+            )
+        );
         shield.fire(id, slice, diverted);
 
         // The router reverts: the firing reverts with it.
@@ -396,9 +417,12 @@ contract AaveV3AdapterForkTest is Test {
         router.setShouldRevert(true);
         vm.prank(agent);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                AaveV3Adapter.SwapFailed.selector,
-                abi.encodeWithSignature("Error(string)", "router: no route")
+            _rejected(
+                id,
+                abi.encodeWithSelector(
+                    AaveV3Adapter.SwapFailed.selector,
+                    abi.encodeWithSignature("Error(string)", "router: no route")
+                )
             )
         );
         shield.fire(id, slice, honest);
@@ -409,7 +433,9 @@ contract AaveV3AdapterForkTest is Test {
         bytes memory tinySwap = _swapCalldata(tiny - 1_000, _fairUsdt0(tiny - 1_000), address(adapter));
         vm.prank(agent);
         vm.expectRevert(
-            abi.encodeWithSelector(AaveV3Adapter.OutcomeFailed.selector, "health factor below target")
+            _rejected(
+                id, abi.encodeWithSelector(AaveV3Adapter.OutcomeFailed.selector, "health factor below target")
+            )
         );
         shield.fire(id, tiny, tinySwap);
 
@@ -515,6 +541,102 @@ contract AaveV3AdapterForkTest is Test {
         vm.prank(agent);
         vm.expectRevert(AaveV3Adapter.NotShield.selector);
         adapter.execute(ctx, 1e6, "");
+    }
+
+    /// Tokens anyone parks on the adapter neither block a firing nor loosen
+    /// its bound: what the router took is measured across the call.
+    function test_repayWithCollateral_parkedDustNeitherBlocksNorLoosens() public {
+        bytes32 id = _registerRwc(1.7e18, 0.01e18);
+        vm.prank(A_XETH);
+        IERC20(XETH).transfer(address(adapter), 0.01e18); // more than a whole slice, parked by a stranger
+        uint256 slice = 0.008e18;
+        uint256 amountIn = slice - 1_000;
+        uint256 fair = _fairUsdt0(amountIn);
+
+        // The bound is unchanged: 2% under fair is still refused.
+        bytes memory underpaid = _swapCalldata(amountIn, (fair * 9_800) / 10_000, address(adapter));
+        vm.prank(agent);
+        vm.expectPartialRevert(ISignoShield.OutcomeRejected.selector);
+        shield.fire(id, slice, underpaid);
+
+        // And an honest swap goes through, with the parked tokens untouched.
+        bytes memory honest = _swapCalldata(amountIn, (fair * 9_950) / 10_000, address(adapter));
+        vm.prank(agent);
+        uint256 spent = shield.fire(id, slice, honest);
+        assertApproxEqAbs(spent, amountIn, 2);
+        assertGe(_healthFactor(principal), 1.7e18);
+        assertEq(
+            IERC20(XETH).balanceOf(address(adapter)), 0.01e18, "the parked tokens are neither swept nor sold"
+        );
+    }
+
+    /// Selling only a sliver of the slice is a repay of a sliver: the rest of
+    /// the slice goes back into the position, not into the wallet.
+    function test_repayWithCollateral_partialSaleGoesBackIntoThePosition() public {
+        bytes32 id = _registerRwc(1e18, 0.01e18); // the lowest target, so only the re-supply rule is under test
+        uint256 slice = 0.008e18;
+        uint256 sliver = 0.0005e18;
+        uint256 aBefore = IERC20(A_XETH).balanceOf(principal);
+        uint256 xethBefore = IERC20(XETH).balanceOf(principal);
+        uint256 hfBefore = _healthFactor(principal);
+        bytes memory swap = _swapCalldata(sliver, _fairUsdt0(sliver), address(adapter));
+
+        vm.prank(agent);
+        uint256 spent = shield.fire(id, slice, swap);
+
+        assertApproxEqAbs(spent, sliver, 2, "only the sliver was spent");
+        assertApproxEqAbs(
+            aBefore - IERC20(A_XETH).balanceOf(principal), sliver, 2, "the rest is back in the position"
+        );
+        assertEq(IERC20(XETH).balanceOf(principal), xethBefore, "no collateral landed in the wallet");
+        assertGt(_healthFactor(principal), hfBefore, "a repay, however small, leaves the loan safer");
+        _assertNothingLeftBehind();
+    }
+
+    /// A sale past the debt (beyond the slippage bound) is a withdrawal, not a repay.
+    function test_repayWithCollateral_refusesOversellingPastTheDebt() public {
+        // Bring the debt down to 20 USD-T0 so a 0.03 xETH sale (about 72 USD) clears Aave's own check.
+        vm.startPrank(principal);
+        IERC20(USDT0).approve(POOL, 40e6);
+        pool.repay(USDT0, 40e6, 2, principal);
+        vm.stopPrank();
+        // A trigger that stays true at the now-comfortable health factor, so only the overshoot rule can refuse.
+        ISignoShield.MandateParams memory p =
+            _params(adapter.ACTION_REPAY_WITH_COLLATERAL(), A_XETH, 0.05e18, 0.1e18, _hfBelow(10e18));
+        p.actionConfig = _rwcConfig(1e18);
+        bytes32 id = _register(p);
+        uint256 slice = 0.03e18;
+        uint256 amountIn = slice - 1_000;
+        bytes memory overSell = _swapCalldata(amountIn, _fairUsdt0(amountIn), address(adapter));
+        uint256 aBefore = IERC20(A_XETH).balanceOf(principal);
+
+        vm.prank(agent);
+        vm.expectRevert(
+            _rejected(
+                id,
+                abi.encodeWithSelector(
+                    AaveV3Adapter.OutcomeFailed.selector, "sold more collateral than the debt needs"
+                )
+            )
+        );
+        shield.fire(id, slice, overSell);
+        assertEq(IERC20(A_XETH).balanceOf(principal), aBefore, "nothing moved");
+    }
+
+    /// The fee on repay-with-collateral is taken in the mandate's asset, the aToken.
+    function test_repayWithCollateral_takesTheFeeInATokens() public {
+        address treasury = makeAddr("treasury");
+        shield.setFeeRecipient(treasury);
+        bytes32 id = _registerRwc(1.7e18, 0.01e18);
+        uint256 slice = 0.008e18;
+        uint256 amountIn = slice - 1_000;
+        bytes memory swap = _swapCalldata(amountIn, (_fairUsdt0(amountIn) * 9_950) / 10_000, address(adapter));
+        vm.prank(agent);
+        uint256 spent = shield.fire(id, slice, swap);
+        uint256 fee = (amountIn * 10) / 10_000;
+        assertApproxEqAbs(IERC20(A_XETH).balanceOf(treasury), fee, 2, "10 bps of what was sold, as aXETH");
+        assertApproxEqAbs(spent, amountIn + fee, 4);
+        _assertNothingLeftBehind();
     }
 
     // ------------------------------------------- FLIP-193 named cases

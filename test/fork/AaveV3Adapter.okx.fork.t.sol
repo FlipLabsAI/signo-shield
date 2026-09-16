@@ -115,15 +115,16 @@ contract AaveV3AdapterOkxForkTest is Test {
         uint256 repaid = debtBefore - IERC20(V_USDT0).balanceOf(principal);
         console.log("repaid USDT0 (6 dec)", repaid);
         console.log("health factor after", _healthFactor(principal));
-        assertApproxEqAbs(spent, SLICE, 2, "the whole slice was spent");
+        assertApproxEqAbs(spent, AMOUNT_IN, 2, "what the router took is what was spent");
         assertApproxEqAbs(
-            aBefore - IERC20(A_XETH).balanceOf(principal), SLICE, 2, "collateral slice left the position"
+            aBefore - IERC20(A_XETH).balanceOf(principal),
+            AMOUNT_IN,
+            2,
+            "only the sold part left the position"
         );
         assertGt(repaid, 18e6, "about 19 USD-T0 of debt repaid from 0.0079 xETH");
         assertGe(_healthFactor(principal), 1.7e18, "health factor at or above target");
-        assertEq(
-            IERC20(XETH).balanceOf(principal) - xethBefore, SLICE - AMOUNT_IN, "unsold dust came home as xETH"
-        );
+        assertEq(IERC20(XETH).balanceOf(principal), xethBefore, "nothing came home as idle xETH");
         assertEq(IERC20(XETH).balanceOf(address(adapter)), 0);
         assertEq(IERC20(USDT0).balanceOf(address(adapter)), 0);
         assertEq(IERC20(A_XETH).balanceOf(address(adapter)), 0);
