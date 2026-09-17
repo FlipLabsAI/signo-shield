@@ -20,7 +20,10 @@ import {ICondition} from "./interfaces/ICondition.sol";
 /// Leaves only, one level deep. Nesting would make the cost of a trigger
 /// unbounded and its meaning hard to show on a review screen; eight flat
 /// leaves cover "health factor below X and price above Y and balance over Z"
-/// with room to spare.
+/// with room to spare. A leaf naming an evaluator, this contract, the leaf
+/// module or an `isMet` call is refused. A leaf is still an arbitrary view
+/// read the principal chose (a wrapper contract can hide anything behind a
+/// plain selector), so a review screen must show each leaf as the read it is.
 contract CompoundCondition is ICondition {
     enum Op {
         And,
@@ -50,6 +53,13 @@ contract CompoundCondition is ICondition {
         // the only honest target is this contract. Anything else is a config
         // that pinned the wrong evaluator or the wrong target.
         if (condition.target != address(this)) revert BadCompound("target");
+        // The outer word, comparator and threshold mean nothing for a compound.
+        // They must be zero, so one trigger has one encoding and a screen or an
+        // indexer that shows them cannot show a condition that is not the one
+        // judged. The registration dry-run refuses anything else.
+        if (condition.wordOffset != 0 || condition.comparator != Comparator.LessThan || condition.threshold != 0) {
+            revert BadCompound("shape");
+        }
         (Op op, Condition[] memory leaves) = abi.decode(condition.callData, (Op, Condition[]));
         if (leaves.length < 2 || leaves.length > MAX_LEAVES) revert BadCompound("leaves");
 
@@ -71,10 +81,15 @@ contract CompoundCondition is ICondition {
     }
 
     /// @dev The first shape fault among the leaves, or the empty string.
-    function _badLeaf(Condition[] memory leaves) internal pure returns (string memory) {
+    function _badLeaf(Condition[] memory leaves) internal view returns (string memory) {
         for (uint256 i = 0; i < leaves.length; i++) {
             if (leaves[i].target == address(0)) return "leaf:target";
             if (leaves[i].evaluator != address(0)) return "leaf:nested";
+            // A leaf that reads this contract, or calls any evaluator's isMet,
+            // is a nested compound spelled as a plain read.
+            if (leaves[i].target == address(this) || leaves[i].target == address(leafModule)) return "leaf:nested";
+            if (leaves[i].callData.length < 4) return "leaf:callData";
+            if (bytes4(leaves[i].callData) == ICondition.isMet.selector) return "leaf:nested";
         }
         return "";
     }

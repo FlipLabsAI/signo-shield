@@ -21,10 +21,11 @@ only by the admin's `setAdapter`. See `docs/TIER1.md` for what it bounds.
 | --- | --- | --- | --- |
 | **Principal** (the wallet owner) | their own key; an ERC-20 allowance they granted the Shield | register, amend and revoke their own mandates; set every number in them; revoke the allowance at the token | change a mandate's agent, adapter, action or asset after registration; raise its fee; drop its lifetime cap under what is used; touch anyone else's mandate |
 | **Agent** (the signer key, held in Turnkey) | the right to call `fire` | fire a live mandate it is named on, for an amount within the caps, while the trigger holds, through the pinned adapter, into the principal's own position | receive tokens; hold an allowance; pick the recipient, the protocol or the action; fire after expiry, revocation or freeze; fire past the per-firing or lifetime cap; fire a mandate naming another agent |
-| **Admin** (`Ownable2Step` owner) | the admin seat | list and delist adapters for **new** registrations; appoint and remove enforcers; set the fee rate for **new** registrations; set the fee recipient, which reaches live mandates only by turning collection off, on, or elsewhere | move funds; change, freeze or revoke a live mandate; raise a live mandate's fee; point the fee at the Shield or a listed adapter; be an enforcer (as an address; a person with two keys can, so the seat belongs behind a multisig before real users); renounce the seat |
+| **Admin** (`Ownable2Step` owner) | the admin seat | list and delist adapters and condition evaluators for **new** registrations; appoint and remove enforcers; set the fee rate for **new** registrations; set the fee recipient, which reaches live mandates only by turning collection off, on, or elsewhere | move funds; change, freeze or revoke a live mandate; raise a live mandate's fee; point the fee at the Shield or a listed adapter; be an enforcer (as an address; a person with two keys can, so the seat belongs behind a multisig before real users); renounce the seat |
 | **Enforcer** | a role granted by the admin | freeze and unfreeze an agent address, which halts every mandate it holds | anything else: no funds, no mandate changes, no revocation |
 | **Adapter** (AaveV3Adapter) | tokens only inside one `fire` call | execute one pinned action for the Shield, and revert unless the outcome check passes | be called by anyone but the Shield; keep tokens between calls; keep an approval after returning; under-charge the budget (the Shield measures what left the principal itself, so a listed adapter that mis-reports is still charged for what it took, and taking more than the amount reverts the firing) |
 | **Generic executor** (Tier 1) | tokens only inside one `fire` call, in a single-use clone | run the agent's calldata against the one target and spender the owner pinned, then require the pinned output token to rise on the owner by the bound the owner's rule computes (fixed rate, oracle less slippage, or a floor) | pick the target, the spender, the output token or the rate; keep an approval; run a clone twice; count output paid to anyone but the owner; count tokens a stranger parked at the sandbox as a refund; read the oracle after the agent's call |
+| **Evaluator** (the default ConditionModule, or a listed one such as CompoundCondition) | nothing; called with `staticcall` | judge a mandate's trigger: the default module reads one word of one view call, a compound judges two to eight such leaves with "and" or "or", every leaf every time | write state; hold tokens; be switched on a live mandate by anyone but its principal (the evaluator is pinned at registration, and an amendment that keeps it needs no listing); nest compounds |
 | **Fee recipient** | the fee on each firing | receive `feeBps` of what a firing spent | pull anything; affect a firing |
 | **Anyone** | nothing | read every mandate; call `canFire` | everything else |
 
@@ -55,10 +56,15 @@ final state. Every adapter-side revert surfaces as `OutcomeRejected` and the
 whole transaction reverts. What `canFire` cannot foresee is the adapter's
 own outcome check and the protocol's answer.
 
-The trigger is a `staticcall` the contract makes itself: a pinned target,
-pinned calldata, a word offset, a comparator and a threshold. It cannot
-change state and it cannot read another chain. A trigger that cannot be read
-reverts rather than reporting "not met". A mandate may be registered without
+The trigger is a `staticcall` into the evaluator the mandate pinned: by
+default the plain ConditionModule (a pinned target, pinned calldata, a word
+offset, a comparator and a threshold), or a listed evaluator such as
+CompoundCondition, whose calldata carries two to eight plain leaves joined by
+"and" or "or". Every leaf is read on every check, and a compound's outer
+word, comparator and threshold must be zero. It cannot change state and it
+cannot read another chain. A leaf is still an arbitrary view read the
+principal chose, so a review screen must show each one as the read it is. A
+trigger that cannot be read reverts rather than reporting "not met". A mandate may be registered without
 a trigger; then the caps and the window are its only bound, and a user
 interface must say so.
 

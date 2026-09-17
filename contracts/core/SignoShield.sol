@@ -76,7 +76,7 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
     /// @inheritdoc ISignoShield
     function registerMandate(MandateParams calldata params) external returns (bytes32 mandateId) {
         if (!_adapters[params.adapter]) revert AdapterNotListed(params.adapter);
-        _validateParams(params, feeBps);
+        _validateParams(params, feeBps, address(0));
 
         mandateId = keccak256(abi.encode(block.chainid, address(this), msg.sender, nonces[msg.sender]++));
         Mandate storage m = _mandates[mandateId];
@@ -91,7 +91,8 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
         _writeMutable(m, params);
 
         // The only external call before this is the trigger dry-run, a
-        // staticcall into our own immutable module: it cannot reenter.
+        // staticcall into the pinned evaluator (ICondition.isMet is view): it
+        // cannot reenter.
         // forge-lint: disable-next-line(reentrancy-events)
         emit MandateRendered(msg.sender, params.agent, mandateId, m);
     }
@@ -111,8 +112,10 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
         if (params.maxCumulativeValue < m.cumulativeUsed) revert InvalidParams("maxCumulativeValue");
         // The adapter is pinned, so it is consulted even if it has since been
         // delisted: delisting gates new registrations, not the principal's
-        // right to narrow or extend what it already signed.
-        _validateParams(params, m.feeBps);
+        // right to narrow or extend what it already signed. The evaluator
+        // follows the same rule: keeping the pinned one needs no listing,
+        // switching to another does.
+        _validateParams(params, m.feeBps, m.condition.evaluator);
 
         _writeMutable(m, params);
         // Same as registration: the dry-run is a staticcall, nothing reenters.
@@ -395,7 +398,9 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
 
     /// @dev Everything about the params that does not depend on the stored
     ///      record. The adapter gets the last word on (action, asset, config).
-    function _validateParams(MandateParams calldata p, uint16 feeBpsFor) internal view {
+    /// @param pinnedEvaluator the evaluator the record already holds
+    ///        (`address(0)` at registration): keeping it needs no listing.
+    function _validateParams(MandateParams calldata p, uint16 feeBpsFor, address pinnedEvaluator) internal view {
         if (p.agent == address(0) || p.agent == msg.sender || p.agent == address(this)) {
             revert InvalidParams("agent");
         }
@@ -418,9 +423,12 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
             }
         } else {
             if (p.condition.callData.length < 4) revert InvalidParams("condition");
-            // The evaluator is pinned into the record, so it is checked here,
-            // where the owner is signing, and never again.
-            if (p.condition.evaluator != address(0) && !_isEvaluatorListed(p.condition.evaluator)) {
+            // The evaluator is pinned into the record, so it is checked when
+            // the principal pins it, and never again: an amendment that keeps
+            // the pinned evaluator passes even after a delisting, as a pinned
+            // adapter does.
+            address e = p.condition.evaluator;
+            if (e != address(0) && e != pinnedEvaluator && !_isEvaluatorListed(e)) {
                 revert EvaluatorNotListed(p.condition.evaluator);
             }
             // Dry-run the trigger through its own evaluator: a target without

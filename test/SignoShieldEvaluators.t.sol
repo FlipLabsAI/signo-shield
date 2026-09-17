@@ -235,4 +235,42 @@ contract SignoShieldEvaluatorsTest is Test {
         assertEq(shield.getMandate(id).condition.evaluator, address(compound));
         assertEq(uint8(_reason(id)), uint8(ISignoShield.MandateReason.OK));
     }
+
+    /// Review L-1: delisting reaches no live mandate on amendment either. The
+    /// principal keeps its pinned evaluator and can still lower a cap or move
+    /// the expiry; switching to an evaluator that is not listed is refused.
+    function test_amend_keepsItsPinnedEvaluator_afterDelisting() public {
+        _list();
+        bytes32 id = _register(_params(_and(_leaf(0, 15), _leaf(1, 25))));
+        vm.prank(admin);
+        shield.setEvaluator(address(compound), false);
+
+        ISignoShield.MandateParams memory p = _params(_and(_leaf(0, 15), _leaf(1, 25)));
+        p.maxCumulativeValue = LIFETIME - 50e6;
+        p.validUntil = VALID_UNTIL - 1 days;
+        vm.prank(principal);
+        shield.amendMandate(id, p);
+        assertEq(shield.getMandate(id).maxCumulativeValue, LIFETIME - 50e6);
+        assertEq(shield.getMandate(id).condition.evaluator, address(compound));
+
+        CompoundCondition other = new CompoundCondition(conditions);
+        ICondition.Condition memory switched = _and(_leaf(0, 15), _leaf(1, 25));
+        switched.target = address(other);
+        switched.evaluator = address(other);
+        vm.prank(principal);
+        vm.expectRevert(abi.encodeWithSelector(ISignoShield.EvaluatorNotListed.selector, address(other)));
+        shield.amendMandate(id, _params(switched));
+    }
+
+    /// Review L-3: a compound registered with outer fields set is refused at
+    /// signing, so the record has one encoding.
+    function test_register_refusesANonCanonicalCompound() public {
+        _list();
+        ICondition.Condition memory c = _and(_leaf(0, 15), _leaf(1, 25));
+        c.comparator = ICondition.Comparator.GreaterThan;
+        c.threshold = type(uint256).max;
+        vm.prank(principal);
+        vm.expectRevert(abi.encodeWithSelector(CompoundCondition.BadCompound.selector, "shape"));
+        shield.registerMandate(_params(c));
+    }
 }

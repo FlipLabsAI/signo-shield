@@ -149,4 +149,54 @@ contract CompoundConditionTest is Test {
         ICondition.Condition memory c = _compound(CompoundCondition.Op.And, leaves);
         assertEq(keccak256(data), keccak256(c.callData));
     }
+
+    /// Review L-3: the outer word, comparator and threshold must be zero.
+    function test_refusesANonCanonicalOuterShape() public {
+        ICondition.Condition[] memory leaves = _two(_leaf(0, 15), _leaf(1, 25));
+        ICondition.Condition memory c = _compound(CompoundCondition.Op.And, leaves);
+        c.wordOffset = 1;
+        vm.expectRevert(abi.encodeWithSelector(CompoundCondition.BadCompound.selector, "shape"));
+        compound.isMet(c);
+
+        c = _compound(CompoundCondition.Op.And, leaves);
+        c.comparator = ICondition.Comparator.GreaterThan;
+        vm.expectRevert(abi.encodeWithSelector(CompoundCondition.BadCompound.selector, "shape"));
+        compound.isMet(c);
+
+        c = _compound(CompoundCondition.Op.And, leaves);
+        c.threshold = 1;
+        vm.expectRevert(abi.encodeWithSelector(CompoundCondition.BadCompound.selector, "shape"));
+        compound.isMet(c);
+    }
+
+    /// Review L-2: a nested compound spelled as a plain read is still nesting.
+    function test_refusesNestingSpelledAsAPlainRead() public {
+        ICondition.Condition memory inner = _compound(CompoundCondition.Op.And, _two(_leaf(0, 15), _leaf(1, 25)));
+        ICondition.Condition memory viaCompound = ICondition.Condition({
+            target: address(compound),
+            callData: abi.encodeCall(ICondition.isMet, (inner)),
+            wordOffset: 0,
+            comparator: ICondition.Comparator.GreaterThanOrEqual,
+            threshold: 1,
+            evaluator: address(0)
+        });
+        vm.expectRevert(abi.encodeWithSelector(CompoundCondition.BadCompound.selector, "leaf:nested"));
+        compound.isMet(_compound(CompoundCondition.Op.Or, _two(_leaf(0, 15), viaCompound)));
+
+        ICondition.Condition memory viaModule = viaCompound;
+        viaModule.target = address(leaf);
+        vm.expectRevert(abi.encodeWithSelector(CompoundCondition.BadCompound.selector, "leaf:nested"));
+        compound.isMet(_compound(CompoundCondition.Op.Or, _two(_leaf(0, 15), viaModule)));
+
+        // Any other contract answering isMet is refused by selector.
+        ICondition.Condition memory viaOther = viaCompound;
+        viaOther.target = address(target);
+        vm.expectRevert(abi.encodeWithSelector(CompoundCondition.BadCompound.selector, "leaf:nested"));
+        compound.isMet(_compound(CompoundCondition.Op.Or, _two(_leaf(0, 15), viaOther)));
+
+        ICondition.Condition memory short = _leaf(0, 15);
+        short.callData = hex"aabbcc";
+        vm.expectRevert(abi.encodeWithSelector(CompoundCondition.BadCompound.selector, "leaf:callData"));
+        compound.isMet(_compound(CompoundCondition.Op.And, _two(_leaf(1, 25), short)));
+    }
 }
