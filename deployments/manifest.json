@@ -4,31 +4,38 @@
     "196": [
       {
         "contract": "AaveV3Adapter",
-        "address": "0xb42fe2cf2358bedd7e4a47ef63a91828606fc36f",
-        "deployTx": "0x9e88bbfae82654c3a94d70f7b90365f72fb287ca6cba81b3303e1d95f69567d2",
-        "sourceCommit": "fe47fdb7b8be193a50a7eb8e7da2384b94dfe1a2",
-        "timestamp": 1789558496717
+        "address": "0x8ede71f6613e3cad455edb7ced313aed23164c76",
+        "deployTx": "0x814a7ce79b33e57175da96379f6ad6547246c4b571bfdf3c9dbc65ca535b5320",
+        "sourceCommit": "3907f087ff0573410ea35448a347d2e70128d741",
+        "timestamp": 1789638020290
+      },
+      {
+        "contract": "CompoundCondition",
+        "address": "0xb58e1a61f7ccf358c2a7f78705c56644fc10d059",
+        "deployTx": "0x8dc335171f25302b077047ef6f9fee3f75617955ff12a680c3bea692fb2d2b95",
+        "sourceCommit": "3907f087ff0573410ea35448a347d2e70128d741",
+        "timestamp": 1789638020290
       },
       {
         "contract": "ConditionModule",
-        "address": "0x6a9f8be79f617fcd97a09e2a0caac54c06ef8cfc",
-        "deployTx": "0x724a79f89a928e46ece79ea4ed002383f26dc06c01b0f77eeec868d18301b59b",
-        "sourceCommit": "fe47fdb7b8be193a50a7eb8e7da2384b94dfe1a2",
-        "timestamp": 1789558496717
+        "address": "0x506577bc1770231b353c22729bd4a7472ae8e210",
+        "deployTx": "0xf22c98d981982ecc4dfb0437e8ace9545c2ab33939be98bc3c6c6e2826c8ea14",
+        "sourceCommit": "3907f087ff0573410ea35448a347d2e70128d741",
+        "timestamp": 1789638020290
       },
       {
         "contract": "GenericExecutor",
-        "address": "0x073673675d069342892eca30fbbc4d8bc0649d27",
-        "deployTx": "0x635eba45ff0fa208f2161949b5d47527f0d4147c204bb993ceb01eda134e26b6",
-        "sourceCommit": "d9464c98879fda22ab994b1fca7ff7ff8e60ab85",
-        "timestamp": 1789564043233
+        "address": "0x364efa85b3d2aa8a539db6856d1d2bf34b423654",
+        "deployTx": "0x20d561e86a8a868f0faf1d5f8969bbe964231b4b42681bb030c2b0b570295c35",
+        "sourceCommit": "3907f087ff0573410ea35448a347d2e70128d741",
+        "timestamp": 1789638041299
       },
       {
         "contract": "SignoShield",
-        "address": "0x9331264a9e1c0573d920cd8403031cc9761ac60a",
-        "deployTx": "0x32bb42d2f2464851e16fd2e9727c562acd9c4b30435f520fee15fdf81a2b8a1b",
-        "sourceCommit": "fe47fdb7b8be193a50a7eb8e7da2384b94dfe1a2",
-        "timestamp": 1789558496717
+        "address": "0x8a07b505da63f2fd0a17beb78e906f2f9b42b4b4",
+        "deployTx": "0xf8a93c7ee9f3586b40a52c7a8e404440041b1f3fbde8979ec077869337ed1189",
+        "sourceCommit": "3907f087ff0573410ea35448a347d2e70128d741",
+        "timestamp": 1789638020290
       }
     ]
   }

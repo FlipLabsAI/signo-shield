@@ -6,14 +6,17 @@ have had two internal reviews with every finding fixed and pinned by a test
 (FLIP-201 records them), Slither and `forge lint` are clean, and nobody
 outside the team has audited them.
 
-Addresses on X Layer (chain 196), source commit `fe47fdb`:
-SignoShield `0x9331264a9e1C0573D920cD8403031cC9761AC60A`,
-AaveV3Adapter `0xB42Fe2Cf2358BEDD7E4a47eF63a91828606Fc36f`,
-ConditionModule `0x6a9f8bE79f617FCD97A09E2A0CAac54c06EF8cFc`.
-Tier 1, source commit `d9464c9` (reviewed 2026-09-16, findings fixed):
-GenericExecutor `0x073673675d069342892eCA30FBbC4D8Bc0649D27`, its clone
-template `0xd07115a525cD8793180758d645b9461Be89e7227`; listed on the Shield
-only by the admin's `setAdapter`. See `docs/TIER1.md` for what it bounds.
+Addresses on X Layer (chain 196), source commit `3907f08` (deployed
+2026-09-17, Sourcify-verified):
+SignoShield `0x8a07B505Da63f2Fd0a17BEb78e906F2f9b42b4B4`,
+ConditionModule `0x506577BC1770231b353C22729Bd4a7472ae8e210`,
+CompoundCondition `0xb58E1A61F7ccF358c2a7f78705c56644fC10D059` (listed),
+AaveV3Adapter `0x8eDE71F6613E3cAd455EDb7ced313aeD23164C76` (listed),
+GenericExecutor `0x364efa85B3D2aA8A539DB6856D1D2bF34b423654` with its clone
+template `0x2bC45CFd3E3B3cB7580a004Ba5A0287131D9633C`, listed on the Shield
+only by the admin's `setAdapter`; see `docs/TIER1.md` for what it bounds.
+The previous set (Shield `0x9331…c60a`, source `fe47fdb`, and the executor
+from `d9464c9`) holds no mandate and is not used by the app.
 
 ## The parties
 
