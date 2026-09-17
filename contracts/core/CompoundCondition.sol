@@ -94,6 +94,9 @@ contract CompoundCondition is ICondition {
                 return "leaf:nested";
             }
             if (leaves[i].callData.length < 4) return "leaf:callData";
+            // casting to bytes4 is safe: the line above guarantees four bytes, and
+            // bytes4 of a longer array keeps its first four, the selector.
+            // forge-lint: disable-next-line(unsafe-typecast)
             if (bytes4(leaves[i].callData) == ICondition.isMet.selector) return "leaf:nested";
         }
         return "";
