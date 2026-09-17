@@ -264,6 +264,7 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
     function isAdapterListed(address adapter) external view returns (bool) {
         return _adapters[adapter];
     }
+
     /// @inheritdoc ISignoShield
     function isEvaluatorListed(address evaluator) external view returns (bool) {
         return _isEvaluatorListed(evaluator);
@@ -307,13 +308,16 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
         _adapters[adapter] = listed;
         emit AdapterListed(adapter, listed);
     }
+
     /// @notice List or delist a condition evaluator for NEW registrations —
     ///         a compound "A and B", a time-weighted price, whatever judges a
     ///         trigger in a way the default module does not. Reaches no live
     ///         mandate: each one pinned its evaluator when it was signed. The
     ///         default module needs no listing and cannot be delisted.
     function setEvaluator(address evaluator, bool listed) external onlyOwner {
-        if (evaluator == address(0) || evaluator == address(conditionModule)) revert InvalidParams("evaluator");
+        if (evaluator == address(0) || evaluator == address(conditionModule)) {
+            revert InvalidParams("evaluator");
+        }
         if (listed && evaluator.code.length == 0) revert InvalidParams("evaluator");
         _evaluators[evaluator] = listed;
         emit EvaluatorListed(evaluator, listed);
@@ -400,7 +404,10 @@ contract SignoShield is ISignoShield, Ownable2Step, ReentrancyGuard {
     ///      record. The adapter gets the last word on (action, asset, config).
     /// @param pinnedEvaluator the evaluator the record already holds
     ///        (`address(0)` at registration): keeping it needs no listing.
-    function _validateParams(MandateParams calldata p, uint16 feeBpsFor, address pinnedEvaluator) internal view {
+    function _validateParams(MandateParams calldata p, uint16 feeBpsFor, address pinnedEvaluator)
+        internal
+        view
+    {
         if (p.agent == address(0) || p.agent == msg.sender || p.agent == address(this)) {
             revert InvalidParams("agent");
         }

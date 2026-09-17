@@ -58,8 +58,12 @@ contract GenericExecutor4626Test is Test {
 
     function _ctx(bytes memory cfg) internal view returns (IShieldAdapter.Context memory) {
         return IShieldAdapter.Context({
-            mandateId: MANDATE, principal: principal, agent: agent, action: TRANSFORM,
-            asset: address(dai), actionConfig: cfg
+            mandateId: MANDATE,
+            principal: principal,
+            agent: agent,
+            action: TRANSFORM,
+            asset: address(dai),
+            actionConfig: cfg
         });
     }
 
@@ -112,8 +116,13 @@ contract GenericExecutor4626Test is Test {
         // The same vault under Fixed 1:1 — refused, because the pin is stale.
         bytes memory fixedCfg = abi.encode(
             GenericExecutor.TransformConfig({
-                tokenOut: address(vault), target: address(router), spender: address(router),
-                rateKind: GenericExecutor.RateKind.Fixed, oracle: address(0), rateOrFloor: 1e18, maxSlippageBps: 0
+                tokenOut: address(vault),
+                target: address(router),
+                spender: address(router),
+                rateKind: GenericExecutor.RateKind.Fixed,
+                oracle: address(0),
+                rateOrFloor: 1e18,
+                maxSlippageBps: 0
             })
         );
         // Route the same deposit through the mock router so the surface is not the token.
@@ -125,7 +134,8 @@ contract GenericExecutor4626Test is Test {
         vault.deposit(100e18, address(router));
         vm.stopPrank();
         uint256 routerShares = vault.balanceOf(address(router)); // ~90.9e18: what a fair route can pay
-        bytes memory swap = abi.encodeCall(MockRouter.swap, (address(dai), 100e18, address(vault), routerShares, principal));
+        bytes memory swap =
+            abi.encodeCall(MockRouter.swap, (address(dai), 100e18, address(vault), routerShares, principal));
         IShieldAdapter.Context memory ctx = _ctx(fixedCfg);
         vm.expectRevert(); // OutputBelowMinimum: 1:1 demands ~100e18, the market gives ~90.9e18
         executor.execute(ctx, 100e18, swap);
@@ -135,7 +145,13 @@ contract GenericExecutor4626Test is Test {
         vault.setFeeBps(50);
         uint256 preview = vault.previewDeposit(100e18); // 99.5e18
         // convertToShares excludes the fee, so the bound is ~100e18 less slack; 99.5e18 is below it.
-        _fireExpecting(_cfg(0), 100e18, abi.encodeWithSelector(GenericExecutor.OutputBelowMinimum.selector, preview, 100e18 - (100e18 / 10_000 + 1)));
+        _fireExpecting(
+            _cfg(0),
+            100e18,
+            abi.encodeWithSelector(
+                GenericExecutor.OutputBelowMinimum.selector, preview, 100e18 - (100e18 / 10_000 + 1)
+            )
+        );
         uint256 spent = _fire(_cfg(50), 100e18);
         assertEq(spent, 100e18);
         assertEq(vault.balanceOf(principal), preview);
@@ -161,7 +177,9 @@ contract GenericExecutor4626Test is Test {
         IShieldAdapter.Context memory ctx = _ctx(_cfg(0));
         bytes memory data = _depositData(100e18);
         vm.expectEmit(true, true, true, true, address(executor));
-        emit GenericExecutor.Transformed(MANDATE, principal, address(dai), address(vault), clone, 100e18, 100e18, expectedMin);
+        emit GenericExecutor.Transformed(
+            MANDATE, principal, address(dai), address(vault), clone, 100e18, 100e18, expectedMin
+        );
         executor.execute(ctx, 100e18, data);
     }
 
@@ -176,28 +194,35 @@ contract GenericExecutor4626Test is Test {
         GenericExecutor.TransformConfig memory c = abi.decode(_cfg(0), (GenericExecutor.TransformConfig));
 
         // A plain token answers balanceOf but not asset(): not a vault.
-        c.tokenOut = address(other); c.target = address(other); c.spender = address(other);
+        c.tokenOut = address(other);
+        c.target = address(other);
+        c.spender = address(other);
         _expectInvalid(abi.encode(c), "vault:asset");
 
         // A real vault, over a different underlying — the wrong-receipt hazard, caught here.
         MockVault otherVault = new MockVault(IERC20(address(other)));
-        c.tokenOut = address(otherVault); c.target = address(otherVault); c.spender = address(otherVault);
+        c.tokenOut = address(otherVault);
+        c.target = address(otherVault);
+        c.spender = address(otherVault);
         _expectInvalid(abi.encode(c), "vault:asset");
 
         // The surface must be the vault itself.
         c = abi.decode(_cfg(0), (GenericExecutor.TransformConfig));
         c.target = address(router);
         _expectInvalid(abi.encode(c), "vault:surface");
-        c.target = address(vault); c.spender = address(router);
+        c.target = address(vault);
+        c.spender = address(router);
         _expectInvalid(abi.encode(c), "vault:surface");
 
         // No second rate source beside the vault.
         c = abi.decode(_cfg(0), (GenericExecutor.TransformConfig));
         c.oracle = address(router);
         _expectInvalid(abi.encode(c), "oracle");
-        c.oracle = address(0); c.rateOrFloor = 1;
+        c.oracle = address(0);
+        c.rateOrFloor = 1;
         _expectInvalid(abi.encode(c), "rate");
-        c.rateOrFloor = 0; c.maxSlippageBps = 1_001;
+        c.rateOrFloor = 0;
+        c.maxSlippageBps = 1_001;
         _expectInvalid(abi.encode(c), "maxSlippageBps");
     }
 
@@ -205,11 +230,17 @@ contract GenericExecutor4626Test is Test {
     /// refuses a surface that is the output token — the original guard.
     function test_validateConfig_targetEqualsTokenOut_stillRefusedForOtherRules() public {
         GenericExecutor.TransformConfig memory c = GenericExecutor.TransformConfig({
-            tokenOut: address(vault), target: address(vault), spender: address(vault),
-            rateKind: GenericExecutor.RateKind.Fixed, oracle: address(0), rateOrFloor: 1e18, maxSlippageBps: 0
+            tokenOut: address(vault),
+            target: address(vault),
+            spender: address(vault),
+            rateKind: GenericExecutor.RateKind.Fixed,
+            oracle: address(0),
+            rateOrFloor: 1e18,
+            maxSlippageBps: 0
         });
         _expectInvalid(abi.encode(c), "target");
-        c.rateKind = GenericExecutor.RateKind.Floor; c.rateOrFloor = 1;
+        c.rateKind = GenericExecutor.RateKind.Floor;
+        c.rateOrFloor = 1;
         _expectInvalid(abi.encode(c), "target");
     }
 }

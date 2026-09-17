@@ -35,8 +35,13 @@ contract GenericExecutor4626ForkTest is Test {
         assertEq(IERC4626(SDAI).asset(), DAI, "sDAI is a vault over DAI");
         bytes memory cfg = abi.encode(
             GenericExecutor.TransformConfig({
-                tokenOut: SDAI, target: SDAI, spender: SDAI,
-                rateKind: GenericExecutor.RateKind.Erc4626, oracle: address(0), rateOrFloor: 0, maxSlippageBps: 0
+                tokenOut: SDAI,
+                target: SDAI,
+                spender: SDAI,
+                rateKind: GenericExecutor.RateKind.Erc4626,
+                oracle: address(0),
+                rateOrFloor: 0,
+                maxSlippageBps: 0
             })
         );
         executor.validateConfig(keccak256("generic.transform"), DAI, cfg);
@@ -49,8 +54,12 @@ contract GenericExecutor4626ForkTest is Test {
         deal(DAI, address(executor), AMOUNT);
         address clone = executor.nextClone(MANDATE);
         IShieldAdapter.Context memory ctx = IShieldAdapter.Context({
-            mandateId: MANDATE, principal: principal, agent: address(0xA6E47),
-            action: keccak256("generic.transform"), asset: DAI, actionConfig: cfg
+            mandateId: MANDATE,
+            principal: principal,
+            agent: address(0xA6E47),
+            action: keccak256("generic.transform"),
+            asset: DAI,
+            actionConfig: cfg
         });
         uint256 gasBefore = gasleft();
         uint256 spent = executor.execute(ctx, AMOUNT, abi.encodeCall(IERC4626.deposit, (AMOUNT, principal)));
@@ -59,7 +68,9 @@ contract GenericExecutor4626ForkTest is Test {
         assertEq(spent, AMOUNT, "the whole slice went in");
         uint256 got = IERC20(SDAI).balanceOf(principal);
         assertGe(got, preview, "at least what the vault previewed");
-        assertGe(got, AMOUNT * perUnit / 1e18 - (AMOUNT * perUnit / 1e18 / 10_000 + 1), "and at least the bound");
+        assertGe(
+            got, AMOUNT * perUnit / 1e18 - (AMOUNT * perUnit / 1e18 / 10_000 + 1), "and at least the bound"
+        );
         assertEq(IERC20(DAI).balanceOf(clone), 0, "sandbox holds nothing");
         assertEq(IERC20(SDAI).balanceOf(clone), 0);
         assertEq(IERC20(DAI).allowance(clone, SDAI), 0, "no approval survives");

@@ -79,7 +79,11 @@ contract SignoShieldEvaluatorsTest is Test {
         });
     }
 
-    function _params(ICondition.Condition memory c) internal view returns (ISignoShield.MandateParams memory p) {
+    function _params(ICondition.Condition memory c)
+        internal
+        view
+        returns (ISignoShield.MandateParams memory p)
+    {
         p.agent = agent;
         p.adapter = address(adapter);
         p.action = ACTION;
@@ -188,7 +192,9 @@ contract SignoShieldEvaluatorsTest is Test {
         assertEq(uint8(_reason(id)), uint8(ISignoShield.MandateReason.TRIGGER_NOT_MET));
         vm.prank(agent);
         vm.expectRevert(
-            abi.encodeWithSelector(ISignoShield.MandateBlocked.selector, id, ISignoShield.MandateReason.TRIGGER_NOT_MET)
+            abi.encodeWithSelector(
+                ISignoShield.MandateBlocked.selector, id, ISignoShield.MandateReason.TRIGGER_NOT_MET
+            )
         );
         shield.fire(id, 1e6, "");
     }

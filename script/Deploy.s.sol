@@ -34,7 +34,12 @@ contract Deploy is Script {
 
     function run()
         external
-        returns (SignoShield shield, ConditionModule conditions, AaveV3Adapter aave, CompoundCondition compound)
+        returns (
+            SignoShield shield,
+            ConditionModule conditions,
+            AaveV3Adapter aave,
+            CompoundCondition compound
+        )
     {
         address owner = vm.envAddress("SHIELD_OWNER");
         return deployWith(
@@ -49,7 +54,12 @@ contract Deploy is Script {
     /// touching the process environment.
     function deployWith(address owner, address feeRecipient, address enforcer, uint256 feeBpsRaw)
         public
-        returns (SignoShield shield, ConditionModule conditions, AaveV3Adapter aave, CompoundCondition compound)
+        returns (
+            SignoShield shield,
+            ConditionModule conditions,
+            AaveV3Adapter aave,
+            CompoundCondition compound
+        )
     {
         if (feeBpsRaw > type(uint16).max) revert("SHIELD_FEE_BPS out of range");
         uint16 feeBps = uint16(feeBpsRaw);

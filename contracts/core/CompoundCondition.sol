@@ -57,7 +57,10 @@ contract CompoundCondition is ICondition {
         // They must be zero, so one trigger has one encoding and a screen or an
         // indexer that shows them cannot show a condition that is not the one
         // judged. The registration dry-run refuses anything else.
-        if (condition.wordOffset != 0 || condition.comparator != Comparator.LessThan || condition.threshold != 0) {
+        if (
+            condition.wordOffset != 0 || condition.comparator != Comparator.LessThan
+                || condition.threshold != 0
+        ) {
             revert BadCompound("shape");
         }
         (Op op, Condition[] memory leaves) = abi.decode(condition.callData, (Op, Condition[]));
@@ -87,7 +90,9 @@ contract CompoundCondition is ICondition {
             if (leaves[i].evaluator != address(0)) return "leaf:nested";
             // A leaf that reads this contract, or calls any evaluator's isMet,
             // is a nested compound spelled as a plain read.
-            if (leaves[i].target == address(this) || leaves[i].target == address(leafModule)) return "leaf:nested";
+            if (leaves[i].target == address(this) || leaves[i].target == address(leafModule)) {
+                return "leaf:nested";
+            }
             if (leaves[i].callData.length < 4) return "leaf:callData";
             if (bytes4(leaves[i].callData) == ICondition.isMet.selector) return "leaf:nested";
         }

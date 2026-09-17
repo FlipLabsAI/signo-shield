@@ -183,8 +183,12 @@ contract GenericExecutor is IShieldAdapter {
             // exception only ever applies to something that proved it is one.
             bool vault = c.rateKind == RateKind.Erc4626;
             if (vault && _vaultAsset(c.tokenOut) != asset) revert ConfigInvalid("vault:asset");
-            if (_isReserved(c.target, asset, vault ? address(0) : c.tokenOut)) revert ConfigInvalid("target");
-            if (_isReserved(c.spender, asset, vault ? address(0) : c.tokenOut)) revert ConfigInvalid("spender");
+            if (_isReserved(c.target, asset, vault ? address(0) : c.tokenOut)) {
+                revert ConfigInvalid("target");
+            }
+            if (_isReserved(c.spender, asset, vault ? address(0) : c.tokenOut)) {
+                revert ConfigInvalid("spender");
+            }
             if (c.rateKind == RateKind.Fixed) {
                 if (c.rateOrFloor == 0 || c.rateOrFloor > MAX_FIXED_RATE) revert ConfigInvalid("rate");
             } else if (c.rateKind == RateKind.Oracle) {

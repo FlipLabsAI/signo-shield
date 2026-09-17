@@ -117,12 +117,16 @@ contract CompoundConditionTest is Test {
         compound.isMet(_compound(CompoundCondition.Op.And, one));
 
         ICondition.Condition[] memory nine = new ICondition.Condition[](9);
-        for (uint256 i = 0; i < 9; i++) nine[i] = _leaf(0, 15);
+        for (uint256 i = 0; i < 9; i++) {
+            nine[i] = _leaf(0, 15);
+        }
         vm.expectRevert(abi.encodeWithSelector(CompoundCondition.BadCompound.selector, "leaves"));
         compound.isMet(_compound(CompoundCondition.Op.And, nine));
 
         ICondition.Condition[] memory eight = new ICondition.Condition[](8);
-        for (uint256 i = 0; i < 8; i++) eight[i] = _leaf(0, 15);
+        for (uint256 i = 0; i < 8; i++) {
+            eight[i] = _leaf(0, 15);
+        }
         assertTrue(compound.isMet(_compound(CompoundCondition.Op.And, eight)), "eight is the cap, inclusive");
     }
 
@@ -171,7 +175,8 @@ contract CompoundConditionTest is Test {
 
     /// Review L-2: a nested compound spelled as a plain read is still nesting.
     function test_refusesNestingSpelledAsAPlainRead() public {
-        ICondition.Condition memory inner = _compound(CompoundCondition.Op.And, _two(_leaf(0, 15), _leaf(1, 25)));
+        ICondition.Condition memory inner =
+            _compound(CompoundCondition.Op.And, _two(_leaf(0, 15), _leaf(1, 25)));
         ICondition.Condition memory viaCompound = ICondition.Condition({
             target: address(compound),
             callData: abi.encodeCall(ICondition.isMet, (inner)),

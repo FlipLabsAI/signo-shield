@@ -24,7 +24,9 @@ contract DeployForkTest is Test {
     function test_deploy_wiresEverythingAndHandsOff() public {
         (SignoShield shield, ConditionModule conditions, AaveV3Adapter aave, CompoundCondition compound) =
             new Deploy().deployWith(owner, treasury, enforcer, 10);
-        assertTrue(shield.isEvaluatorListed(address(compound)), "the compound evaluator is listed with the set");
+        assertTrue(
+            shield.isEvaluatorListed(address(compound)), "the compound evaluator is listed with the set"
+        );
         assertEq(address(compound.leafModule()), address(conditions));
         (, address deployer,) = vm.readCallers();
 
