@@ -99,23 +99,23 @@ python3 tools/export-artifacts.py               # ABIs into abi/
 python3 tools/export-artifacts.py --deployments # plus deployments/manifest.json
 ```
 
-CI fails if `abi/` is stale, because a submission that ships an ABI which does
-not match its bytecode is worse than one that ships none.
+CI fails if `abi/` is stale, because a public repository that ships an ABI which
+does not match its bytecode is worse than one that ships none.
 
-## What pre-existed this event, and what was added
+## What pre-existed this repository, and what was added
 
-Stated plainly, because the submission rules ask for it.
+Stated plainly, so provenance can be read without asking.
 
 **Pre-existed.** The design in `docs/ARCHITECTURE.md` — bounded execution with
 post-conditions and a disposable clone, one generic condition module, pinned
 adapters as the exception, and the four grant shapes it has to live with — was
-worked out by Flip Labs before the event and is recorded in our internal
-tracker. The off-chain half that this contract is built to serve also
+worked out by Flip Labs before this repository was started and is recorded in
+our internal tracker. The off-chain half that this contract is built to serve also
 pre-existed: the intent schema, the encoder catalogue, receipt-token handling,
 position unlocking and the alerting cron all live in Flip Labs' main
 application and are not part of this repository.
 
-**Added during the event.** Everything in this repository: the Foundry project,
+**Added in this repository.** Everything in it: the Foundry project,
 the interfaces as written here, the contracts, the tests, the deployment
 script, the artifact export and CI.
 

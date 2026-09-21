@@ -18,13 +18,13 @@ solc_version = "0.8.28"
 evm_version = "prague"
 optimizer = true
 optimizer_runs = 200
-# Deterministic bytecode across machines: CI and a judge's laptop must agree.
+# Deterministic bytecode across machines: CI and a reviewer's laptop must agree.
 # No source hash in the bytecode; the CBOR section stays because it carries
 # only the solc version (still deterministic) and forge script needs it to
 # find constructor arguments when it broadcasts a deployment.
 bytecode_hash = "none"
 cbor_metadata = true
-# Fail the build on anything the compiler flags. A hackathon repo that warns
+# Fail the build on anything the compiler flags. A public repo that warns
 # on clone reads as unfinished.
 deny = "warnings"
 

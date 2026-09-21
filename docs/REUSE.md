@@ -2,7 +2,7 @@
 
 This file exists so that the line between reused work and Signo's own work is
 readable without diffing anything. It is maintained by hand and reviewed before
-each submission.
+each release.
 
 ## Rule
 

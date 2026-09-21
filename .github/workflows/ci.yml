@@ -40,7 +40,7 @@ jobs:
         run: forge fmt --check
 
       - name: Exported ABIs are current
-        # The submission ships ABIs a judge can read without the toolchain, so a
+        # The repository ships ABIs a reader can use without the toolchain, so a
         # contract change that does not regenerate them is a broken artifact.
         # Regenerate and fail if anything moved.
         run: |

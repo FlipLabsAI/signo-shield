@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export what a judge needs without running the toolchain.
+"""Export what a reader needs without running the toolchain.
 
 Two outputs, both checked in:
 
@@ -29,7 +29,7 @@ OUT = ROOT / "out"
 ABI_DIR = ROOT / "abi"
 MANIFEST = ROOT / "deployments" / "manifest.json"
 # Only contracts we author. Test helpers and forge-std are not part of the
-# submission surface and must not leak into abi/.
+# public surface and must not leak into abi/.
 SOURCE_DIRS = ("contracts/",)
 
 

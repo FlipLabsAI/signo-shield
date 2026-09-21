@@ -18,7 +18,7 @@ import {MockRouter} from "../mocks/MockRouter.sol";
 /// with its reason code.
 ///
 /// RPC: `XLAYER_RPC_URL`, defaulting to the public endpoint. The block is
-/// pinned so a judge's run and ours read the same state.
+/// pinned so a reviewer's run and ours read the same state.
 contract AaveV3AdapterForkTest is Test {
     uint256 internal constant FORK_BLOCK = 70_752_723;
     address internal constant POOL = 0xE3F3Caefdd7180F884c01E57f65Df979Af84f116;

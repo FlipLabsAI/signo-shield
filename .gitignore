@@ -1,5 +1,5 @@
-# Foundry build output. `abi/` is CHECKED IN on purpose — see tools/export-artifacts.sh:
-# the submission needs ABIs a judge can read without running the toolchain.
+# Foundry build output. `abi/` is CHECKED IN on purpose — see tools/export-artifacts.py:
+# the repository ships ABIs a reader can use without running the toolchain.
 out/
 cache/
 
