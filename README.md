@@ -104,6 +104,8 @@ does not match its bytecode is worse than one that ships none.
 
 ## What pre-existed this repository, and what was added
 
+What the application does around this contract, when it was built, and what it has done on mainnet, is in `docs/APP-SIDE.md`.
+
 Stated plainly, so provenance can be read without asking.
 
 **Pre-existed.** The design in `docs/ARCHITECTURE.md` — bounded execution with
