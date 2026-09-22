@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {IDescriptors} from "../interfaces/IDescriptors.sol";
 import {IEvaluatorV1} from "../interfaces/IEvaluatorV1.sol";
+import {IShieldRegistryV1} from "../interfaces/IShieldRegistryV1.sol";
 
 /// @title ExprLib
 /// @notice The expression tree: encoding, shape checks, bounded reads and
@@ -291,6 +292,21 @@ library ExprLib {
             revert IEvaluatorV1.ReadStale(i);
         }
         if (answeredInRound < roundId) revert IEvaluatorV1.ReadStale(i);
+        // The answer itself must be positive, whichever word the descriptor selects.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        if (int256(_word(out, 1)) <= 0) revert IEvaluatorV1.ReadNotPositive(i);
+    }
+
+    /// @dev The fresh round a mandatory price of `token` must pass, when the
+    ///      registry lists one (read catalog rule). Reverts stale, non-positive
+    ///      or blocked; a token with no listed round passes on positivity alone.
+    function requireFreshPrice(address token, IShieldRegistryV1 registry) internal view {
+        // forge-lint: disable-next-line(calls-loop)
+        (bytes32 id, address feed) = registry.priceRound(token);
+        if (id == bytes32(0)) return;
+        Read memory r = Read({descriptor: id, target: feed, args: "", subject: Subject.None, decimals: 0});
+        // forge-lint: disable-next-line(unused-return)
+        readValue(r, 0, IDescriptors(address(registry)));
     }
 
     // ------------------------------------------------------------ evaluation

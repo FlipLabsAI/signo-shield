@@ -18,6 +18,7 @@ interface IShieldRegistryV1 {
     event LiftQueued(address indexed target, uint64 epoch, address indexed by);
     event LiftExecuted(address indexed target, uint64 epoch, address indexed by);
     event Revoked(address indexed target, address indexed by);
+    event PriceRoundSet(address indexed token, bytes32 descriptor, address feed);
 
     error NotEnforcer();
     error InvalidParams(bytes32 field);
@@ -36,4 +37,10 @@ interface IShieldRegistryV1 {
     function isSuspended(address target) external view returns (bool);
     function isRevoked(address target) external view returns (bool);
     function isVenueBlocked(address target) external view returns (bool);
+    /// @notice The admin of the registry; the core's admin too (one admin, one enforcer exclusion).
+    function owner() external view returns (address);
+    /// @notice The fresh price round every mandatory price read of `token` must pass, when one is
+    ///         listed (the read catalog's rule: a positive price AND a fresh underlying round where one
+    ///         exists). A zero descriptor means positivity only.
+    function priceRound(address token) external view returns (bytes32 descriptor, address feed);
 }

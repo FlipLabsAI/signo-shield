@@ -550,6 +550,65 @@
   },
   {
     "type": "error",
+    "name": "ReadFailed",
+    "inputs": [
+      {
+        "name": "readIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "reason",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ReadNotPositive",
+    "inputs": [
+      {
+        "name": "readIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ReadStale",
+    "inputs": [
+      {
+        "name": "readIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ReadTooShort",
+    "inputs": [
+      {
+        "name": "readIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "length",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "needed",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "SafeERC20FailedOperation",
     "inputs": [
       {
@@ -588,6 +647,17 @@
   },
   {
     "type": "error",
+    "name": "TreeInvalid",
+    "inputs": [
+      {
+        "name": "reason",
+        "type": "string",
+        "internalType": "string"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "UnexpectedData",
     "inputs": []
   },
@@ -599,6 +669,17 @@
         "name": "action",
         "type": "bytes32",
         "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ValueOutOfRange",
+    "inputs": [
+      {
+        "name": "nodeIndex",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   },

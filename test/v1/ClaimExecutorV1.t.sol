@@ -30,7 +30,7 @@ contract ClaimExecutorV1Test is Test {
 
     function setUp() public {
         registry = new ShieldRegistryV1(admin);
-        shield = new ShieldV1(admin, registry, 0);
+        shield = new ShieldV1(registry, 0);
         ev = new ExpressionEvaluator(registry);
         exec = new ClaimExecutorV1(address(shield));
         reward = new MockToken();

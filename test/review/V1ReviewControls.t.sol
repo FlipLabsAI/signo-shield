@@ -348,7 +348,7 @@ contract V1ReviewControlsTest is V1ReviewBase {
         vm.expectRevert();
         registry.setEnforcer(address(this), true);
         vm.expectRevert();
-        core.transferOwnership(enforcer);
+        registry.transferOwnership(enforcer);
     }
 
     function _digest(

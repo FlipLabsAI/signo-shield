@@ -36,7 +36,7 @@ contract ShieldV1Test is Test {
     function setUp() public {
         principal = vm.addr(principalKey);
         registry = new ShieldRegistryV1(admin);
-        shield = new ShieldV1(admin, registry, 10); // 10 bps
+        shield = new ShieldV1(registry, 10); // 10 bps
         ev = new ExpressionEvaluator(registry);
         exec = new MockExecutor(address(shield));
         usdc = new MockToken();

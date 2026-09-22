@@ -47,7 +47,7 @@ abstract contract V1ReviewBase is Test {
         vm.warp(1_800_000_000);
         principal = vm.addr(OWNER_KEY);
         registry = new ShieldRegistryV1(address(this));
-        core = new ShieldV1(address(this), registry, 0);
+        core = new ShieldV1(registry, 0);
         evaluator = new ExpressionEvaluator(registry);
         generic = new GenericExecutorV1(address(core));
         claims = new ClaimExecutorV1(address(core));
@@ -65,7 +65,7 @@ abstract contract V1ReviewBase is Test {
         registry.setExecutor(address(mock), true);
         registry.setEvaluator(address(evaluator), true);
         balanceId = registry.listDescriptor(_descriptor(IERC20.balanceOf.selector));
-        debtId = registry.listDescriptor(_descriptor(bytes4(keccak256("debtOf(address)"))));
+        debtId = registry.listDescriptor(_descriptor(IERC20.balanceOf.selector)); // a debt token's balance
         collateralId = registry.listDescriptor(_descriptor(bytes4(keccak256("collateralOf(address)"))));
         oracle.set(address(asset), 1e8);
         oracle.set(address(output), 1e8);

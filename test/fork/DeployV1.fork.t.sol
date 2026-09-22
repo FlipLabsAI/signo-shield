@@ -18,7 +18,6 @@ contract DeployV1ForkTest is Test {
         assertTrue(d.registry.isExecutorListed(address(d.aave)));
         assertTrue(d.registry.isEvaluatorListed(address(d.evaluator)));
         assertTrue(d.registry.isEnforcer(enforcer));
-        assertEq(d.shield.pendingOwner(), owner);
         assertEq(d.registry.pendingOwner(), owner);
         assertEq(address(d.shield.registry()), address(d.registry));
         assertEq(d.shield.feeBps(), 10);

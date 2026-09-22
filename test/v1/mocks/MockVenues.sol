@@ -80,9 +80,18 @@ contract MockMarket {
         debtOf[u] = d;
     }
 
-    /// @dev The debt figure is in the asset's units, as a debt token's balance would be.
+    /// @dev The market doubles as the debt token of its asset: the debt read
+    ///      is `balanceOf`, in the asset's units, and the token declares its underlying.
     function decimals() external view returns (uint8) {
         return IERC20Metadata(address(asset)).decimals();
+    }
+
+    function balanceOf(address who) external view returns (uint256) {
+        return debtOf[who];
+    }
+
+    function UNDERLYING_ASSET_ADDRESS() external view returns (address) {
+        return address(asset);
     }
 
     function setCollateral(address u, uint256 c) external {

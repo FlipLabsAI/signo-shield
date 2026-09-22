@@ -99,6 +99,7 @@ interface IShieldV1 {
     error MandateBlocked(bytes32 mandateId, MandateReason reason);
     error OutcomeRejected(bytes32 mandateId, MandateReason reason, bytes detail);
     error NotPrincipal();
+    error NotAdmin();
     error ExecutorNotListed(address executor);
     error EvaluatorNotListed(address evaluator);
     error ActionNotSupported(address executor, bytes32 action);

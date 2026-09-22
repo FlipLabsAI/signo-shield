@@ -43,6 +43,7 @@ contract GenericExecutorV1 is IExecutorV1 {
     uint256 public constant MAX_VENUES = 16;
     uint256 public constant MAX_SWEEP = 16;
     uint256 public constant MAX_ROUTE_BYTES = 8192;
+    bytes4 private constant SEL_UNDERLYING = 0xb16a19de; // UNDERLYING_ASSET_ADDRESS()
 
     enum RateKind {
         Fixed,
@@ -232,6 +233,9 @@ contract GenericExecutorV1 is IExecutorV1 {
         if (c.signedAssetsPerShare == 0 || c.sanityBandBps == 0 || c.sanityBandBps > BPS) {
             revert ConfigInvalid("redeem:sanity");
         }
+        // The independent basis of a redemption is the signed conversion and
+        // its band; no oracle is consulted, so none may be signed here.
+        if (c.oracle != address(0) || c.rateOrFloor != 0) revert ConfigInvalid("redeem:oracle");
         _checkSanity(c, asset);
     }
 
@@ -245,14 +249,24 @@ contract GenericExecutorV1 is IExecutorV1 {
         if (!dl || dr || !cl || cr) revert ConfigInvalid("repay:descriptor");
         _checkRecipeRead(dd, c.market, "repay:debt");
         _checkRecipeRead(cd, c.collateralTarget, "repay:collateral");
-        // The debt is measured in the asset's own units: the debt read is the
-        // debt token's balance (its decimals equal the asset's), never a
-        // base-currency figure.
-        uint8 assetDec = IERC20Metadata(asset).decimals();
-        uint8 debtDec = dd.kind == IDescriptors.DescriptorKind.PerAddress
-            ? dd.decimals
-            : IERC20Metadata(c.market).decimals();
-        if (debtDec != assetDec) revert ConfigInvalid("repay:units");
+        // The debt is measured in the asset's own units: the debt read is
+        // `balanceOf` on a debt token that declares the asset as its
+        // underlying (Aave's variable debt token), never a base-currency
+        // figure and never a token of another asset with the same decimals.
+        if (dd.kind != IDescriptors.DescriptorKind.Shape || dd.selector != IERC20.balanceOf.selector) {
+            revert ConfigInvalid("repay:units");
+        }
+        if (_underlyingOf(c.market) != asset) revert ConfigInvalid("repay:units");
+        if (IERC20Metadata(c.market).decimals() != IERC20Metadata(asset).decimals()) {
+            revert ConfigInvalid("repay:units");
+        }
+    }
+
+    /// @dev What a debt token says it stands for (`UNDERLYING_ASSET_ADDRESS()`), or zero.
+    function _underlyingOf(address token) internal view returns (address) {
+        (bool ok, bytes memory ret) = token.staticcall(abi.encodeWithSelector(SEL_UNDERLYING));
+        if (!ok || ret.length < 32) return address(0);
+        return abi.decode(ret, (address));
     }
 
     /// @dev A recipe read names the principal as the account, is bound to the
@@ -269,7 +283,7 @@ contract GenericExecutorV1 is IExecutorV1 {
     }
 
     /// @inheritdoc IExecutorV1
-    function snapshot(Context calldata ctx, uint256) external view returns (bytes memory) {
+    function snapshot(Context calldata ctx, uint256 amount) external view returns (bytes memory) {
         Config memory c = _decode(ctx.actionConfig);
         if (ctx.action == ACTION_REPAY) {
             return abi.encode(
@@ -278,10 +292,11 @@ contract GenericExecutorV1 is IExecutorV1 {
             );
         }
         if (ctx.action == ACTION_REDEEM) {
-            // The vault's conversion before the redemption: the minimum is
-            // priced on what the owner had, not on what the call left.
+            // The vault's conversion of the exact amount, before the
+            // redemption: the minimum is priced on what the owner had, at
+            // full precision, not on a unit quote scaled up.
             _checkSanity(c, ctx.asset);
-            return abi.encode(_assetsPerShareUnit(ctx.asset));
+            return abi.encode(IERC4626(ctx.asset).convertToAssets(amount));
         }
         return "";
     }
@@ -348,7 +363,7 @@ contract GenericExecutorV1 is IExecutorV1 {
         returns (uint256 spent)
     {
         if (ctx.before.length != 32) revert BeforeMissing();
-        uint256 rateBefore = abi.decode(ctx.before, (uint256));
+        uint256 quote = abi.decode(ctx.before, (uint256)); // convertToAssets(amount), pre-call
         Firing memory f;
         f.inBefore = IERC20(ctx.asset).balanceOf(ctx.principal);
         f.outBefore = IERC20(c.tokenOut).balanceOf(ctx.principal);
@@ -361,8 +376,10 @@ contract GenericExecutorV1 is IExecutorV1 {
         returned = returned > f.parked ? returned - f.parked : 0;
         spent = returned >= amount ? 0 : amount - returned;
         if (spent == 0) revert NothingSold();
-        // What was consumed at the pre-call conversion, less the tolerance (a withdrawal fee counts against it).
-        uint256 exact = Math.mulDiv(spent, rateBefore, 10 ** IERC20Metadata(ctx.asset).decimals());
+        // What was consumed at the pre-call conversion, less the tolerance (a
+        // withdrawal fee counts against it). A partial consumption is the
+        // exact quote scaled down, never a unit quote scaled up.
+        uint256 exact = spent == amount ? quote : Math.mulDiv(quote, spent, amount);
         uint256 minOut = _lessRounding(Math.mulDiv(exact, BPS - c.maxSlippageBps, BPS));
         if (minOut == 0) minOut = 1;
         if (received < minOut) revert OutputBelowMinimum(received, minOut);
@@ -547,6 +564,9 @@ contract GenericExecutorV1 is IExecutorV1 {
     {
         // The oracle is a dependency like any venue: a suspended or revoked one stops the firing.
         if (registry.isVenueBlocked(c.oracle)) revert VenueBlocked(c.oracle);
+        // A positive price, and a fresh underlying round where the registry lists one.
+        ExprLib.requireFreshPrice(tokenIn, registry);
+        ExprLib.requireFreshPrice(c.tokenOut, registry);
         priceIn = IPriceOracle(c.oracle).getAssetPrice(tokenIn);
         priceOut = IPriceOracle(c.oracle).getAssetPrice(c.tokenOut);
         if (priceIn == 0 || priceOut == 0) revert ConfigInvalid("oracle");

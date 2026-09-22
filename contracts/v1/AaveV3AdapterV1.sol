@@ -7,6 +7,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {IExecutorV1, SemanticsV1} from "./interfaces/IExecutorV1.sol";
 import {IShieldV1} from "./interfaces/IShieldV1.sol";
 import {IShieldRegistryV1} from "./interfaces/IShieldRegistryV1.sol";
+import {ExprLib} from "./libraries/ExprLib.sol";
 import {
     IAaveOracle,
     IPool,
@@ -304,6 +305,11 @@ contract AaveV3AdapterV1 is IExecutorV1 {
         returns (uint256)
     {
         IAaveOracle oracle = IAaveOracle(addressesProvider.getPriceOracle());
+        // The resolved oracle is a dependency like the pool and the router.
+        if (registry.isVenueBlocked(address(oracle))) revert VenueBlocked(address(oracle));
+        // A positive price, and a fresh underlying round where the registry lists one.
+        ExprLib.requireFreshPrice(c.collateral, registry);
+        ExprLib.requireFreshPrice(c.debtAsset, registry);
         uint256 collateralPrice = oracle.getAssetPrice(c.collateral);
         uint256 debtPrice = oracle.getAssetPrice(c.debtAsset);
         if (collateralPrice == 0 || debtPrice == 0) revert OutcomeFailed("oracle price");

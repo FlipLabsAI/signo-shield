@@ -688,6 +688,11 @@
   },
   {
     "type": "error",
+    "name": "NotAdmin",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NotPrincipal",
     "inputs": []
   },

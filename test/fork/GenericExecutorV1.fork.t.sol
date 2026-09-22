@@ -40,7 +40,7 @@ contract GenericExecutorV1ForkTest is Test {
     function setUp() public {
         vm.createSelectFork(vm.envOr("XLAYER_RPC_URL", string("https://rpc.xlayer.tech")), FORK_BLOCK);
         registry = new ShieldRegistryV1(address(this));
-        shield = new ShieldV1(address(this), registry, 0);
+        shield = new ShieldV1(registry, 0);
         ev = new ExpressionEvaluator(registry);
         exec = new GenericExecutorV1(address(shield));
         registry.setExecutor(address(exec), true);

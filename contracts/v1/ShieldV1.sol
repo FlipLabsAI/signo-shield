@@ -3,7 +3,6 @@ pragma solidity 0.8.28;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
@@ -22,11 +21,12 @@ import {IExecutorV1, SemanticsV1} from "./interfaces/IExecutorV1.sol";
 ///         listings, the read catalog and the emergency controls live in the
 ///         registry it is bound to (ShieldRegistryV1).
 ///
-/// Roles. The admin (`Ownable2Step`) sets the fee for new mandates and the
-/// fee recipient; it cannot touch a live mandate or any funds. Nobody can
+/// Roles. The admin is the registry's owner (one admin, one enforcer
+/// exclusion); here it sets the fee for new mandates and the fee recipient
+/// and nothing else; it cannot touch a live mandate or any funds. Nobody can
 /// change what an owner signed. Every contract is immutable; a change is a
 /// new version.
-contract ShieldV1 is IShieldV1, Ownable2Step, ReentrancyGuard, EIP712 {
+contract ShieldV1 is IShieldV1, ReentrancyGuard, EIP712 {
     using SafeERC20 for IERC20;
 
     string public constant VERSION = "1.0.0";
@@ -44,10 +44,7 @@ contract ShieldV1 is IShieldV1, Ownable2Step, ReentrancyGuard, EIP712 {
 
     mapping(bytes32 mandateId => Mandate) private _mandates;
 
-    constructor(address initialOwner, IShieldRegistryV1 registry_, uint16 feeBps_)
-        Ownable(initialOwner)
-        EIP712("SignoShield", "1")
-    {
+    constructor(IShieldRegistryV1 registry_, uint16 feeBps_) EIP712("SignoShield", "1") {
         if (address(registry_).code.length == 0) revert InvalidParams("registry");
         registry = registry_;
         _setFeeBps(feeBps_);
@@ -60,7 +57,7 @@ contract ShieldV1 is IShieldV1, Ownable2Step, ReentrancyGuard, EIP712 {
         if (!registry.isExecutorListed(p.executor)) revert ExecutorNotListed(p.executor);
         if (!registry.isEvaluatorListed(p.evaluator)) revert EvaluatorNotListed(p.evaluator);
         if (feeBps > p.maxFeeBps) revert FeeAboveMax(feeBps, p.maxFeeBps);
-        _validateParams(p, feeBps, msg.sender, true, true);
+        _validateParams(p, feeBps, msg.sender, true, true, true);
 
         mandateId = keccak256(abi.encode(block.chainid, address(this), msg.sender, nonces[msg.sender]++));
         Mandate storage m = _mandates[mandateId];
@@ -95,8 +92,10 @@ contract ShieldV1 is IShieldV1, Ownable2Step, ReentrancyGuard, EIP712 {
         if (m.feeBps > p.maxFeeBps) revert FeeAboveMax(m.feeBps, p.maxFeeBps);
         bool triggerChanged = keccak256(p.trigger) != keccak256(m.trigger);
         bool outcomeChanged = keccak256(p.outcome) != keccak256(m.outcome);
-        // An unchanged tree may keep a delisted descriptor; a changed one is a new tree.
-        _validateParams(p, m.feeBps, msg.sender, triggerChanged, outcomeChanged);
+        bool configChanged = keccak256(p.actionConfig) != keccak256(m.actionConfig);
+        // An unchanged tree or action config keeps its admitted descriptors
+        // (delisting gates new admission only); a changed one is new.
+        _validateParams(p, m.feeBps, msg.sender, triggerChanged, outcomeChanged, configChanged);
         _writeMutable(m, p);
         m.revision += 1;
         // An unchanged tree keeps its baseline; a changed one is re-taken.
@@ -291,7 +290,7 @@ contract ShieldV1 is IShieldV1, Ownable2Step, ReentrancyGuard, EIP712 {
     }
 
     // forge-lint: disable-next-item(missing-zero-check)
-    function setFeeRecipient(address recipient) external onlyOwner {
+    function setFeeRecipient(address recipient) external onlyAdmin {
         if (recipient == address(this) || registry.isExecutorListed(recipient)) {
             revert InvalidParams("feeRecipient");
         }
@@ -299,22 +298,14 @@ contract ShieldV1 is IShieldV1, Ownable2Step, ReentrancyGuard, EIP712 {
         emit FeeRecipientSet(recipient);
     }
 
-    function setFeeBps(uint16 bps) external onlyOwner {
+    function setFeeBps(uint16 bps) external onlyAdmin {
         _setFeeBps(bps);
     }
 
-    function transferOwnership(address newOwner) public override(Ownable2Step) onlyOwner {
-        if (registry.isEnforcer(newOwner)) revert AdminCannotBeEnforcer(newOwner);
-        super.transferOwnership(newOwner);
-    }
-
-    function acceptOwnership() public override(Ownable2Step) {
-        if (registry.isEnforcer(msg.sender)) revert AdminCannotBeEnforcer(msg.sender);
-        super.acceptOwnership();
-    }
-
-    function renounceOwnership() public view override(Ownable) onlyOwner {
-        revert InvalidParams("renounceOwnership");
+    /// @dev The registry's owner is the admin here too.
+    modifier onlyAdmin() {
+        if (msg.sender != registry.owner()) revert NotAdmin();
+        _;
     }
 
     // ================================================================= internal
@@ -353,7 +344,8 @@ contract ShieldV1 is IShieldV1, Ownable2Step, ReentrancyGuard, EIP712 {
         uint16 feeBpsFor,
         address principal,
         bool triggerNew,
-        bool outcomeNew
+        bool outcomeNew,
+        bool configNew
     ) internal view {
         if (p.agent == address(0) || p.agent == principal || p.agent == address(this)) {
             revert InvalidParams("agent");
@@ -386,7 +378,7 @@ contract ShieldV1 is IShieldV1, Ownable2Step, ReentrancyGuard, EIP712 {
         // Funding NONE is only for the claim semantics; everything else pulls.
         bool noInput = sem == SemanticsV1.CLAIM_COLLECT || sem == SemanticsV1.CLAIM_COMPOSE;
         if (noInput != (p.funding == uint8(FundingMode.NONE))) revert InvalidParams("funding");
-        x.validateConfig(p.action, p.asset, p.actionConfig);
+        if (configNew) x.validateConfig(p.action, p.asset, p.actionConfig);
         IEvaluatorV1 e = IEvaluatorV1(p.evaluator);
         if (p.trigger.length != 0) e.validate(p.trigger, IEvaluatorV1.Phase.Trigger, principal, triggerNew);
         if (p.outcome.length != 0) e.validate(p.outcome, IEvaluatorV1.Phase.Outcome, principal, outcomeNew);

@@ -40,7 +40,7 @@ contract GenericExecutorV1Test is Test {
 
     function setUp() public {
         registry = new ShieldRegistryV1(admin);
-        shield = new ShieldV1(admin, registry, 0);
+        shield = new ShieldV1(registry, 0);
         ev = new ExpressionEvaluator(registry);
         exec = new GenericExecutorV1(address(shield));
         usdc = new MockToken();
@@ -56,7 +56,7 @@ contract GenericExecutorV1Test is Test {
         registry.setEnforcer(enforcer, true);
         registry.setExecutor(address(exec), true);
         registry.setEvaluator(address(ev), true);
-        dDebt = registry.listDescriptor(_shape(bytes4(keccak256("debtOf(address)"))));
+        dDebt = registry.listDescriptor(_shape(bytes4(keccak256("balanceOf(address)")))); // the debt token's balance
         dColl = registry.listDescriptor(_shape(bytes4(keccak256("collateralOf(address)"))));
         vm.stopPrank();
         usdc.mint(principal, 1_000_000e18);

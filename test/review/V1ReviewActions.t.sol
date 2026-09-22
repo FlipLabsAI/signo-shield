@@ -60,6 +60,14 @@ contract ReviewPullLinkedMarket {
         return 18;
     }
 
+    function balanceOf(address who) external view returns (uint256) {
+        return debtOf[who];
+    }
+
+    function UNDERLYING_ASSET_ADDRESS() external view returns (address) {
+        return address(token);
+    }
+
     IERC20 internal token;
     mapping(address => uint256) public debtOf;
 

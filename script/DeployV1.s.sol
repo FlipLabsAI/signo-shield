@@ -55,7 +55,7 @@ contract DeployV1 is Script {
             revert("ENFORCER must be neither deployer nor owner");
         }
         d.registry = new ShieldRegistryV1(deployer);
-        d.shield = new ShieldV1(deployer, d.registry, feeBps);
+        d.shield = new ShieldV1(d.registry, feeBps);
         d.evaluator = new ExpressionEvaluator(d.registry);
         d.generic = new GenericExecutorV1(address(d.shield));
         d.aave = new AaveV3AdapterV1(address(d.shield), IPool(pool));
@@ -67,8 +67,8 @@ contract DeployV1 is Script {
         _listCatalog(d.registry, pool);
         d.shield.setFeeRecipient(feeRecipient);
         if (enforcer != address(0)) d.registry.setEnforcer(enforcer, true);
+        // One admin: the registry's owner is the core's admin too.
         d.registry.transferOwnership(owner);
-        d.shield.transferOwnership(owner);
         vm.stopBroadcast();
         console.log("chainId            ", block.chainid);
         console.log("ShieldRegistryV1   ", address(d.registry));
@@ -116,17 +116,60 @@ contract DeployV1 is Script {
         if (block.chainid == XLAYER) {
             address oracle = 0x91FC11136d5615575a0fC5981Ab5C0C54418E2C6;
             _log("aave.price", shield.listDescriptor(_price(oracle)));
-            _log("feed.eth", shield.listDescriptor(_round(0x8b85b50535551F8E8cDAF78dA235b5Cf1005907b, 3600)));
-            _log(
-                "feed.usdt", shield.listDescriptor(_round(0xb928a0678352005a2e51F614efD0b54C9830dB80, 86_400))
+            // The fresh round every mandatory price of a reserve must pass
+            // (read catalog rule); GHO and USDG have no round-capable source.
+            _feed(
+                shield,
+                "feed.eth",
+                0xE7B000003A45145decf8a28FC755aD5eC5EA025A,
+                0x8b85b50535551F8E8cDAF78dA235b5Cf1005907b,
+                3600
             );
-            _log(
-                "feed.usdc", shield.listDescriptor(_round(0xB8a08c178D96C315FbFB5661ABD208477391BC40, 86_400))
+            _feed(
+                shield,
+                "feed.usdt",
+                0x779Ded0c9e1022225f8E0630b35a9b54bE713736,
+                0xb928a0678352005a2e51F614efD0b54C9830dB80,
+                86_400
             );
-            _log("feed.btc", shield.listDescriptor(_round(0x4D6f6488a2B3a5f7b088f276887f608a1e9805c4, 3600)));
-            _log("feed.okb", shield.listDescriptor(_round(0x4Ff345b18a2bF894F8627F41501FBf30d5C5e7BE, 3600)));
-            _log("feed.sol", shield.listDescriptor(_round(0xF959E1B5cA535C28aD24F7f672Bf1A93900810cF, 3600)));
+            _feed(
+                shield,
+                "feed.usdc",
+                0xB6CEceAB302E2E4948951eE7843FC24E92933061,
+                0xB8a08c178D96C315FbFB5661ABD208477391BC40,
+                86_400
+            );
+            _feed(
+                shield,
+                "feed.btc",
+                0xb7C00000bcDEeF966b20B3D884B98E64d2b06b4f,
+                0x4D6f6488a2B3a5f7b088f276887f608a1e9805c4,
+                3600
+            );
+            _feed(
+                shield,
+                "feed.okb",
+                0xe538905cf8410324e03A5A23C1c177a474D59b2b,
+                0x4Ff345b18a2bF894F8627F41501FBf30d5C5e7BE,
+                3600
+            );
+            _feed(
+                shield,
+                "feed.sol",
+                0x505000008DE8748DBd4422ff4687a4FC9bEba15b,
+                0xF959E1B5cA535C28aD24F7f672Bf1A93900810cF,
+                3600
+            );
         }
+    }
+
+    /// @dev List a feed's round descriptor and bind it as the fresh round of `token`.
+    function _feed(ShieldRegistryV1 shield, string memory name, address token, address feed, uint32 maxAge)
+        internal
+    {
+        bytes32 id = shield.listDescriptor(_round(feed, maxAge));
+        shield.setPriceRound(token, id, feed);
+        _log(name, id);
     }
 
     function _shape(

@@ -42,9 +42,28 @@ contract ShieldRegistryV1 is IShieldRegistryV1, IDescriptors, Ownable2Step {
     mapping(bytes32 id => bool) private _descriptorListed;
     mapping(bytes32 id => bool) private _descriptorRevoked;
 
+    /// @dev The round read (descriptor and feed) a mandatory price of `token` must pass.
+    struct PriceRound {
+        bytes32 descriptor;
+        address feed;
+    }
+
+    mapping(address token => PriceRound) private _priceRounds;
+
     constructor(address initialOwner) Ownable(initialOwner) {}
 
+    /// @inheritdoc IShieldRegistryV1
+    function owner() public view override(Ownable, IShieldRegistryV1) returns (address) {
+        return super.owner();
+    }
+
     // ==================================================================== views
+
+    /// @inheritdoc IShieldRegistryV1
+    function priceRound(address token) external view returns (bytes32 descriptor, address feed) {
+        PriceRound storage r = _priceRounds[token];
+        return (r.descriptor, r.feed);
+    }
 
     /// @inheritdoc IShieldRegistryV1
     function stopped(address listed) external view returns (bool) {
@@ -248,6 +267,23 @@ contract ShieldRegistryV1 is IShieldRegistryV1, IDescriptors, Ownable2Step {
         if (_descriptors[id].gasStipend == 0) _descriptors[id] = d;
         _descriptorListed[id] = true;
         emit DescriptorListed(id, true);
+    }
+
+    /// @notice Bind the fresh round read a mandatory price of `token` must pass; a zero descriptor
+    ///         clears it (positivity only, for a reserve with no round-capable source).
+    function setPriceRound(address token, bytes32 descriptor, address feed) external onlyOwner {
+        if (descriptor != bytes32(0)) {
+            Descriptor storage d = _descriptors[descriptor];
+            if (!_descriptorListed[descriptor] || _descriptorRevoked[descriptor]) {
+                revert InvalidParams("round");
+            }
+            if (d.freshness != Freshness.ChainlinkRound) revert InvalidParams("round");
+            if (d.kind == DescriptorKind.PerAddress ? d.target != feed : feed.code.length == 0) {
+                revert InvalidParams("feed");
+            }
+        }
+        _priceRounds[token] = PriceRound({descriptor: descriptor, feed: feed});
+        emit PriceRoundSet(token, descriptor, feed);
     }
 
     /// @notice Delist a descriptor for NEW registrations; live mandates keep reading through it.

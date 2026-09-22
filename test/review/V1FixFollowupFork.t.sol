@@ -16,9 +16,12 @@ import {IDescriptors} from "contracts/v1/interfaces/IDescriptors.sol";
 import {ExpressionEvaluator} from "contracts/v1/ExpressionEvaluator.sol";
 import {ExprLib} from "contracts/v1/libraries/ExprLib.sol";
 import {AaveV3AdapterV1} from "contracts/v1/AaveV3AdapterV1.sol";
-import {MockRouter} from "../mocks/MockRouter.sol";
+import {MockRouter} from "test/mocks/MockRouter.sol";
+import {GenericExecutorV1} from "contracts/v1/GenericExecutorV1.sol";
+import {IExecutorV1} from "contracts/v1/interfaces/IExecutorV1.sol";
+import {IEvaluatorV1} from "contracts/v1/interfaces/IEvaluatorV1.sol";
 
-contract AaveV3AdapterV1ForkTest is Test {
+contract V1FixFollowupForkTest is Test {
     uint256 internal constant FORK_BLOCK = 70_752_723;
     address internal constant POOL = 0xE3F3Caefdd7180F884c01E57f65Df979Af84f116;
     address internal constant ORACLE = 0x91FC11136d5615575a0fC5981Ab5C0C54418E2C6;
@@ -48,7 +51,7 @@ contract AaveV3AdapterV1ForkTest is Test {
     function setUp() public {
         vm.createSelectFork(vm.envOr("XLAYER_RPC_URL", string("https://rpc.xlayer.tech")), FORK_BLOCK);
         assertEq(block.chainid, 196);
-        validUntil = uint48(block.timestamp + 30 days);
+        validUntil = uint48(vm.getBlockTimestamp() + 30 days);
         registry = new ShieldRegistryV1(address(this));
         shield = new ShieldV1(registry, 10);
         ev = new ExpressionEvaluator(registry);
@@ -173,119 +176,102 @@ contract AaveV3AdapterV1ForkTest is Test {
         assertEq(IERC20(XETH).allowance(address(adapter), address(router)), 0, "approval xETH->spender");
     }
 
-    // ---------------------------------------------------------------- cases
-
-    function test_repay_realDebtWithATriggerTreeThroughTheCatalog() public {
-        IShieldV1.MandateParams memory p = _params(REPAY, USDT0, 20e6, 40e6, _hfBelow(1.6e18));
-        bytes32 id = _register(p);
-        uint256 debtBefore = IERC20(V_USDT0).balanceOf(principal);
-        uint256 hfBefore = _healthFactor(principal);
-        assertLt(hfBefore, 1.6e18, "fixture: trigger is true");
-        (bool ok,) = shield.canFireBy(id, agent, 10e6);
-        assertTrue(ok);
-        vm.prank(agent);
-        uint256 spent = shield.fire(id, 10e6, "");
-        assertEq(spent, 10e6); // fee recipient unset: no fee
-        assertApproxEqAbs(
-            debtBefore - IERC20(V_USDT0).balanceOf(principal), 10e6, 2, "debt fell by what was repaid"
-        );
-        assertGt(_healthFactor(principal), hfBefore);
-        assertEq(shield.getMandate(id).cumulativeUsed, 10e6);
-        _assertNothingLeftBehind();
-        // The repay lifted the health factor past the trigger: refused now.
-        assertGe(_healthFactor(principal), 1.6e18);
-        vm.prank(agent);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IShieldV1.MandateBlocked.selector, id, IShieldV1.MandateReason.TRIGGER_NOT_MET
-            )
-        );
-        shield.fire(id, 10e6, "");
-    }
-
-    function test_supply_raisesTheOwnersATokenBalance() public {
-        bytes32 id = _register(_params(SUPPLY, XETH, 0.01e18, 0.02e18, ""));
-        uint256 aBefore = IERC20(A_XETH).balanceOf(principal);
-        vm.prank(agent);
-        uint256 spent = shield.fire(id, 0.01e18, "");
-        assertEq(spent, 0.01e18);
-        assertApproxEqAbs(IERC20(A_XETH).balanceOf(principal) - aBefore, 0.01e18, 2);
-        _assertNothingLeftBehind();
-        vm.prank(agent);
-        vm.expectRevert();
-        shield.fire(id, 0.01e18, hex"01"); // supply takes no route
-    }
-
-    function test_repayWithCollateral_bringsTheHealthFactorToTarget() public {
-        IShieldV1.MandateParams memory p = _params(RWC, A_XETH, 0.01e18, 0.02e18, _hfBelow(1.6e18));
-        p.actionConfig = _rwcConfig(1.7e18);
-        bytes32 id = _register(p);
-        uint256 slice = 0.008e18;
-        uint256 amountIn = slice - 1_000;
-        uint256 amountOut = (_fairUsdt0(amountIn) * 9_950) / 10_000;
-        uint256 debtBefore = IERC20(V_USDT0).balanceOf(principal);
-        uint256 aBefore = IERC20(A_XETH).balanceOf(principal);
-        bytes memory route = _swapCalldata(amountIn, amountOut, address(adapter));
-        vm.prank(agent);
-        uint256 spent = shield.fire(id, slice, route);
-        assertApproxEqAbs(spent, amountIn, 2, "what was sold is what was spent");
-        assertApproxEqAbs(
-            aBefore - IERC20(A_XETH).balanceOf(principal), amountIn, 2, "only the sold part left"
-        );
-        assertApproxEqAbs(
-            debtBefore - IERC20(V_USDT0).balanceOf(principal), amountOut, 2, "debt fell by the output"
-        );
-        assertGe(_healthFactor(principal), 1.7e18);
-        _assertNothingLeftBehind();
-    }
-
-    function test_repayWithCollateral_partialSaleGoesBackIntoThePosition() public {
-        IShieldV1.MandateParams memory p = _params(RWC, A_XETH, 0.01e18, 0.02e18, _hfBelow(1.6e18));
+    // The fixture above is copied unchanged in behaviour from the existing Aave v1 fork suite.
+    /// R3 (fixed): the adapter refuses a suspended or revoked oracle.
+    function _blockedOracleStopsFiring(bool permanent) internal {
+        IShieldV1.MandateParams memory p = _params(RWC, A_XETH, 0.01e18, 0.02e18, "");
         p.actionConfig = _rwcConfig(1e18);
         bytes32 id = _register(p);
-        uint256 sliver = 0.0005e18;
-        uint256 aBefore = IERC20(A_XETH).balanceOf(principal);
-        uint256 xethBefore = IERC20(XETH).balanceOf(principal);
-        bytes memory route = _swapCalldata(sliver, _fairUsdt0(sliver), address(adapter));
-        vm.prank(agent);
-        uint256 spent = shield.fire(id, 0.008e18, route);
-        assertApproxEqAbs(spent, sliver, 2);
-        assertApproxEqAbs(
-            aBefore - IERC20(A_XETH).balanceOf(principal), sliver, 2, "the rest is back in the position"
-        );
-        assertEq(IERC20(XETH).balanceOf(principal), xethBefore, "no collateral landed in the wallet");
-        _assertNothingLeftBehind();
-    }
-
-    function test_repayWithCollateral_suspendedRouterIsRefused() public {
-        IShieldV1.MandateParams memory p = _params(RWC, A_XETH, 0.01e18, 0.02e18, _hfBelow(1.6e18));
-        p.actionConfig = _rwcConfig(1e18);
-        bytes32 id = _register(p);
-        registry.setEnforcer(makeAddr("enforcer"), true);
-        vm.prank(makeAddr("enforcer"));
-        registry.suspend(address(router));
-        bytes memory route = _swapCalldata(0.0005e18, _fairUsdt0(0.0005e18), address(adapter));
+        uint256 sold = 0.0005e18;
+        uint256 fair = _fairUsdt0(sold);
+        uint256 debtBefore = IERC20(V_USDT0).balanceOf(principal);
+        bytes memory route = _swapCalldata(sold, fair, address(adapter));
+        address enforcer = address(0xE0);
+        registry.setEnforcer(enforcer, true);
+        vm.prank(enforcer);
+        if (permanent) registry.revoke(ORACLE);
+        else registry.suspend(ORACLE);
+        assertTrue(registry.isVenueBlocked(ORACLE));
         vm.prank(agent);
         vm.expectRevert();
         shield.fire(id, 0.008e18, route);
+        assertEq(IERC20(V_USDT0).balanceOf(principal), debtBefore);
+        assertEq(shield.getMandate(id).firings, 0);
+        _assertNothingLeftBehind();
     }
 
-    function test_repayWithCollateral_refusesLooseSlippageWithoutOverride() public {
-        IShieldV1.MandateParams memory p = _params(RWC, A_XETH, 0.01e18, 0.02e18, _hfBelow(1.6e18));
-        p.actionConfig = abi.encode(
-            uint8(1),
-            AaveV3AdapterV1.RepayWithCollateralConfig({
-                collateral: XETH,
-                debtAsset: USDT0,
-                targetHealthFactor: 1.5e18,
-                maxSlippageBps: 300,
-                slippageOverride: false,
-                router: address(router),
-                spender: address(router)
-            })
-        );
+    function test_fixAaveRevokedOracleStopsFiringOnRealPoolFork() public {
+        _blockedOracleStopsFiring(true);
+    }
+
+    function test_fixAaveSuspendedOracleStopsFiringOnRealPoolFork() public {
+        _blockedOracleStopsFiring(false);
+    }
+
+    /// R4 (fixed): the registry binds the fresh round every mandatory price of a
+    /// reserve must pass; the generic oracle rate refuses a stale USDT round.
+    function test_fixGenericOracleRateRequiresFreshUnderlyingRound() public {
+        address feed = 0xb928a0678352005a2e51F614efD0b54C9830dB80;
+        vm.warp(vm.getBlockTimestamp() + 25 hours);
+        (bool ok, bytes memory ret) = feed.staticcall(abi.encodeWithSignature("latestRoundData()"));
+        assertTrue(ok);
+        (,,, uint256 updatedAt,) = abi.decode(ret, (uint80, int256, uint256, uint256, uint80));
+        assertGt(vm.getBlockTimestamp(), updatedAt + 86_400);
+        IDescriptors.Descriptor memory d;
+        d.kind = IDescriptors.DescriptorKind.PerAddress;
+        d.target = feed;
+        d.selector = bytes4(keccak256("latestRoundData()"));
+        d.subjectArg = -1;
+        d.word = 1;
+        d.isSigned = true;
+        d.mustBePositive = true;
+        d.decimals = 8;
+        d.freshness = IDescriptors.Freshness.ChainlinkRound;
+        d.maxAge = 86_400;
+        d.gasStipend = 160_000;
+        d.copyBytes = 160;
+        bytes32 feedId = registry.listDescriptor(d);
+        registry.setPriceRound(USDT0, feedId, feed);
+        ExprLib.Read[] memory reads = new ExprLib.Read[](1);
+        reads[0] = ExprLib.Read(feedId, feed, "", ExprLib.Subject.None, 8);
+        ExprLib.Node[] memory nodes = new ExprLib.Node[](3);
+        nodes[0] = ExprLib.Node(uint8(ExprLib.Kind.READ), 0, 0);
+        nodes[1] = ExprLib.Node(uint8(ExprLib.Kind.CONST), 0, 0);
+        nodes[2] = ExprLib.Node(uint8(ExprLib.Kind.GT), 0, 1);
+        vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.ReadStale.selector, 0));
+        ev.judgeTrigger(abi.encode(reads, nodes), principal, new int256[](1), 0);
+        GenericExecutorV1 generic = new GenericExecutorV1(address(shield));
+        registry.setExecutor(address(generic), true);
+        GenericExecutorV1.Config memory c;
+        c.venues = new GenericExecutorV1.Venue[](1);
+        c.venues[0] = GenericExecutorV1.Venue(address(router), address(router));
+        c.sweepSet = new address[](0);
+        c.tokenOut = XETH;
+        c.oracle = ORACLE;
+        c.rateKind = uint8(GenericExecutorV1.RateKind.Oracle);
+        c.maxSlippageBps = 50;
+        IShieldV1.MandateParams memory p = _params(generic.ACTION_TRANSFORM(), USDT0, 1e6, 2e6, "");
+        p.executor = address(generic);
+        p.actionConfig = abi.encode(uint8(1), c);
+        bytes32 id = _register(p);
         vm.prank(principal);
-        vm.expectRevert(abi.encodeWithSelector(AaveV3AdapterV1.ConfigInvalid.selector, "maxSlippageBps"));
-        shield.registerMandate(p);
+        IERC20(XETH).transfer(address(router), 0.1e18);
+        uint256 out =
+            IAaveOracle(ORACLE).getAssetPrice(USDT0) * 1e18 / IAaveOracle(ORACLE).getAssetPrice(XETH);
+        IExecutorV1.Call[] memory calls = new IExecutorV1.Call[](1);
+        calls[0] = IExecutorV1.Call(
+            address(router),
+            address(router),
+            USDT0,
+            1e6,
+            false,
+            abi.encodeCall(MockRouter.swap, (USDT0, 1e6, XETH, out, generic.nextClone(id)))
+        );
+        uint256 before = IERC20(XETH).balanceOf(principal);
+        vm.prank(agent);
+        vm.expectRevert();
+        shield.fire(id, 1e6, abi.encode(calls));
+        assertEq(IERC20(XETH).balanceOf(principal), before);
+        assertEq(shield.getMandate(id).firings, 0);
     }
 }

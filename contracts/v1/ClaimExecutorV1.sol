@@ -8,6 +8,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IExecutorV1, SemanticsV1} from "./interfaces/IExecutorV1.sol";
 import {IShieldV1} from "./interfaces/IShieldV1.sol";
 import {IShieldRegistryV1} from "./interfaces/IShieldRegistryV1.sol";
+import {ExprLib} from "./libraries/ExprLib.sol";
 import {DisposableCloneV1} from "./DisposableCloneV1.sol";
 import {IPriceOracle} from "contracts/executors/interfaces/IPriceOracle.sol";
 
@@ -272,6 +273,7 @@ contract ClaimExecutorV1 is IExecutorV1 {
     /// @dev Sum of claimed amounts at fair value, in tokenOut units, less the tolerance.
     function _minOut(Config memory c, uint256[] memory claimed) internal view returns (uint256 minOut) {
         if (registry.isVenueBlocked(c.oracle)) revert VenueBlocked(c.oracle);
+        ExprLib.requireFreshPrice(c.tokenOut, registry);
         uint256 priceOut = IPriceOracle(c.oracle).getAssetPrice(c.tokenOut);
         if (priceOut == 0) revert ConfigInvalid("oracle:out");
         uint256 decOut = 10 ** IERC20Metadata(c.tokenOut).decimals();
@@ -279,6 +281,8 @@ contract ClaimExecutorV1 is IExecutorV1 {
         for (uint256 j = 0; j < claimed.length; j++) {
             if (claimed[j] == 0) continue;
             // A claimed token with no price is not worth zero; it is unpriceable, and the firing fails.
+            // forge-lint: disable-next-line(calls-loop)
+            ExprLib.requireFreshPrice(c.rewardTokens[j], registry);
             // forge-lint: disable-next-line(calls-loop)
             uint256 p = IPriceOracle(c.oracle).getAssetPrice(c.rewardTokens[j]);
             if (p == 0) revert ConfigInvalid("oracle:reward");

@@ -35,28 +35,18 @@ contract ExpressionEvaluator is IEvaluatorV1 {
     }
 
     /// @inheritdoc IEvaluatorV1
-    function capture(
-        bytes calldata tree,
-        address /*principal*/
-    )
-        external
-        view
-        returns (int256[] memory)
-    {
+    function capture(bytes calldata tree, address principal) external view returns (int256[] memory) {
         ExprLib.Tree memory t = ExprLib.decode(tree);
+        // The same structural and binding contract as judgement: a caller
+        // cannot capture another account's values under this principal.
+        ExprLib.checkShape(t, Phase.Outcome, catalog, principal, false);
         return ExprLib.readsFor(t, ExprLib.Kind.SIGNED, catalog);
     }
 
     /// @inheritdoc IEvaluatorV1
-    function snapshot(
-        bytes calldata outcome,
-        address /*principal*/
-    )
-        external
-        view
-        returns (int256[] memory)
-    {
+    function snapshot(bytes calldata outcome, address principal) external view returns (int256[] memory) {
         ExprLib.Tree memory t = ExprLib.decode(outcome);
+        ExprLib.checkShape(t, Phase.Outcome, catalog, principal, false);
         return ExprLib.readsFor(t, ExprLib.Kind.BEFORE, catalog);
     }
 
