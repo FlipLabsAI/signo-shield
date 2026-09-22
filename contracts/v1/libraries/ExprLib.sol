@@ -1,0 +1,302 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.28;
+
+import {IDescriptors} from "../interfaces/IDescriptors.sol";
+import {IEvaluatorV1} from "../interfaces/IEvaluatorV1.sol";
+
+/// @title ExprLib
+/// @notice The expression tree: encoding, shape checks, bounded reads and
+///         once-per-node evaluation.
+///
+/// A tree is `abi.encode(Read[] reads, Node[] nodes)`. A node refers only to
+/// nodes with a smaller index, so the graph is acyclic; nodes may be shared,
+/// so it is evaluated once per node in index order into a value table, never
+/// by recursion. Reads are made once per read index per phase.
+///
+/// A read supplies a descriptor id, a target, its ABI arguments and a subject
+/// kind; everything that could authenticate or misdescribe the read (the
+/// selector, the position of the account argument, the value word, the
+/// signedness, the freshness rule, the gas and copy bounds) comes from the
+/// descriptor, and the calldata is assembled here as `selector || args`.
+library ExprLib {
+    uint256 internal constant MAX_READS = 16;
+    uint256 internal constant MAX_NODES = 64;
+    uint256 internal constant MAX_TREE_BYTES = 12288; // 16 reads and 64 nodes ABI-encode to about 10 KB
+
+    enum Kind {
+        CONST,
+        READ,
+        SIGNED,
+        BEFORE,
+        AMOUNT,
+        ADD,
+        SUB,
+        MUL,
+        DIV,
+        MIN,
+        MAX,
+        LT,
+        LE,
+        GT,
+        GE,
+        EQ,
+        AND,
+        OR,
+        NOT
+    }
+
+    enum Subject {
+        None,
+        Principal,
+        Explicit
+    }
+
+    struct Read {
+        bytes32 descriptor;
+        address target;
+        bytes args; // ABI-encoded static arguments only
+        Subject subject;
+        uint8 decimals; // pinned at registration for Shape descriptors
+    }
+
+    struct Node {
+        uint8 kind;
+        uint256 a;
+        uint256 b;
+    }
+
+    struct Tree {
+        Read[] reads;
+        Node[] nodes;
+    }
+
+    /// @dev Per-evaluation inputs the core supplies.
+    struct Env {
+        address principal;
+        int256[] signedValues;
+        int256[] beforeValues;
+        uint256 amount;
+        bool haveBefore;
+    }
+
+    // ------------------------------------------------------------- decoding
+
+    function decode(bytes calldata tree) internal pure returns (Tree memory t) {
+        if (tree.length > MAX_TREE_BYTES) revert IEvaluatorV1.TreeInvalid("size");
+        (t.reads, t.nodes) = abi.decode(tree, (Read[], Node[]));
+    }
+
+    // ---------------------------------------------------------------- shape
+
+    /// @dev Everything about the tree that does not need a chain read:
+    ///      counts, references, phases, operand kinds, descriptor binding.
+    ///      Returns nothing; reverts with the first fault.
+    function checkShape(Tree memory t, IEvaluatorV1.Phase phase, IDescriptors catalog, address principal)
+        internal
+        view
+    {
+        uint256 nr = t.reads.length;
+        uint256 nn = t.nodes.length;
+        if (nr > MAX_READS) revert IEvaluatorV1.TreeInvalid("reads");
+        if (nn == 0 || nn > MAX_NODES) revert IEvaluatorV1.TreeInvalid("nodes");
+
+        for (uint256 i = 0; i < nr; i++) {
+            // forge-lint: disable-next-line(calls-loop)
+            _checkRead(t.reads[i], i, catalog, principal);
+        }
+
+        // isBool[i]: node i yields 0/1 and may feed AND/OR/NOT; a comparison
+        // or a Boolean node. Numeric nodes may not feed Boolean operators and
+        // Boolean nodes may not feed arithmetic or comparisons.
+        bool[] memory isBool = new bool[](nn);
+        for (uint256 i = 0; i < nn; i++) {
+            Node memory n = t.nodes[i];
+            if (n.kind > uint8(Kind.NOT)) revert IEvaluatorV1.TreeInvalid("kind");
+            Kind k = Kind(n.kind);
+            if (k == Kind.CONST) {
+                continue;
+            } else if (k == Kind.READ || k == Kind.SIGNED) {
+                if (n.a >= nr) revert IEvaluatorV1.TreeInvalid("readIndex");
+            } else if (k == Kind.BEFORE) {
+                if (phase != IEvaluatorV1.Phase.Outcome) revert IEvaluatorV1.TreeInvalid("beforeInTrigger");
+                if (n.a >= nr) revert IEvaluatorV1.TreeInvalid("readIndex");
+            } else if (k == Kind.AMOUNT) {
+                continue;
+            } else if (k == Kind.NOT) {
+                if (n.a >= i || !isBool[n.a]) revert IEvaluatorV1.TreeInvalid("notOperand");
+                isBool[i] = true;
+            } else if (k == Kind.AND || k == Kind.OR) {
+                if (n.a >= i || n.b >= i || !isBool[n.a] || !isBool[n.b]) revert IEvaluatorV1.TreeInvalid("boolOperand");
+                isBool[i] = true;
+            } else {
+                // arithmetic and comparisons take numeric operands
+                if (n.a >= i || n.b >= i || isBool[n.a] || isBool[n.b]) revert IEvaluatorV1.TreeInvalid("numOperand");
+                if (k >= Kind.LT) isBool[i] = true;
+            }
+        }
+        if (!isBool[nn - 1]) revert IEvaluatorV1.TreeInvalid("root");
+    }
+
+    function _checkRead(Read memory r, uint256 i, IDescriptors catalog, address principal) private view {
+        (IDescriptors.Descriptor memory d, bool listed, bool revoked) = catalog.descriptorOf(r.descriptor);
+        if (!listed || revoked) revert IEvaluatorV1.TreeInvalid("descriptor");
+        if (r.args.length != uint256(d.argCount) * 32) revert IEvaluatorV1.TreeInvalid("args");
+        if (d.kind == IDescriptors.DescriptorKind.PerAddress) {
+            if (r.target != d.target) revert IEvaluatorV1.TreeInvalid("target");
+        } else {
+            if (r.target.code.length == 0) revert IEvaluatorV1.TreeInvalid("target");
+        }
+        if (d.subjectRule == IDescriptors.SubjectRule.PrincipalRequired) {
+            if (r.subject == Subject.None) revert IEvaluatorV1.TreeInvalid("subject");
+            if (d.subjectArg < 0 || uint8(d.subjectArg) >= d.argCount) revert IEvaluatorV1.TreeInvalid("subjectArg");
+            if (r.subject == Subject.Principal) {
+                bytes memory args = r.args;
+                uint256 off = uint256(uint8(d.subjectArg)) * 32;
+                uint256 wordv;
+                assembly ("memory-safe") {
+                    wordv := mload(add(add(args, 32), off))
+                }
+                if (wordv != uint256(uint160(principal))) revert IEvaluatorV1.SubjectMismatch(i);
+            }
+        } else if (r.subject != Subject.None) {
+            revert IEvaluatorV1.TreeInvalid("subject");
+        }
+    }
+
+    // ----------------------------------------------------------------- reads
+
+    /// @dev One bounded read through its descriptor. Reverts on any failure.
+    function readValue(Read memory r, uint256 i, IDescriptors catalog) internal view returns (int256 value) {
+        (IDescriptors.Descriptor memory d,,) = catalog.descriptorOf(r.descriptor);
+        bytes memory data = abi.encodePacked(d.selector, r.args);
+        uint256 need = uint256(d.copyBytes);
+        if (need < uint256(d.word + 1) * 32) need = uint256(d.word + 1) * 32;
+        if (d.freshness == IDescriptors.Freshness.ChainlinkRound && need < 160) need = 160;
+
+        bytes memory out = new bytes(need);
+        bool ok;
+        uint256 size;
+        address target = r.target;
+        uint256 stipend = d.gasStipend;
+        assembly ("memory-safe") {
+            ok := staticcall(stipend, target, add(data, 32), mload(data), 0, 0)
+            size := returndatasize()
+            if and(ok, iszero(lt(size, need))) { returndatacopy(add(out, 32), 0, need) }
+        }
+        if (!ok) revert IEvaluatorV1.ReadFailed(i, "");
+        if (size < need) revert IEvaluatorV1.ReadTooShort(i, size, need);
+
+        uint256 raw;
+        uint256 wordOff = uint256(d.word) * 32;
+        assembly ("memory-safe") {
+            raw := mload(add(add(out, 32), wordOff))
+        }
+        if (d.freshness == IDescriptors.Freshness.ChainlinkRound) {
+            uint256 roundId;
+            uint256 updatedAt;
+            uint256 answeredInRound;
+            assembly ("memory-safe") {
+                roundId := mload(add(out, 32))
+                updatedAt := mload(add(out, 128))
+                answeredInRound := mload(add(out, 160))
+            }
+            if (updatedAt == 0 || updatedAt > block.timestamp || block.timestamp - updatedAt > d.maxAge) {
+                revert IEvaluatorV1.ReadStale(i);
+            }
+            if (answeredInRound < roundId) revert IEvaluatorV1.ReadStale(i);
+        }
+        if (d.isSigned) {
+            value = int256(raw);
+        } else {
+            if (raw > uint256(type(int256).max)) revert IEvaluatorV1.ValueOutOfRange(i);
+            value = int256(raw);
+        }
+        if (d.mustBePositive && value <= 0) revert IEvaluatorV1.ReadNotPositive(i);
+    }
+
+    // ------------------------------------------------------------ evaluation
+
+    /// @dev Which reads a phase must make live: every READ node's read. The
+    ///      caller decides what SIGNED and BEFORE resolve to.
+    function liveReads(Tree memory t, IDescriptors catalog) internal view returns (int256[] memory vals) {
+        uint256 nr = t.reads.length;
+        vals = new int256[](nr);
+        bool[] memory needed = new bool[](nr);
+        for (uint256 i = 0; i < t.nodes.length; i++) {
+            if (t.nodes[i].kind == uint8(Kind.READ)) needed[t.nodes[i].a] = true;
+        }
+        for (uint256 i = 0; i < nr; i++) {
+            // forge-lint: disable-next-line(calls-loop)
+            if (needed[i]) vals[i] = readValue(t.reads[i], i, catalog);
+        }
+    }
+
+    /// @dev The reads the SIGNED (or BEFORE) nodes name, taken live now.
+    function readsFor(Tree memory t, Kind which, IDescriptors catalog) internal view returns (int256[] memory vals) {
+        uint256 nr = t.reads.length;
+        vals = new int256[](nr);
+        bool[] memory needed = new bool[](nr);
+        for (uint256 i = 0; i < t.nodes.length; i++) {
+            if (t.nodes[i].kind == uint8(which)) needed[t.nodes[i].a] = true;
+        }
+        for (uint256 i = 0; i < nr; i++) {
+            // forge-lint: disable-next-line(calls-loop)
+            if (needed[i]) vals[i] = readValue(t.reads[i], i, catalog);
+        }
+    }
+
+    /// @dev Evaluate the root. `live` are the READ values; SIGNED and BEFORE
+    ///      come from `env`. Arithmetic is checked int256; DIV by zero and any
+    ///      overflow revert. Boolean nodes yield 0 or 1.
+    function evaluate(Tree memory t, int256[] memory live, Env memory env) internal pure returns (bool) {
+        uint256 nn = t.nodes.length;
+        int256[] memory v = new int256[](nn);
+        for (uint256 i = 0; i < nn; i++) {
+            Node memory n = t.nodes[i];
+            Kind k = Kind(n.kind);
+            if (k == Kind.CONST) {
+                v[i] = int256(n.a);
+            } else if (k == Kind.READ) {
+                v[i] = live[n.a];
+            } else if (k == Kind.SIGNED) {
+                if (n.a >= env.signedValues.length) revert IEvaluatorV1.TreeInvalid("signedIndex");
+                v[i] = env.signedValues[n.a];
+            } else if (k == Kind.BEFORE) {
+                if (!env.haveBefore || n.a >= env.beforeValues.length) revert IEvaluatorV1.TreeInvalid("beforeIndex");
+                v[i] = env.beforeValues[n.a];
+            } else if (k == Kind.AMOUNT) {
+                if (env.amount > uint256(type(int256).max)) revert IEvaluatorV1.ValueOutOfRange(i);
+                v[i] = int256(env.amount);
+            } else if (k == Kind.ADD) {
+                v[i] = v[n.a] + v[n.b];
+            } else if (k == Kind.SUB) {
+                v[i] = v[n.a] - v[n.b];
+            } else if (k == Kind.MUL) {
+                v[i] = v[n.a] * v[n.b];
+            } else if (k == Kind.DIV) {
+                v[i] = v[n.a] / v[n.b]; // reverts on zero
+            } else if (k == Kind.MIN) {
+                v[i] = v[n.a] < v[n.b] ? v[n.a] : v[n.b];
+            } else if (k == Kind.MAX) {
+                v[i] = v[n.a] > v[n.b] ? v[n.a] : v[n.b];
+            } else if (k == Kind.LT) {
+                v[i] = v[n.a] < v[n.b] ? int256(1) : int256(0);
+            } else if (k == Kind.LE) {
+                v[i] = v[n.a] <= v[n.b] ? int256(1) : int256(0);
+            } else if (k == Kind.GT) {
+                v[i] = v[n.a] > v[n.b] ? int256(1) : int256(0);
+            } else if (k == Kind.GE) {
+                v[i] = v[n.a] >= v[n.b] ? int256(1) : int256(0);
+            } else if (k == Kind.EQ) {
+                v[i] = v[n.a] == v[n.b] ? int256(1) : int256(0);
+            } else if (k == Kind.AND) {
+                v[i] = (v[n.a] != 0 && v[n.b] != 0) ? int256(1) : int256(0);
+            } else if (k == Kind.OR) {
+                v[i] = (v[n.a] != 0 || v[n.b] != 0) ? int256(1) : int256(0);
+            } else {
+                v[i] = v[n.a] == 0 ? int256(1) : int256(0);
+            }
+        }
+        return v[nn - 1] != 0;
+    }
+}
