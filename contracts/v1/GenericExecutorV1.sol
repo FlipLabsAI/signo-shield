@@ -60,7 +60,8 @@ contract GenericExecutorV1 is IExecutorV1 {
         Venue[] venues; // exact pairs the sandbox may use; picked by the owner
         address[] sweepSet; // every token the sandbox sweeps to the owner; the asset and tokenOut are added by the executor
         address tokenOut; // TRANSFORM/REDEEM: the position or token the owner expects; REPAY: the debt token
-        address market; // REPAY: the lending market the debt and collateral reads name
+        address market; // REPAY: the contract the debt read targets (for Aave, the variable debt token)
+        address collateralTarget; // REPAY: the contract the collateral read targets (for Aave, the collateral aToken)
         uint8 rateKind; // TRANSFORM: RateKind
         uint256 rateOrFloor;
         address oracle; // TRANSFORM with Oracle rate; REDEEM sanity
@@ -217,7 +218,7 @@ contract GenericExecutorV1 is IExecutorV1 {
     }
 
     function _validateRepay(Config memory c, address asset) internal view {
-        if (c.market.code.length == 0) revert ConfigInvalid("market");
+        if (c.market.code.length == 0 || c.collateralTarget.code.length == 0) revert ConfigInvalid("market");
         if (c.tokenOut != asset) revert ConfigInvalid("repay:asset"); // v1: repay in the debt's own asset
         (IDescriptors.Descriptor memory dd, bool dl, bool dr) = IDescriptors(shield).descriptorOf(c.debtDescriptor);
         (IDescriptors.Descriptor memory cd, bool cl, bool cr) = IDescriptors(shield).descriptorOf(c.collateralDescriptor);
@@ -317,14 +318,14 @@ contract GenericExecutorV1 is IExecutorV1 {
         Firing memory f;
         f.inBefore = IERC20(ctx.asset).balanceOf(ctx.principal);
         f.debtBefore = _read(c.debtDescriptor, c.market, ctx.principal);
-        f.collBefore = _read(c.collateralDescriptor, c.market, ctx.principal);
+        f.collBefore = _read(c.collateralDescriptor, c.collateralTarget, ctx.principal);
         _runSandbox(ctx, c, f, amount, calls);
         uint256 returned = IERC20(ctx.asset).balanceOf(ctx.principal) - f.inBefore;
         returned = returned > f.parked ? returned - f.parked : 0;
         spent = returned >= amount ? 0 : amount - returned;
         if (spent == 0) revert NothingSold();
         int256 debtAfter = _read(c.debtDescriptor, c.market, ctx.principal);
-        int256 collAfter = _read(c.collateralDescriptor, c.market, ctx.principal);
+        int256 collAfter = _read(c.collateralDescriptor, c.collateralTarget, ctx.principal);
         uint256 minDown = Math.mulDiv(spent, BPS - c.maxSlippageBps, BPS);
         // forge-lint: disable-next-line(unsafe-typecast)
         if (f.debtBefore - debtAfter < int256(minDown)) revert DebtNotReduced(f.debtBefore, debtAfter, minDown);

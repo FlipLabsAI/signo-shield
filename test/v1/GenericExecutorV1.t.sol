@@ -302,6 +302,7 @@ contract GenericExecutorV1Test is Test {
         c.sweepSet = new address[](0);
         c.tokenOut = address(usdc);
         c.market = address(market);
+        c.collateralTarget = address(market);
         c.maxSlippageBps = 10;
         c.debtDescriptor = dDebt;
         c.collateralDescriptor = dColl;
