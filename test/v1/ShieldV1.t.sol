@@ -100,7 +100,6 @@ contract ShieldV1Test is Test {
             validFrom: uint48(block.timestamp),
             // forge-lint: disable-next-line(environment-read-across-mutation)
             validUntil: uint48(block.timestamp + 30 days),
-            minInterval: 0,
             maxFeeBps: 50,
             funding: uint8(IShieldV1.FundingMode.PULL),
             action: ACTION,
@@ -318,23 +317,20 @@ contract ShieldV1Test is Test {
         shield.fire(id, 0, "");
     }
 
-    function test_minIntervalCountsSuccessfulFiringsOnly() public {
-        IShieldV1.MandateParams memory p = _params();
-        p.minInterval = 1 days;
-        bytes32 id = _register(p);
+    function test_failedAttemptLeavesNoBookkeeping() public {
+        bytes32 id = _register(_params());
         vm.prank(agent);
         shield.fire(id, 10e6, "");
-        vm.prank(agent);
-        vm.expectRevert(
-            abi.encodeWithSelector(IShieldV1.MandateBlocked.selector, id, IShieldV1.MandateReason.TOO_SOON)
-        );
-        shield.fire(id, 10e6, "");
-        vm.warp(block.timestamp + 1 days);
+        IShieldV1.Mandate memory before = shield.getMandate(id);
         exec.setRevert(true);
         vm.prank(agent);
         vm.expectRevert();
         shield.fire(id, 10e6, ""); // a failed attempt
         exec.setRevert(false);
+        IShieldV1.Mandate memory afterFail = shield.getMandate(id);
+        assertEq(afterFail.firings, before.firings);
+        assertEq(afterFail.lastFiredAt, before.lastFiredAt);
+        assertEq(afterFail.cumulativeUsed, before.cumulativeUsed);
         vm.prank(agent);
         shield.fire(id, 10e6, ""); // still allowed: the failure consumed nothing
     }

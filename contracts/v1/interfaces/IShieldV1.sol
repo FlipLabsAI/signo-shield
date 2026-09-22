@@ -19,7 +19,6 @@ interface IShieldV1 {
         EVALUATOR_HALTED,
         NOT_YET_VALID,
         EXPIRED,
-        TOO_SOON,
         REVOKED,
         ZERO_AMOUNT,
         AMOUNT_NOT_ZERO,
@@ -40,7 +39,6 @@ interface IShieldV1 {
         uint256 maxCumulativeValue;
         uint48 validFrom;
         uint48 validUntil;
-        uint32 minInterval;
         uint16 maxFeeBps;
         uint8 funding;
         bytes32 action;
@@ -61,7 +59,6 @@ interface IShieldV1 {
         uint48 validFrom;
         uint48 validUntil;
         uint48 lastFiredAt;
-        uint32 minInterval;
         uint32 revision;
         uint32 firings;
         uint16 maxFeeBps;

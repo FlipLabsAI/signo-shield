@@ -116,11 +116,6 @@
             "internalType": "uint48"
           },
           {
-            "name": "minInterval",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
             "name": "maxFeeBps",
             "type": "uint16",
             "internalType": "uint16"
@@ -614,11 +609,6 @@
             "internalType": "uint48"
           },
           {
-            "name": "minInterval",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
             "name": "revision",
             "type": "uint32",
             "internalType": "uint32"
@@ -1068,11 +1058,6 @@
             "name": "validUntil",
             "type": "uint48",
             "internalType": "uint48"
-          },
-          {
-            "name": "minInterval",
-            "type": "uint32",
-            "internalType": "uint32"
           },
           {
             "name": "maxFeeBps",

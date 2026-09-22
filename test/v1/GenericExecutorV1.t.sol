@@ -105,7 +105,6 @@ contract GenericExecutorV1Test is Test {
             maxCumulativeValue: 10_000e18,
             validFrom: uint48(block.timestamp),
             validUntil: uint48(block.timestamp + 30 days),
-            minInterval: 0,
             maxFeeBps: 0,
             funding: funding,
             action: action,

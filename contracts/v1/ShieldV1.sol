@@ -529,9 +529,6 @@ contract ShieldV1 is IShieldV1, IDescriptors, Ownable2Step, ReentrancyGuard, EIP
         if (_halts[m.evaluator].active) return MandateReason.EVALUATOR_HALTED;
         if (block.timestamp < m.validFrom) return MandateReason.NOT_YET_VALID;
         if (block.timestamp > m.validUntil) return MandateReason.EXPIRED;
-        if (m.lastFiredAt != 0 && block.timestamp < uint256(m.lastFiredAt) + m.minInterval) {
-            return MandateReason.TOO_SOON;
-        }
         if (m.revoked) return MandateReason.REVOKED;
         if (m.funding == uint8(FundingMode.NONE)) {
             if (amount != 0) return MandateReason.AMOUNT_NOT_ZERO;
@@ -591,7 +588,6 @@ contract ShieldV1 is IShieldV1, IDescriptors, Ownable2Step, ReentrancyGuard, EIP
         m.maxCumulativeValue = p.maxCumulativeValue;
         m.validFrom = p.validFrom;
         m.validUntil = p.validUntil;
-        m.minInterval = p.minInterval;
         m.maxFeeBps = p.maxFeeBps;
         m.actionConfig = p.actionConfig;
         m.trigger = p.trigger;

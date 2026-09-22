@@ -70,7 +70,6 @@ contract ClaimExecutorV1Test is Test {
             maxCumulativeValue: 0,
             validFrom: uint48(block.timestamp),
             validUntil: uint48(block.timestamp + 30 days),
-            minInterval: 0,
             maxFeeBps: 0,
             funding: uint8(IShieldV1.FundingMode.NONE),
             action: action,
