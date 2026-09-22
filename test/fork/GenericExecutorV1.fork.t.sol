@@ -123,7 +123,9 @@ contract GenericExecutorV1ForkTest is Test {
         vm.prank(agent);
         uint256 spent = shield.fire(id, 0.01e18, route);
         assertEq(spent, 0.01e18);
-        assertApproxEqAbs(IERC20(A_XETH).balanceOf(principal) - aBefore, 0.01e18, 2, "aXETH rose by the amount");
+        assertApproxEqAbs(
+            IERC20(A_XETH).balanceOf(principal) - aBefore, 0.01e18, 2, "aXETH rose by the amount"
+        );
         assertEq(IERC20(XETH).balanceOf(clone), 0);
         assertEq(IERC20(XETH).allowance(clone, POOL), 0, "no approval survives");
     }
@@ -156,7 +158,9 @@ contract GenericExecutorV1ForkTest is Test {
         vm.prank(agent);
         uint256 spent = shield.fire(id, 10e6, route);
         assertEq(spent, 10e6);
-        assertApproxEqAbs(debtBefore - IERC20(V_USDT0).balanceOf(principal), 10e6, 2, "debt fell by the repayment");
+        assertApproxEqAbs(
+            debtBefore - IERC20(V_USDT0).balanceOf(principal), 10e6, 2, "debt fell by the repayment"
+        );
         // paying someone else's debt spends without reducing the owner's: refused
         IExecutorV1.Call memory bad = k;
         bad.data = abi.encodeCall(IPool.repay, (USDT0, 10e6, 2, A_USDT0));

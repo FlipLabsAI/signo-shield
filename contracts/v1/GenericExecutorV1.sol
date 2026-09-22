@@ -134,7 +134,9 @@ contract GenericExecutorV1 is IExecutorV1 {
     }
 
     function nextClone(bytes32 mandateId) external view returns (address) {
-        return Clones.predictDeterministicAddress(cloneTemplate, _salt(mandateId, firings[mandateId]), address(this));
+        return Clones.predictDeterministicAddress(
+            cloneTemplate, _salt(mandateId, firings[mandateId]), address(this)
+        );
     }
 
     // ================================================================= validate
@@ -145,11 +147,14 @@ contract GenericExecutorV1 is IExecutorV1 {
         if (!_answersBalanceOf(asset)) revert ConfigInvalid("asset");
         if (c.venues.length == 0 || c.venues.length > MAX_VENUES) revert ConfigInvalid("venues");
         if (c.sweepSet.length > MAX_SWEEP) revert ConfigInvalid("sweepSet");
-        bool surfaceIsToken = action == ACTION_REDEEM || (action == ACTION_TRANSFORM && RateKind(c.rateKind) == RateKind.Erc4626);
+        bool surfaceIsToken = action == ACTION_REDEEM
+            || (action == ACTION_TRANSFORM && RateKind(c.rateKind) == RateKind.Erc4626);
         for (uint256 i = 0; i < c.venues.length; i++) {
             address t = c.venues[i].target;
             address sp = c.venues[i].spender;
-            if (surfaceIsToken ? _isOurs(t) : _isReserved(t, asset, c.tokenOut)) revert ConfigInvalid("venue:target");
+            if (surfaceIsToken ? _isOurs(t) : _isReserved(t, asset, c.tokenOut)) {
+                revert ConfigInvalid("venue:target");
+            }
             if (sp != address(0) && (surfaceIsToken ? _isOurs(sp) : _isReserved(sp, asset, c.tokenOut))) {
                 revert ConfigInvalid("venue:spender");
             }
@@ -162,8 +167,8 @@ contract GenericExecutorV1 is IExecutorV1 {
             _validateTransform(c, asset);
         } else if (action == ACTION_TRANSFER) {
             if (
-                c.recipient == address(0) || c.recipient == asset || c.recipient == shield || c.recipient == address(this)
-                    || c.recipient == cloneTemplate
+                c.recipient == address(0) || c.recipient == asset || c.recipient == shield
+                    || c.recipient == address(this) || c.recipient == cloneTemplate
             ) revert ConfigInvalid("recipient");
         } else if (action == ACTION_REDEEM) {
             _validateRedeem(c, asset);
@@ -180,7 +185,10 @@ contract GenericExecutorV1 is IExecutorV1 {
     }
 
     function _validateTransform(Config memory c, address asset) internal view {
-        if (c.tokenOut == asset || _isReserved(c.tokenOut, address(0), address(0)) || !_answersBalanceOf(c.tokenOut)) {
+        if (
+            c.tokenOut == asset || _isReserved(c.tokenOut, address(0), address(0))
+                || !_answersBalanceOf(c.tokenOut)
+        ) {
             revert ConfigInvalid("tokenOut");
         }
         RateKind k = RateKind(c.rateKind);
@@ -197,7 +205,8 @@ contract GenericExecutorV1 is IExecutorV1 {
         } else if (k == RateKind.Erc4626) {
             // The receipt token is the vault; the only venue pair is (vault, vault).
             if (_vaultAsset(c.tokenOut) != asset) revert ConfigInvalid("vault:asset");
-            if (c.venues.length != 1 || c.venues[0].target != c.tokenOut || c.venues[0].spender != c.tokenOut) {
+            if (c.venues.length != 1 || c.venues[0].target != c.tokenOut || c.venues[0].spender != c.tokenOut)
+            {
                 revert ConfigInvalid("vault:surface");
             }
             if (c.oracle != address(0) || c.rateOrFloor != 0) revert ConfigInvalid("vault:rate");
@@ -209,19 +218,25 @@ contract GenericExecutorV1 is IExecutorV1 {
 
     function _validateRedeem(Config memory c, address asset) internal view {
         // asset is the receipt token (an ERC-4626 vault); tokenOut is its underlying
-        if (_vaultAsset(asset) != c.tokenOut || !_answersBalanceOf(c.tokenOut)) revert ConfigInvalid("redeem:asset");
+        if (_vaultAsset(asset) != c.tokenOut || !_answersBalanceOf(c.tokenOut)) {
+            revert ConfigInvalid("redeem:asset");
+        }
         if (c.venues.length != 1 || c.venues[0].target != asset || c.venues[0].spender != address(0)) {
             revert ConfigInvalid("redeem:surface");
         }
-        if (c.signedAssetsPerShare == 0 || c.sanityBandBps == 0 || c.sanityBandBps > BPS) revert ConfigInvalid("redeem:sanity");
+        if (c.signedAssetsPerShare == 0 || c.sanityBandBps == 0 || c.sanityBandBps > BPS) {
+            revert ConfigInvalid("redeem:sanity");
+        }
         _checkSanity(c, asset);
     }
 
     function _validateRepay(Config memory c, address asset) internal view {
         if (c.market.code.length == 0 || c.collateralTarget.code.length == 0) revert ConfigInvalid("market");
         if (c.tokenOut != asset) revert ConfigInvalid("repay:asset"); // v1: repay in the debt's own asset
-        (IDescriptors.Descriptor memory dd, bool dl, bool dr) = IDescriptors(shield).descriptorOf(c.debtDescriptor);
-        (IDescriptors.Descriptor memory cd, bool cl, bool cr) = IDescriptors(shield).descriptorOf(c.collateralDescriptor);
+        (IDescriptors.Descriptor memory dd, bool dl, bool dr) =
+            IDescriptors(shield).descriptorOf(c.debtDescriptor);
+        (IDescriptors.Descriptor memory cd, bool cl, bool cr) =
+            IDescriptors(shield).descriptorOf(c.collateralDescriptor);
         if (!dl || dr || !cl || cr) revert ConfigInvalid("repay:descriptor");
         if (
             dd.subjectRule != IDescriptors.SubjectRule.PrincipalRequired
@@ -254,7 +269,9 @@ contract GenericExecutorV1 is IExecutorV1 {
         f.inBefore = IERC20(ctx.asset).balanceOf(ctx.principal);
         f.outBefore = IERC20(c.tokenOut).balanceOf(ctx.principal);
         if (RateKind(c.rateKind) == RateKind.Oracle) (f.priceIn, f.priceOut) = _prices(c, ctx.asset);
-        if (RateKind(c.rateKind) == RateKind.Erc4626) f.sharesPerUnit = _sharesPerUnit(c.tokenOut, ctx.asset);
+        if (RateKind(c.rateKind) == RateKind.Erc4626) {
+            f.sharesPerUnit = _sharesPerUnit(c.tokenOut, ctx.asset);
+        }
         _runSandbox(ctx, c, f, amount, calls);
         uint256 received = IERC20(c.tokenOut).balanceOf(ctx.principal) - f.outBefore;
         uint256 returned = IERC20(ctx.asset).balanceOf(ctx.principal) - f.inBefore;
@@ -328,17 +345,31 @@ contract GenericExecutorV1 is IExecutorV1 {
         int256 collAfter = _read(c.collateralDescriptor, c.collateralTarget, ctx.principal);
         uint256 minDown = Math.mulDiv(spent, BPS - c.maxSlippageBps, BPS);
         // forge-lint: disable-next-line(unsafe-typecast)
-        if (f.debtBefore - debtAfter < int256(minDown)) revert DebtNotReduced(f.debtBefore, debtAfter, minDown);
+        if (f.debtBefore - debtAfter < int256(minDown)) {
+            revert DebtNotReduced(f.debtBefore, debtAfter, minDown);
+        }
         if (collAfter < f.collBefore) revert CollateralFell(f.collBefore, collAfter);
-        // forge-lint: disable-next-line(reentrancy-events,unsafe-typecast)
-        emit Executed(ctx.mandateId, ctx.principal, ctx.action, f.clone, spent, uint256(f.debtBefore - debtAfter), minDown);
+        // forge-lint: disable-next-item(reentrancy-events,unsafe-typecast)
+        emit Executed(
+            ctx.mandateId,
+            ctx.principal,
+            ctx.action,
+            f.clone,
+            spent,
+            uint256(f.debtBefore - debtAfter),
+            minDown
+        );
     }
 
     // ================================================================== sandbox
 
-    function _runSandbox(Context calldata ctx, Config memory c, Firing memory f, uint256 amount, Call[] memory calls)
-        internal
-    {
+    function _runSandbox(
+        Context calldata ctx,
+        Config memory c,
+        Firing memory f,
+        uint256 amount,
+        Call[] memory calls
+    ) internal {
         f.clone = Clones.cloneDeterministic(cloneTemplate, _salt(ctx.mandateId, firings[ctx.mandateId]++));
         f.parked = IERC20(ctx.asset).balanceOf(f.clone);
         IERC20(ctx.asset).safeTransfer(f.clone, amount);
@@ -349,10 +380,13 @@ contract GenericExecutorV1 is IExecutorV1 {
             if (k.claimStep) revert RouteInvalid("claimStep");
             if (!_venueAllowed(c, k.target, k.spender)) revert VenueNotAllowed(k.target, k.spender);
             // forge-lint: disable-next-line(calls-loop)
-            if (core.isVenueBlocked(k.target) || (k.spender != address(0) && core.isVenueBlocked(k.spender))) {
+            if (core.isVenueBlocked(k.target) || (k.spender != address(0) && core.isVenueBlocked(k.spender)))
+            {
                 revert VenueBlocked(k.target);
             }
-            if (k.approveAmount != 0 && !_sweepable(c, ctx.asset, k.approveToken)) revert RouteInvalid("approveToken");
+            if (k.approveAmount != 0 && !_sweepable(c, ctx.asset, k.approveToken)) {
+                revert RouteInvalid("approveToken");
+            }
             // forge-lint: disable-next-line(calls-loop)
             clone.step(k);
         }
@@ -416,7 +450,11 @@ contract GenericExecutorV1 is IExecutorV1 {
         if (current < lo || current > hi) revert SanityBand(c.signedAssetsPerShare, current);
     }
 
-    function _minOut(Config memory c, address tokenIn, uint256 spent, Firing memory f) internal view returns (uint256) {
+    function _minOut(Config memory c, address tokenIn, uint256 spent, Firing memory f)
+        internal
+        view
+        returns (uint256)
+    {
         RateKind k = RateKind(c.rateKind);
         if (k == RateKind.Fixed) return _lessRounding(Math.mulDiv(spent, c.rateOrFloor, WAD));
         if (k == RateKind.Floor) return c.rateOrFloor;
@@ -425,7 +463,9 @@ contract GenericExecutorV1 is IExecutorV1 {
             return _lessRounding(Math.mulDiv(exact, BPS - c.maxSlippageBps, BPS));
         }
         uint256 fair = Math.mulDiv(
-            spent, f.priceIn * 10 ** IERC20Metadata(c.tokenOut).decimals(), f.priceOut * 10 ** IERC20Metadata(tokenIn).decimals()
+            spent,
+            f.priceIn * 10 ** IERC20Metadata(c.tokenOut).decimals(),
+            f.priceOut * 10 ** IERC20Metadata(tokenIn).decimals()
         );
         return Math.mulDiv(fair, BPS - c.maxSlippageBps, BPS);
     }
@@ -446,7 +486,11 @@ contract GenericExecutorV1 is IExecutorV1 {
         return abi.decode(ret, (address));
     }
 
-    function _prices(Config memory c, address tokenIn) internal view returns (uint256 priceIn, uint256 priceOut) {
+    function _prices(Config memory c, address tokenIn)
+        internal
+        view
+        returns (uint256 priceIn, uint256 priceOut)
+    {
         priceIn = IPriceOracle(c.oracle).getAssetPrice(tokenIn);
         priceOut = IPriceOracle(c.oracle).getAssetPrice(c.tokenOut);
         if (priceIn == 0 || priceOut == 0) revert ConfigInvalid("oracle");
@@ -460,12 +504,13 @@ contract GenericExecutorV1 is IExecutorV1 {
     }
 
     function _isOurs(address candidate) internal view returns (bool) {
-        return candidate.code.length == 0 || candidate == shield || candidate == address(this) || candidate == cloneTemplate;
+        return candidate.code.length == 0 || candidate == shield || candidate == address(this)
+            || candidate == cloneTemplate;
     }
 
     function _isReserved(address candidate, address tokenIn, address tokenOut) internal view returns (bool) {
-        return candidate.code.length == 0 || candidate == tokenIn || candidate == tokenOut || candidate == shield
-            || candidate == address(this) || candidate == cloneTemplate;
+        return candidate.code.length == 0 || candidate == tokenIn || candidate == tokenOut
+            || candidate == shield || candidate == address(this) || candidate == cloneTemplate;
     }
 
     function _salt(bytes32 mandateId, uint256 firing) internal pure returns (bytes32) {

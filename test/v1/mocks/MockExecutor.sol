@@ -58,7 +58,10 @@ contract MockExecutor is IExecutorV1 {
         if (cfg.length == 1 && cfg[0] == 0xff) revert("bad config");
     }
 
-    function execute(Context calldata ctx, uint256 amount, bytes calldata route) external returns (uint256 used) {
+    function execute(Context calldata ctx, uint256 amount, bytes calldata route)
+        external
+        returns (uint256 used)
+    {
         require(msg.sender == shield, "not shield");
         if (shouldRevert) revert("executor says no");
         lastCtx = ctx;

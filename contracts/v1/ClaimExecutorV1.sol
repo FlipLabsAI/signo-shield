@@ -52,7 +52,13 @@ contract ClaimExecutorV1 is IExecutorV1 {
     address public immutable cloneTemplate;
     mapping(bytes32 mandateId => uint256) public firings;
 
-    event Claimed(bytes32 indexed mandateId, address indexed principal, bytes32 indexed action, address clone, uint256 valueOut);
+    event Claimed(
+        bytes32 indexed mandateId,
+        address indexed principal,
+        bytes32 indexed action,
+        address clone,
+        uint256 valueOut
+    );
 
     error NotShield();
     error UnsupportedAction(bytes32 action);
@@ -84,17 +90,23 @@ contract ClaimExecutorV1 is IExecutorV1 {
     }
 
     function nextClone(bytes32 mandateId) external view returns (address) {
-        return Clones.predictDeterministicAddress(cloneTemplate, _salt(mandateId, firings[mandateId]), address(this));
+        return Clones.predictDeterministicAddress(
+            cloneTemplate, _salt(mandateId, firings[mandateId]), address(this)
+        );
     }
 
     /// @inheritdoc IExecutorV1
     function validateConfig(bytes32 action, address, bytes calldata actionConfig) external view {
         Config memory c = _decode(actionConfig);
         if (c.venues.length == 0 || c.venues.length > MAX_VENUES) revert ConfigInvalid("venues");
-        if (c.rewardTokens.length == 0 || c.rewardTokens.length > MAX_REWARDS) revert ConfigInvalid("rewardTokens");
+        if (c.rewardTokens.length == 0 || c.rewardTokens.length > MAX_REWARDS) {
+            revert ConfigInvalid("rewardTokens");
+        }
         for (uint256 i = 0; i < c.venues.length; i++) {
             if (_isOurs(c.venues[i].target)) revert ConfigInvalid("venue:target");
-            if (c.venues[i].spender != address(0) && _isOurs(c.venues[i].spender)) revert ConfigInvalid("venue:spender");
+            if (c.venues[i].spender != address(0) && _isOurs(c.venues[i].spender)) {
+                revert ConfigInvalid("venue:spender");
+            }
         }
         for (uint256 i = 0; i < c.rewardTokens.length; i++) {
             if (!_answersBalanceOf(c.rewardTokens[i])) revert ConfigInvalid("reward:token");
@@ -109,7 +121,9 @@ contract ClaimExecutorV1 is IExecutorV1 {
             if (IPriceOracle(c.oracle).getAssetPrice(c.tokenOut) == 0) revert ConfigInvalid("oracle:out");
             for (uint256 i = 0; i < c.rewardTokens.length; i++) {
                 // forge-lint: disable-next-line(calls-loop)
-                if (IPriceOracle(c.oracle).getAssetPrice(c.rewardTokens[i]) == 0) revert ConfigInvalid("oracle:reward");
+                if (IPriceOracle(c.oracle).getAssetPrice(c.rewardTokens[i]) == 0) {
+                    revert ConfigInvalid("oracle:reward");
+                }
             }
         } else {
             revert UnsupportedAction(action);
@@ -117,7 +131,11 @@ contract ClaimExecutorV1 is IExecutorV1 {
     }
 
     /// @inheritdoc IExecutorV1
-    function execute(Context calldata ctx, uint256 amount, bytes calldata route) external onlyShield returns (uint256) {
+    function execute(Context calldata ctx, uint256 amount, bytes calldata route)
+        external
+        onlyShield
+        returns (uint256)
+    {
         if (amount != 0) revert RouteInvalid("amount");
         Config memory c = _decode(ctx.actionConfig);
         Call[] memory calls = _decodeRoute(route);
@@ -180,7 +198,9 @@ contract ClaimExecutorV1 is IExecutorV1 {
                     claimed[j] += post[j] - pre[j];
                 }
             } else {
-                if (k.approveAmount != 0 && !_isReward(c, k.approveToken)) revert RouteInvalid("approveToken");
+                if (k.approveAmount != 0 && !_isReward(c, k.approveToken)) {
+                    revert RouteInvalid("approveToken");
+                }
                 // forge-lint: disable-next-line(calls-loop)
                 DisposableCloneV1(clone).step(k);
             }
@@ -275,7 +295,8 @@ contract ClaimExecutorV1 is IExecutorV1 {
     }
 
     function _isOurs(address candidate) internal view returns (bool) {
-        return candidate.code.length == 0 || candidate == shield || candidate == address(this) || candidate == cloneTemplate;
+        return candidate.code.length == 0 || candidate == shield || candidate == address(this)
+            || candidate == cloneTemplate;
     }
 
     function _salt(bytes32 mandateId, uint256 firing) internal pure returns (bytes32) {

@@ -24,16 +24,24 @@ interface IEvaluatorV1 {
     function validate(bytes calldata tree, Phase phase, address principal) external view;
 
     /// @notice The values every SIGNED node names, indexed by read.
-    function capture(bytes calldata tree, address principal) external view returns (int256[] memory signedValues);
-
-    /// @notice The values every BEFORE node names, indexed by read.
-    function snapshot(bytes calldata outcome, address principal) external view returns (int256[] memory beforeValues);
-
-    /// @notice The trigger, judged before anything moves.
-    function judgeTrigger(bytes calldata trigger, address principal, int256[] calldata signedValues, uint256 amount)
+    function capture(bytes calldata tree, address principal)
         external
         view
-        returns (bool);
+        returns (int256[] memory signedValues);
+
+    /// @notice The values every BEFORE node names, indexed by read.
+    function snapshot(bytes calldata outcome, address principal)
+        external
+        view
+        returns (int256[] memory beforeValues);
+
+    /// @notice The trigger, judged before anything moves.
+    function judgeTrigger(
+        bytes calldata trigger,
+        address principal,
+        int256[] calldata signedValues,
+        uint256 amount
+    ) external view returns (bool);
 
     /// @notice The outcome, judged on the owner's final state.
     function judgeOutcome(

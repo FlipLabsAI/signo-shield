@@ -106,7 +106,11 @@ contract ExpressionEvaluatorTest is Test {
     }
 
     /// balance(principal) > 500e6
-    function _balanceAbove(uint256 threshold, address who, ExprLib.Subject s) internal view returns (bytes memory) {
+    function _balanceAbove(uint256 threshold, address who, ExprLib.Subject s)
+        internal
+        view
+        returns (bytes memory)
+    {
         ExprLib.Read[] memory r = new ExprLib.Read[](1);
         r[0] = _read(dBalance, address(usdc), abi.encode(who), s);
         ExprLib.Node[] memory n = new ExprLib.Node[](3);
@@ -214,6 +218,7 @@ contract ExpressionEvaluatorTest is Test {
         bytes memory t = _enc(r, n);
         assertTrue(ev.judgeTrigger(t, principal, new int256[](0), 0));
 
+        // forge-lint: disable-next-line(environment-read-across-mutation)
         vm.warp(block.timestamp + 3601);
         vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.ReadStale.selector, 0));
         ev.judgeTrigger(t, principal, new int256[](0), 0);

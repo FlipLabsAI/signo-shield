@@ -68,9 +68,19 @@ contract ShieldV1Test is Test {
 
     // ---------------------------------------------------------------- helpers
 
-    function _tree(address target, address who, ExprLib.Kind cmp, uint256 threshold) internal view returns (bytes memory) {
+    function _tree(address target, address who, ExprLib.Kind cmp, uint256 threshold)
+        internal
+        view
+        returns (bytes memory)
+    {
         ExprLib.Read[] memory r = new ExprLib.Read[](1);
-        r[0] = ExprLib.Read({descriptor: dBalance, target: target, args: abi.encode(who), subject: ExprLib.Subject.Principal, decimals: 6});
+        r[0] = ExprLib.Read({
+            descriptor: dBalance,
+            target: target,
+            args: abi.encode(who),
+            subject: ExprLib.Subject.Principal,
+            decimals: 6
+        });
         ExprLib.Node[] memory n = new ExprLib.Node[](3);
         n[0] = ExprLib.Node({kind: uint8(ExprLib.Kind.READ), a: 0, b: 0});
         n[1] = ExprLib.Node({kind: uint8(ExprLib.Kind.CONST), a: threshold, b: 0});
@@ -86,7 +96,9 @@ contract ShieldV1Test is Test {
             asset: address(usdc),
             maxTransactionValue: 1_000e6,
             maxCumulativeValue: 10_000e6,
+            // forge-lint: disable-next-line(environment-read-across-mutation)
             validFrom: uint48(block.timestamp),
+            // forge-lint: disable-next-line(environment-read-across-mutation)
             validUntil: uint48(block.timestamp + 30 days),
             minInterval: 0,
             maxFeeBps: 50,
@@ -131,7 +143,9 @@ contract ShieldV1Test is Test {
         p = _params();
         p.action = keccak256("nope");
         vm.prank(principal);
-        vm.expectRevert(abi.encodeWithSelector(IShieldV1.ActionNotSupported.selector, address(exec), p.action));
+        vm.expectRevert(
+            abi.encodeWithSelector(IShieldV1.ActionNotSupported.selector, address(exec), p.action)
+        );
         shield.registerMandate(p);
         p = _params();
         p.actionConfig = hex"ff";
@@ -146,7 +160,13 @@ contract ShieldV1Test is Test {
         // trigger: gauge balance(principal) > 400; outcome uses SIGNED so a baseline is captured
         p.trigger = _tree(address(gauge), principal, ExprLib.Kind.GT, 400);
         ExprLib.Read[] memory r = new ExprLib.Read[](1);
-        r[0] = ExprLib.Read({descriptor: dBalance, target: address(gauge), args: abi.encode(principal), subject: ExprLib.Subject.Principal, decimals: 0});
+        r[0] = ExprLib.Read({
+            descriptor: dBalance,
+            target: address(gauge),
+            args: abi.encode(principal),
+            subject: ExprLib.Subject.Principal,
+            decimals: 0
+        });
         ExprLib.Node[] memory n = new ExprLib.Node[](3);
         n[0] = ExprLib.Node({kind: uint8(ExprLib.Kind.READ), a: 0, b: 0});
         n[1] = ExprLib.Node({kind: uint8(ExprLib.Kind.SIGNED), a: 0, b: 0});
@@ -229,7 +249,11 @@ contract ShieldV1Test is Test {
         p.trigger = _tree(address(gauge), principal, ExprLib.Kind.GT, 150);
         bytes32 id = _register(p);
         vm.prank(agent);
-        vm.expectRevert(abi.encodeWithSelector(IShieldV1.MandateBlocked.selector, id, IShieldV1.MandateReason.TRIGGER_NOT_MET));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IShieldV1.MandateBlocked.selector, id, IShieldV1.MandateReason.TRIGGER_NOT_MET
+            )
+        );
         shield.fire(id, 100e6, "");
         gauge.set(principal, 200);
         vm.prank(agent);
@@ -238,7 +262,13 @@ contract ShieldV1Test is Test {
         // outcome on the final state: the owner's usdc must be at least before - amount (it is), then fails when set impossibly
         p = _params();
         ExprLib.Read[] memory r = new ExprLib.Read[](1);
-        r[0] = ExprLib.Read({descriptor: dBalance, target: address(usdc), args: abi.encode(principal), subject: ExprLib.Subject.Principal, decimals: 6});
+        r[0] = ExprLib.Read({
+            descriptor: dBalance,
+            target: address(usdc),
+            args: abi.encode(principal),
+            subject: ExprLib.Subject.Principal,
+            decimals: 6
+        });
         ExprLib.Node[] memory n = new ExprLib.Node[](5);
         n[0] = ExprLib.Node({kind: uint8(ExprLib.Kind.BEFORE), a: 0, b: 0});
         n[1] = ExprLib.Node({kind: uint8(ExprLib.Kind.READ), a: 0, b: 0});
@@ -253,7 +283,11 @@ contract ShieldV1Test is Test {
         exec.setSpendBps(10_000); // 100 spent, fails on the final state and rolls back
         uint256 before = usdc.balanceOf(principal);
         vm.prank(agent);
-        vm.expectRevert(abi.encodeWithSelector(IShieldV1.OutcomeRejected.selector, id2, IShieldV1.MandateReason.OUTCOME_FAILED, ""));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IShieldV1.OutcomeRejected.selector, id2, IShieldV1.MandateReason.OUTCOME_FAILED, ""
+            )
+        );
         shield.fire(id2, 100e6, "");
         assertEq(usdc.balanceOf(principal), before);
     }
@@ -266,7 +300,11 @@ contract ShieldV1Test is Test {
         p.maxCumulativeValue = 0;
         bytes32 id = _register(p);
         vm.prank(agent);
-        vm.expectRevert(abi.encodeWithSelector(IShieldV1.MandateBlocked.selector, id, IShieldV1.MandateReason.AMOUNT_NOT_ZERO));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IShieldV1.MandateBlocked.selector, id, IShieldV1.MandateReason.AMOUNT_NOT_ZERO
+            )
+        );
         shield.fire(id, 1, "");
         vm.prank(agent);
         uint256 spent = shield.fire(id, 0, "");
@@ -287,7 +325,9 @@ contract ShieldV1Test is Test {
         vm.prank(agent);
         shield.fire(id, 10e6, "");
         vm.prank(agent);
-        vm.expectRevert(abi.encodeWithSelector(IShieldV1.MandateBlocked.selector, id, IShieldV1.MandateReason.TOO_SOON));
+        vm.expectRevert(
+            abi.encodeWithSelector(IShieldV1.MandateBlocked.selector, id, IShieldV1.MandateReason.TOO_SOON)
+        );
         shield.fire(id, 10e6, "");
         vm.warp(block.timestamp + 1 days);
         exec.setRevert(true);
@@ -342,7 +382,11 @@ contract ShieldV1Test is Test {
 
     // -------------------------------------------------------------- revocation
 
-    function _revokeDigest(bytes32 id, address who, uint256 nonce, uint256 deadline) internal view returns (bytes32) {
+    function _revokeDigest(bytes32 id, address who, uint256 nonce, uint256 deadline)
+        internal
+        view
+        returns (bytes32)
+    {
         bytes32 structHash = keccak256(
             abi.encode(
                 keccak256("Revoke(bytes32 mandateId,address principal,uint256 nonce,uint256 deadline)"),
@@ -354,7 +398,9 @@ contract ShieldV1Test is Test {
         );
         bytes32 domain = keccak256(
             abi.encode(
-                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256(
+                    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+                ),
                 keccak256("SignoShield"),
                 keccak256("1"),
                 block.chainid,
@@ -371,6 +417,7 @@ contract ShieldV1Test is Test {
 
     function test_revokeWithSigEOA() public {
         bytes32 id = _register(_params());
+        // forge-lint: disable-next-line(environment-read-across-mutation)
         uint256 deadline = block.timestamp + 1 hours;
         bytes32 digest = _revokeDigest(id, principal, 0, deadline);
         vm.expectRevert(IShieldV1.BadSignature.selector);
@@ -408,7 +455,11 @@ contract ShieldV1Test is Test {
         vm.prank(enforcer);
         shield.halt(address(exec));
         vm.prank(agent);
-        vm.expectRevert(abi.encodeWithSelector(IShieldV1.MandateBlocked.selector, id, IShieldV1.MandateReason.EXECUTOR_HALTED));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IShieldV1.MandateBlocked.selector, id, IShieldV1.MandateReason.EXECUTOR_HALTED
+            )
+        );
         shield.fire(id, 10e6, "");
         // admin cannot restore without a queued approval
         vm.prank(admin);
@@ -422,6 +473,7 @@ contract ShieldV1Test is Test {
         // a new halt bumps the epoch and cancels the queue
         vm.prank(enforcer);
         shield.halt(address(exec));
+        // forge-lint: disable-next-line(environment-read-across-mutation)
         vm.warp(block.timestamp + 25 hours);
         vm.prank(admin);
         vm.expectRevert(abi.encodeWithSelector(IShieldV1.EpochMismatch.selector, address(exec), uint64(1)));
@@ -471,11 +523,24 @@ contract ShieldV1Test is Test {
         // and cannot be re-listed under the same id
         vm.prank(admin);
         vm.expectRevert();
-        shield.listDescriptor(IDescriptors.Descriptor({
-            kind: IDescriptors.DescriptorKind.Shape, target: address(0), selector: bytes4(keccak256("balanceOf(address)")), argCount: 1,
-            subjectArg: 0, subjectRule: IDescriptors.SubjectRule.PrincipalRequired, word: 0, isSigned: false, mustBePositive: false,
-            decimals: 0, freshness: IDescriptors.Freshness.None, maxAge: 0, gasStipend: 100_000, copyBytes: 32
-        }));
+        shield.listDescriptor(
+            IDescriptors.Descriptor({
+                kind: IDescriptors.DescriptorKind.Shape,
+                target: address(0),
+                selector: bytes4(keccak256("balanceOf(address)")),
+                argCount: 1,
+                subjectArg: 0,
+                subjectRule: IDescriptors.SubjectRule.PrincipalRequired,
+                word: 0,
+                isSigned: false,
+                mustBePositive: false,
+                decimals: 0,
+                freshness: IDescriptors.Freshness.None,
+                maxAge: 0,
+                gasStipend: 100_000,
+                copyBytes: 32
+            })
+        );
     }
 
     function test_rolesAdminCannotBeEnforcerAndListingGatesNewOnly() public {

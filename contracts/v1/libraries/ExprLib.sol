@@ -126,11 +126,15 @@ library ExprLib {
                 if (n.a >= i || !isBool[n.a]) revert IEvaluatorV1.TreeInvalid("notOperand");
                 isBool[i] = true;
             } else if (k == Kind.AND || k == Kind.OR) {
-                if (n.a >= i || n.b >= i || !isBool[n.a] || !isBool[n.b]) revert IEvaluatorV1.TreeInvalid("boolOperand");
+                if (n.a >= i || n.b >= i || !isBool[n.a] || !isBool[n.b]) {
+                    revert IEvaluatorV1.TreeInvalid("boolOperand");
+                }
                 isBool[i] = true;
             } else {
                 // arithmetic and comparisons take numeric operands
-                if (n.a >= i || n.b >= i || isBool[n.a] || isBool[n.b]) revert IEvaluatorV1.TreeInvalid("numOperand");
+                if (n.a >= i || n.b >= i || isBool[n.a] || isBool[n.b]) {
+                    revert IEvaluatorV1.TreeInvalid("numOperand");
+                }
                 if (k >= Kind.LT) isBool[i] = true;
             }
         }
@@ -150,7 +154,9 @@ library ExprLib {
         if (d.subjectRule == IDescriptors.SubjectRule.PrincipalRequired) {
             if (r.subject == Subject.None) revert IEvaluatorV1.TreeInvalid("subject");
             // forge-lint: disable-next-line(unsafe-typecast)
-            if (d.subjectArg < 0 || uint8(d.subjectArg) >= d.argCount) revert IEvaluatorV1.TreeInvalid("subjectArg");
+            if (d.subjectArg < 0 || uint8(d.subjectArg) >= d.argCount) {
+                revert IEvaluatorV1.TreeInvalid("subjectArg");
+            }
             if (r.subject == Subject.Principal) {
                 bytes memory args = r.args;
                 // forge-lint: disable-next-line(unsafe-typecast)
@@ -249,7 +255,11 @@ library ExprLib {
     }
 
     /// @dev The reads the SIGNED (or BEFORE) nodes name, taken live now.
-    function readsFor(Tree memory t, Kind which, IDescriptors catalog) internal view returns (int256[] memory vals) {
+    function readsFor(Tree memory t, Kind which, IDescriptors catalog)
+        internal
+        view
+        returns (int256[] memory vals)
+    {
         uint256 nr = t.reads.length;
         vals = new int256[](nr);
         bool[] memory needed = new bool[](nr);
@@ -281,7 +291,9 @@ library ExprLib {
                 if (n.a >= env.signedValues.length) revert IEvaluatorV1.TreeInvalid("signedIndex");
                 v[i] = env.signedValues[n.a];
             } else if (k == Kind.BEFORE) {
-                if (!env.haveBefore || n.a >= env.beforeValues.length) revert IEvaluatorV1.TreeInvalid("beforeIndex");
+                if (!env.haveBefore || n.a >= env.beforeValues.length) {
+                    revert IEvaluatorV1.TreeInvalid("beforeIndex");
+                }
                 v[i] = env.beforeValues[n.a];
             } else if (k == Kind.AMOUNT) {
                 // forge-lint: disable-next-line(unsafe-typecast)

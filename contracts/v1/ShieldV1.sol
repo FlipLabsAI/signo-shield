@@ -149,7 +149,8 @@ contract ShieldV1 is IShieldV1, IDescriptors, Ownable2Step, ReentrancyGuard, EIP
         if (block.timestamp > deadline) revert SignatureExpired();
         address principal = m.principal;
         uint256 nonce = sigNonces[principal]++;
-        bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(REVOKE_TYPEHASH, mandateId, principal, nonce, deadline)));
+        bytes32 digest =
+            _hashTypedDataV4(keccak256(abi.encode(REVOKE_TYPEHASH, mandateId, principal, nonce, deadline)));
         if (!SignatureChecker.isValidSignatureNow(principal, digest, signature)) revert BadSignature();
         _revoke(m, mandateId);
     }
@@ -190,7 +191,9 @@ contract ShieldV1 is IShieldV1, IDescriptors, Ownable2Step, ReentrancyGuard, EIP
         }
         Firing memory f;
         // 4. The before values the outcome names.
-        if (m.outcome.length != 0) f.beforeValues = IEvaluatorV1(m.evaluator).snapshot(m.outcome, m.principal);
+        if (m.outcome.length != 0) {
+            f.beforeValues = IEvaluatorV1(m.evaluator).snapshot(m.outcome, m.principal);
+        }
         // 5. Reserve, take the fee's worst case, pull the amount (funding PULL).
         _fund(m, f, amount);
         // 6. The executor runs its action and its mandatory checks.
@@ -199,9 +202,8 @@ contract ShieldV1 is IShieldV1, IDescriptors, Ownable2Step, ReentrancyGuard, EIP
         spent = _settle(m, f, amount);
         // 8. The owner's outcome tree, on the final state.
         if (m.outcome.length != 0) {
-            bool ok = IEvaluatorV1(m.evaluator).judgeOutcome(
-                m.outcome, m.principal, m.outcomeSigned, f.beforeValues, amount
-            );
+            bool ok = IEvaluatorV1(m.evaluator)
+                .judgeOutcome(m.outcome, m.principal, m.outcomeSigned, f.beforeValues, amount);
             if (!ok) revert OutcomeRejected(mandateId, MandateReason.OUTCOME_FAILED, "");
         }
         // 9. Recorded. After the external calls on purpose: the receipt carries
@@ -439,7 +441,9 @@ contract ShieldV1 is IShieldV1, IDescriptors, Ownable2Step, ReentrancyGuard, EIP
 
     function setEnforcer(address enforcer, bool enabled) external onlyOwner {
         if (enforcer == address(0)) revert InvalidParams("enforcer");
-        if (enabled && (enforcer == owner() || enforcer == pendingOwner())) revert AdminCannotBeEnforcer(enforcer);
+        if (enabled && (enforcer == owner() || enforcer == pendingOwner())) {
+            revert AdminCannotBeEnforcer(enforcer);
+        }
         _enforcers[enforcer] = enabled;
         emit EnforcerSet(enforcer, enabled);
     }
@@ -466,12 +470,17 @@ contract ShieldV1 is IShieldV1, IDescriptors, Ownable2Step, ReentrancyGuard, EIP
         if (_descriptorRevoked[id]) revert InvalidParams("revoked");
         if (d.kind == DescriptorKind.PerAddress && d.target.code.length == 0) revert InvalidParams("target");
         if (d.kind == DescriptorKind.Shape && d.target != address(0)) revert InvalidParams("target");
-        // forge-lint: disable-next-line(unsafe-typecast)
-        if (d.subjectRule == SubjectRule.PrincipalRequired && (d.subjectArg < 0 || uint8(d.subjectArg) >= d.argCount)) {
+        // forge-lint: disable-next-item(unsafe-typecast)
+        if (
+            d.subjectRule == SubjectRule.PrincipalRequired
+                && (d.subjectArg < 0 || uint8(d.subjectArg) >= d.argCount)
+        ) {
             revert InvalidParams("subjectArg");
         }
         if (uint256(d.copyBytes) < (uint256(d.word) + 1) * 32) revert InvalidParams("copyBytes");
-        if (d.freshness == Freshness.ChainlinkRound && (d.copyBytes < 160 || d.maxAge == 0)) revert InvalidParams("freshness");
+        if (d.freshness == Freshness.ChainlinkRound && (d.copyBytes < 160 || d.maxAge == 0)) {
+            revert InvalidParams("freshness");
+        }
         if (d.gasStipend == 0) revert InvalidParams("gasStipend");
         if (_descriptors[id].gasStipend == 0) _descriptors[id] = d;
         _descriptorListed[id] = true;
@@ -520,7 +529,9 @@ contract ShieldV1 is IShieldV1, IDescriptors, Ownable2Step, ReentrancyGuard, EIP
         if (_halts[m.evaluator].active) return MandateReason.EVALUATOR_HALTED;
         if (block.timestamp < m.validFrom) return MandateReason.NOT_YET_VALID;
         if (block.timestamp > m.validUntil) return MandateReason.EXPIRED;
-        if (m.lastFiredAt != 0 && block.timestamp < uint256(m.lastFiredAt) + m.minInterval) return MandateReason.TOO_SOON;
+        if (m.lastFiredAt != 0 && block.timestamp < uint256(m.lastFiredAt) + m.minInterval) {
+            return MandateReason.TOO_SOON;
+        }
         if (m.revoked) return MandateReason.REVOKED;
         if (m.funding == uint8(FundingMode.NONE)) {
             if (amount != 0) return MandateReason.AMOUNT_NOT_ZERO;
@@ -534,29 +545,40 @@ contract ShieldV1 is IShieldV1, IDescriptors, Ownable2Step, ReentrancyGuard, EIP
         uint256 feeMax = Math.mulDiv(amount, feeOn, BPS);
         if (feeMax > remaining - amount) return MandateReason.OVER_CUMULATIVE_CAP;
         uint256 need = amount + feeMax;
-        if (IERC20(m.asset).allowance(m.principal, address(this)) < need) return MandateReason.INSUFFICIENT_ALLOWANCE;
+        if (IERC20(m.asset).allowance(m.principal, address(this)) < need) {
+            return MandateReason.INSUFFICIENT_ALLOWANCE;
+        }
         if (IERC20(m.asset).balanceOf(m.principal) < need) return MandateReason.INSUFFICIENT_BALANCE;
         return MandateReason.OK;
     }
 
     function _validateParams(MandateParams calldata p, uint16 feeBpsFor, address principal) internal view {
-        if (p.agent == address(0) || p.agent == principal || p.agent == address(this)) revert InvalidParams("agent");
+        if (p.agent == address(0) || p.agent == principal || p.agent == address(this)) {
+            revert InvalidParams("agent");
+        }
         if (p.asset == address(0)) revert InvalidParams("asset");
         if (p.funding > uint8(FundingMode.NONE)) revert InvalidParams("funding");
         if (p.maxFeeBps > MAX_FEE_BPS) revert InvalidParams("maxFeeBps");
         if (p.funding == uint8(FundingMode.PULL)) {
             if (p.maxTransactionValue == 0) revert InvalidParams("maxTransactionValue");
             if (p.maxCumulativeValue < p.maxTransactionValue) revert InvalidParams("maxCumulativeValue");
-            if (p.maxCumulativeValue - p.maxTransactionValue < Math.mulDiv(p.maxTransactionValue, feeBpsFor, BPS)) {
+            if (
+                p.maxCumulativeValue - p.maxTransactionValue
+                    < Math.mulDiv(p.maxTransactionValue, feeBpsFor, BPS)
+            ) {
                 revert InvalidParams("maxCumulativeValue");
             }
         } else {
             // Nothing is pulled: a no-input action must carry an outcome tree or rely on the executor's checks; both caps are zero.
             if (p.maxTransactionValue != 0 || p.maxCumulativeValue != 0) revert InvalidParams("caps");
         }
-        if (p.validUntil <= p.validFrom || p.validUntil <= block.timestamp) revert InvalidParams("validUntil");
+        if (p.validUntil <= p.validFrom || p.validUntil <= block.timestamp) {
+            revert InvalidParams("validUntil");
+        }
         IExecutorV1 x = IExecutorV1(p.executor);
-        if (x.semanticsOf(p.action) == SemanticsV1.UNSUPPORTED) revert ActionNotSupported(p.executor, p.action);
+        if (x.semanticsOf(p.action) == SemanticsV1.UNSUPPORTED) {
+            revert ActionNotSupported(p.executor, p.action);
+        }
         x.validateConfig(p.action, p.asset, p.actionConfig);
         IEvaluatorV1 e = IEvaluatorV1(p.evaluator);
         if (p.trigger.length != 0) e.validate(p.trigger, IEvaluatorV1.Phase.Trigger, principal);

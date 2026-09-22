@@ -268,10 +268,16 @@ contract GenericExecutorV1Test is Test {
         assertGt(usdc.balanceOf(principal) - uBefore, 495e18);
         vault.setExitFee(100); // 1%, beyond tolerance
         address clone2 = exec.nextClone(id);
-        bytes memory r2 = _route(IExecutorV1.Call({
-            target: address(vault), spender: address(0), approveToken: address(0), approveAmount: 0, claimStep: false,
-            data: abi.encodeCall(IERC4626.redeem, (shares / 4, clone2, clone2))
-        }));
+        bytes memory r2 = _route(
+            IExecutorV1.Call({
+                target: address(vault),
+                spender: address(0),
+                approveToken: address(0),
+                approveAmount: 0,
+                claimStep: false,
+                data: abi.encodeCall(IERC4626.redeem, (shares / 4, clone2, clone2))
+            })
+        );
         vm.prank(agent);
         vm.expectRevert();
         shield.fire(id, shares / 4, r2);
@@ -285,10 +291,16 @@ contract GenericExecutorV1Test is Test {
         // the vault's assets jump 20% (a donation): implied price per share leaves the 5% band
         usdc.mint(address(vault), 200e18);
         address clone = exec.nextClone(id);
-        bytes memory r = _route(IExecutorV1.Call({
-            target: address(vault), spender: address(0), approveToken: address(0), approveAmount: 0, claimStep: false,
-            data: abi.encodeCall(IERC4626.redeem, (shares / 2, clone, clone))
-        }));
+        bytes memory r = _route(
+            IExecutorV1.Call({
+                target: address(vault),
+                spender: address(0),
+                approveToken: address(0),
+                approveAmount: 0,
+                claimStep: false,
+                data: abi.encodeCall(IERC4626.redeem, (shares / 2, clone, clone))
+            })
+        );
         vm.prank(agent);
         vm.expectRevert();
         shield.fire(id, shares / 2, r);

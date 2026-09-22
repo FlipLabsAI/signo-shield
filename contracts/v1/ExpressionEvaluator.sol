@@ -35,23 +35,38 @@ contract ExpressionEvaluator is IEvaluatorV1 {
     }
 
     /// @inheritdoc IEvaluatorV1
-    function capture(bytes calldata tree, address /*principal*/ ) external view returns (int256[] memory) {
+    function capture(
+        bytes calldata tree,
+        address /*principal*/
+    )
+        external
+        view
+        returns (int256[] memory)
+    {
         ExprLib.Tree memory t = ExprLib.decode(tree);
         return ExprLib.readsFor(t, ExprLib.Kind.SIGNED, catalog);
     }
 
     /// @inheritdoc IEvaluatorV1
-    function snapshot(bytes calldata outcome, address /*principal*/ ) external view returns (int256[] memory) {
+    function snapshot(
+        bytes calldata outcome,
+        address /*principal*/
+    )
+        external
+        view
+        returns (int256[] memory)
+    {
         ExprLib.Tree memory t = ExprLib.decode(outcome);
         return ExprLib.readsFor(t, ExprLib.Kind.BEFORE, catalog);
     }
 
     /// @inheritdoc IEvaluatorV1
-    function judgeTrigger(bytes calldata trigger, address principal, int256[] calldata signedValues, uint256 amount)
-        external
-        view
-        returns (bool)
-    {
+    function judgeTrigger(
+        bytes calldata trigger,
+        address principal,
+        int256[] calldata signedValues,
+        uint256 amount
+    ) external view returns (bool) {
         ExprLib.Tree memory t = ExprLib.decode(trigger);
         int256[] memory live = ExprLib.liveReads(t, catalog);
         ExprLib.Env memory env = ExprLib.Env({

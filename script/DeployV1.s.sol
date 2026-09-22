@@ -88,9 +88,22 @@ contract DeployV1 is Script {
     ///      Shape descriptors are chain-independent; per-address ones are
     ///      listed for the chains they exist on.
     function _listCatalog(ShieldV1 shield, address pool) internal {
-        _log("erc20.balanceOf", shield.listDescriptor(_shape(bytes4(keccak256("balanceOf(address)")), 1, 0, true, 100_000, 32)));
-        _log("erc4626.convertToAssets", shield.listDescriptor(_shape(bytes4(keccak256("convertToAssets(uint256)")), 1, -1, false, 100_000, 32)));
-        _log("erc4626.convertToShares", shield.listDescriptor(_shape(bytes4(keccak256("convertToShares(uint256)")), 1, -1, false, 100_000, 32)));
+        _log(
+            "erc20.balanceOf",
+            shield.listDescriptor(_shape(bytes4(keccak256("balanceOf(address)")), 1, 0, true, 100_000, 32))
+        );
+        _log(
+            "erc4626.convertToAssets",
+            shield.listDescriptor(
+                _shape(bytes4(keccak256("convertToAssets(uint256)")), 1, -1, false, 100_000, 32)
+            )
+        );
+        _log(
+            "erc4626.convertToShares",
+            shield.listDescriptor(
+                _shape(bytes4(keccak256("convertToShares(uint256)")), 1, -1, false, 100_000, 32)
+            )
+        );
         _log("chainlink.round.1h", shield.listDescriptor(_round(address(0), 3600)));
         _log("chainlink.round.24h", shield.listDescriptor(_round(address(0), 86_400)));
         if (pool != address(0)) {
@@ -102,26 +115,35 @@ contract DeployV1 is Script {
             address oracle = 0x91FC11136d5615575a0fC5981Ab5C0C54418E2C6;
             _log("aave.price", shield.listDescriptor(_price(oracle)));
             _log("feed.eth", shield.listDescriptor(_round(0x8b85b50535551F8E8cDAF78dA235b5Cf1005907b, 3600)));
-            _log("feed.usdt", shield.listDescriptor(_round(0xb928a0678352005a2e51F614efD0b54C9830dB80, 86_400)));
-            _log("feed.usdc", shield.listDescriptor(_round(0xB8a08c178D96C315FbFB5661ABD208477391BC40, 86_400)));
+            _log(
+                "feed.usdt", shield.listDescriptor(_round(0xb928a0678352005a2e51F614efD0b54C9830dB80, 86_400))
+            );
+            _log(
+                "feed.usdc", shield.listDescriptor(_round(0xB8a08c178D96C315FbFB5661ABD208477391BC40, 86_400))
+            );
             _log("feed.btc", shield.listDescriptor(_round(0x4D6f6488a2B3a5f7b088f276887f608a1e9805c4, 3600)));
             _log("feed.okb", shield.listDescriptor(_round(0x4Ff345b18a2bF894F8627F41501FBf30d5C5e7BE, 3600)));
             _log("feed.sol", shield.listDescriptor(_round(0xF959E1B5cA535C28aD24F7f672Bf1A93900810cF, 3600)));
         }
     }
 
-    function _shape(bytes4 selector, uint8 argCount, int8 subjectArg, bool principalRequired, uint32 gas_, uint16 copy)
-        internal
-        pure
-        returns (IDescriptors.Descriptor memory)
-    {
+    function _shape(
+        bytes4 selector,
+        uint8 argCount,
+        int8 subjectArg,
+        bool principalRequired,
+        uint32 gas_,
+        uint16 copy
+    ) internal pure returns (IDescriptors.Descriptor memory) {
         return IDescriptors.Descriptor({
             kind: IDescriptors.DescriptorKind.Shape,
             target: address(0),
             selector: selector,
             argCount: argCount,
             subjectArg: subjectArg,
-            subjectRule: principalRequired ? IDescriptors.SubjectRule.PrincipalRequired : IDescriptors.SubjectRule.None,
+            subjectRule: principalRequired
+                ? IDescriptors.SubjectRule.PrincipalRequired
+                : IDescriptors.SubjectRule.None,
             word: 0,
             isSigned: false,
             mustBePositive: false,
@@ -136,7 +158,9 @@ contract DeployV1 is Script {
     /// @dev A Chainlink-shaped round read: per address when `feed` is set, else the shape.
     function _round(address feed, uint32 maxAge) internal pure returns (IDescriptors.Descriptor memory) {
         return IDescriptors.Descriptor({
-            kind: feed == address(0) ? IDescriptors.DescriptorKind.Shape : IDescriptors.DescriptorKind.PerAddress,
+            kind: feed == address(0)
+                ? IDescriptors.DescriptorKind.Shape
+                : IDescriptors.DescriptorKind.PerAddress,
             target: feed,
             selector: bytes4(keccak256("latestRoundData()")),
             argCount: 0,

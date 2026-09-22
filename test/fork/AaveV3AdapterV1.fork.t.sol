@@ -95,7 +95,13 @@ contract AaveV3AdapterV1ForkTest is Test {
     /// health factor of the principal < threshold, as a v1 tree through the catalog
     function _hfBelow(uint256 threshold) internal view returns (bytes memory) {
         ExprLib.Read[] memory r = new ExprLib.Read[](1);
-        r[0] = ExprLib.Read({descriptor: dHf, target: POOL, args: abi.encode(principal), subject: ExprLib.Subject.Principal, decimals: 18});
+        r[0] = ExprLib.Read({
+            descriptor: dHf,
+            target: POOL,
+            args: abi.encode(principal),
+            subject: ExprLib.Subject.Principal,
+            decimals: 18
+        });
         ExprLib.Node[] memory n = new ExprLib.Node[](3);
         n[0] = ExprLib.Node({kind: uint8(ExprLib.Kind.READ), a: 0, b: 0});
         n[1] = ExprLib.Node({kind: uint8(ExprLib.Kind.CONST), a: threshold, b: 0});
@@ -127,7 +133,11 @@ contract AaveV3AdapterV1ForkTest is Test {
         id = shield.registerMandate(p);
     }
 
-    function _swapCalldata(uint256 amountIn, uint256 amountOut, address to) internal pure returns (bytes memory) {
+    function _swapCalldata(uint256 amountIn, uint256 amountOut, address to)
+        internal
+        pure
+        returns (bytes memory)
+    {
         return abi.encodeCall(MockRouter.swap, (XETH, amountIn, USDT0, amountOut, to));
     }
 
@@ -172,14 +182,20 @@ contract AaveV3AdapterV1ForkTest is Test {
         vm.prank(agent);
         uint256 spent = shield.fire(id, 10e6, "");
         assertEq(spent, 10e6); // fee recipient unset: no fee
-        assertApproxEqAbs(debtBefore - IERC20(V_USDT0).balanceOf(principal), 10e6, 2, "debt fell by what was repaid");
+        assertApproxEqAbs(
+            debtBefore - IERC20(V_USDT0).balanceOf(principal), 10e6, 2, "debt fell by what was repaid"
+        );
         assertGt(_healthFactor(principal), hfBefore);
         assertEq(shield.getMandate(id).cumulativeUsed, 10e6);
         _assertNothingLeftBehind();
         // The repay lifted the health factor past the trigger: refused now.
         assertGe(_healthFactor(principal), 1.6e18);
         vm.prank(agent);
-        vm.expectRevert(abi.encodeWithSelector(IShieldV1.MandateBlocked.selector, id, IShieldV1.MandateReason.TRIGGER_NOT_MET));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IShieldV1.MandateBlocked.selector, id, IShieldV1.MandateReason.TRIGGER_NOT_MET
+            )
+        );
         shield.fire(id, 10e6, "");
     }
 
@@ -209,8 +225,12 @@ contract AaveV3AdapterV1ForkTest is Test {
         vm.prank(agent);
         uint256 spent = shield.fire(id, slice, route);
         assertApproxEqAbs(spent, amountIn, 2, "what was sold is what was spent");
-        assertApproxEqAbs(aBefore - IERC20(A_XETH).balanceOf(principal), amountIn, 2, "only the sold part left");
-        assertApproxEqAbs(debtBefore - IERC20(V_USDT0).balanceOf(principal), amountOut, 2, "debt fell by the output");
+        assertApproxEqAbs(
+            aBefore - IERC20(A_XETH).balanceOf(principal), amountIn, 2, "only the sold part left"
+        );
+        assertApproxEqAbs(
+            debtBefore - IERC20(V_USDT0).balanceOf(principal), amountOut, 2, "debt fell by the output"
+        );
         assertGe(_healthFactor(principal), 1.7e18);
         _assertNothingLeftBehind();
     }
@@ -226,7 +246,9 @@ contract AaveV3AdapterV1ForkTest is Test {
         vm.prank(agent);
         uint256 spent = shield.fire(id, 0.008e18, route);
         assertApproxEqAbs(spent, sliver, 2);
-        assertApproxEqAbs(aBefore - IERC20(A_XETH).balanceOf(principal), sliver, 2, "the rest is back in the position");
+        assertApproxEqAbs(
+            aBefore - IERC20(A_XETH).balanceOf(principal), sliver, 2, "the rest is back in the position"
+        );
         assertEq(IERC20(XETH).balanceOf(principal), xethBefore, "no collateral landed in the wallet");
         _assertNothingLeftBehind();
     }
@@ -249,8 +271,13 @@ contract AaveV3AdapterV1ForkTest is Test {
         p.actionConfig = abi.encode(
             uint8(1),
             AaveV3AdapterV1.RepayWithCollateralConfig({
-                collateral: XETH, debtAsset: USDT0, targetHealthFactor: 1.5e18, maxSlippageBps: 300,
-                slippageOverride: false, router: address(router), spender: address(router)
+                collateral: XETH,
+                debtAsset: USDT0,
+                targetHealthFactor: 1.5e18,
+                maxSlippageBps: 300,
+                slippageOverride: false,
+                router: address(router),
+                spender: address(router)
             })
         );
         vm.prank(principal);

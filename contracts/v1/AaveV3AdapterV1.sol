@@ -6,7 +6,12 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IExecutorV1, SemanticsV1} from "./interfaces/IExecutorV1.sol";
 import {IShieldV1} from "./interfaces/IShieldV1.sol";
-import {IAaveOracle, IPool, IPoolAddressesProvider, IPoolDataProvider} from "contracts/adapters/aave-v3/interfaces/IAaveV3.sol";
+import {
+    IAaveOracle,
+    IPool,
+    IPoolAddressesProvider,
+    IPoolDataProvider
+} from "contracts/adapters/aave-v3/interfaces/IAaveV3.sol";
 
 /// @title AaveV3AdapterV1
 /// @notice The Tier 2 Aave adapter on the v1 executor interface. Knows one
@@ -47,8 +52,16 @@ contract AaveV3AdapterV1 is IExecutorV1 {
         address spender;
     }
 
-    event Supplied(bytes32 indexed mandateId, address indexed principal, address indexed asset, uint256 amount);
-    event Repaid(bytes32 indexed mandateId, address indexed principal, address indexed asset, uint256 repaid, uint256 refunded);
+    event Supplied(
+        bytes32 indexed mandateId, address indexed principal, address indexed asset, uint256 amount
+    );
+    event Repaid(
+        bytes32 indexed mandateId,
+        address indexed principal,
+        address indexed asset,
+        uint256 repaid,
+        uint256 refunded
+    );
     event RepaidWithCollateral(
         bytes32 indexed mandateId,
         address indexed principal,
@@ -111,8 +124,12 @@ contract AaveV3AdapterV1 is IExecutorV1 {
             if (c.targetHealthFactor < MIN_TARGET_HEALTH_FACTOR) revert ConfigInvalid("targetHealthFactor");
             uint16 ceiling = c.slippageOverride ? MAX_SLIPPAGE_OVERRIDE_BPS : MAX_SLIPPAGE_BPS;
             if (c.maxSlippageBps == 0 || c.maxSlippageBps > ceiling) revert ConfigInvalid("maxSlippageBps");
-            if (c.router.code.length == 0 || _isReserved(c.router, c, asset, variableDebt)) revert ConfigInvalid("router");
-            if (c.spender.code.length == 0 || _isReserved(c.spender, c, asset, variableDebt)) revert ConfigInvalid("spender");
+            if (c.router.code.length == 0 || _isReserved(c.router, c, asset, variableDebt)) {
+                revert ConfigInvalid("router");
+            }
+            if (c.spender.code.length == 0 || _isReserved(c.spender, c, asset, variableDebt)) {
+                revert ConfigInvalid("spender");
+            }
         } else {
             revert UnsupportedAction(action);
         }
@@ -121,7 +138,11 @@ contract AaveV3AdapterV1 is IExecutorV1 {
     // =============================================================== execution
 
     /// @inheritdoc IExecutorV1
-    function execute(Context calldata ctx, uint256 amount, bytes calldata route) external onlyShield returns (uint256) {
+    function execute(Context calldata ctx, uint256 amount, bytes calldata route)
+        external
+        onlyShield
+        returns (uint256)
+    {
         if (ctx.funding != uint8(IShieldV1.FundingMode.PULL)) revert ConfigInvalid("funding");
         if (ctx.action == ACTION_SUPPLY) return _supply(ctx, amount, route);
         if (ctx.action == ACTION_REPAY) return _repay(ctx, amount, route);
@@ -138,7 +159,9 @@ contract AaveV3AdapterV1 is IExecutorV1 {
         pool.supply(ctx.asset, amount, ctx.principal, 0);
         _clearApproval(asset, address(pool));
         uint256 gained = IERC20(aToken).balanceOf(ctx.principal) - before;
-        if (gained + _tolerance(amount) < amount) revert OutcomeFailed("aToken balance did not rise by the amount");
+        if (gained + _tolerance(amount) < amount) {
+            revert OutcomeFailed("aToken balance did not rise by the amount");
+        }
         // forge-lint: disable-next-line(reentrancy-events)
         emit Supplied(ctx.mandateId, ctx.principal, ctx.asset, amount);
         return amount;
@@ -158,13 +181,18 @@ contract AaveV3AdapterV1 is IExecutorV1 {
         if (refund != 0) asset.safeTransfer(ctx.principal, refund);
         uint256 debtAfter = IERC20(variableDebt).balanceOf(ctx.principal);
         if (debtAfter >= debtBefore) revert OutcomeFailed("debt did not fall");
-        if ((debtBefore - debtAfter) + _tolerance(repaid) < repaid) revert OutcomeFailed("debt fell by less than repaid");
+        if ((debtBefore - debtAfter) + _tolerance(repaid) < repaid) {
+            revert OutcomeFailed("debt fell by less than repaid");
+        }
         // forge-lint: disable-next-line(reentrancy-events)
         emit Repaid(ctx.mandateId, ctx.principal, ctx.asset, repaid, refund);
         return repaid;
     }
 
-    function _repayWithCollateral(Context calldata ctx, uint256 amount, bytes calldata route) internal returns (uint256) {
+    function _repayWithCollateral(Context calldata ctx, uint256 amount, bytes calldata route)
+        internal
+        returns (uint256)
+    {
         RepayWithCollateralConfig memory c = _decode(ctx.actionConfig);
         IShieldV1 core = IShieldV1(shield);
         if (core.isVenueBlocked(c.router)) revert VenueBlocked(c.router);
@@ -177,13 +205,17 @@ contract AaveV3AdapterV1 is IExecutorV1 {
             revert OutcomeFailed("sold more collateral than the debt needs");
         }
         uint256 repaid = _repayFromOwnBalance(c.debtAsset, received, debtBefore, ctx.principal);
-        if (IERC20(variableDebt).balanceOf(ctx.principal) >= debtBefore) revert OutcomeFailed("debt did not fall");
+        if (IERC20(variableDebt).balanceOf(ctx.principal) >= debtBefore) {
+            revert OutcomeFailed("debt did not fall");
+        }
         // forge-lint: disable-next-line(unused-return)
         (,,,,, uint256 healthFactor) = pool.getUserAccountData(ctx.principal);
         if (healthFactor < c.targetHealthFactor) revert OutcomeFailed("health factor below target");
         uint256 aTokenLeft = _returnBalance(IERC20(ctx.asset), ctx.principal);
         // forge-lint: disable-next-item(reentrancy-events)
-        emit RepaidWithCollateral(ctx.mandateId, ctx.principal, c.collateral, sold, c.debtAsset, repaid, healthFactor);
+        emit RepaidWithCollateral(
+            ctx.mandateId, ctx.principal, c.collateral, sold, c.debtAsset, repaid, healthFactor
+        );
         return sold + aTokenLeft > amount ? amount : sold;
     }
 
@@ -238,32 +270,44 @@ contract AaveV3AdapterV1 is IExecutorV1 {
     // ================================================================= helpers
 
     function _decode(bytes memory actionConfig) internal pure returns (RepayWithCollateralConfig memory c) {
-        (uint8 version, RepayWithCollateralConfig memory cfg) = abi.decode(actionConfig, (uint8, RepayWithCollateralConfig));
+        (uint8 version, RepayWithCollateralConfig memory cfg) =
+            abi.decode(actionConfig, (uint8, RepayWithCollateralConfig));
         if (version != CONFIG_VERSION) revert ConfigInvalid("version");
         return cfg;
     }
 
-    function _isReserved(address candidate, RepayWithCollateralConfig memory c, address aToken, address variableDebt)
-        internal
-        view
-        returns (bool)
-    {
-        return candidate == address(pool) || candidate == shield || candidate == address(this) || candidate == c.collateral
-            || candidate == c.debtAsset || candidate == aToken || candidate == variableDebt
-            || candidate == address(addressesProvider) || candidate == addressesProvider.getPriceOracle();
+    function _isReserved(
+        address candidate,
+        RepayWithCollateralConfig memory c,
+        address aToken,
+        address variableDebt
+    ) internal view returns (bool) {
+        return candidate == address(pool) || candidate == shield || candidate == address(this)
+            || candidate == c.collateral || candidate == c.debtAsset || candidate == aToken
+            || candidate == variableDebt || candidate == address(addressesProvider)
+            || candidate == addressesProvider.getPriceOracle();
     }
 
-    function _minOut(RepayWithCollateralConfig memory c, uint256 collateralAmount) internal view returns (uint256) {
+    function _minOut(RepayWithCollateralConfig memory c, uint256 collateralAmount)
+        internal
+        view
+        returns (uint256)
+    {
         IAaveOracle oracle = IAaveOracle(addressesProvider.getPriceOracle());
         uint256 collateralPrice = oracle.getAssetPrice(c.collateral);
         uint256 debtPrice = oracle.getAssetPrice(c.debtAsset);
         if (collateralPrice == 0 || debtPrice == 0) revert OutcomeFailed("oracle price");
         uint256 collateralUnit = 10 ** IERC20Metadata(c.collateral).decimals();
         uint256 debtUnit = 10 ** IERC20Metadata(c.debtAsset).decimals();
-        return (collateralAmount * collateralPrice * debtUnit * (BPS - c.maxSlippageBps)) / (debtPrice * collateralUnit * BPS);
+        return (collateralAmount * collateralPrice * debtUnit * (BPS - c.maxSlippageBps))
+            / (debtPrice * collateralUnit * BPS);
     }
 
-    function _reserveTokens(address asset) internal view returns (address aToken, address stableDebt, address variableDebt) {
+    function _reserveTokens(address asset)
+        internal
+        view
+        returns (address aToken, address stableDebt, address variableDebt)
+    {
         return IPoolDataProvider(addressesProvider.getPoolDataProvider()).getReserveTokensAddresses(asset);
     }
 

@@ -53,5 +53,7 @@ interface IExecutorV1 {
 
     /// @notice Run the action. For funding PULL the core has already transferred `amount` of `ctx.asset` here.
     ///         Returns what was spent of the asset; must be 0 for funding NONE.
-    function execute(Context calldata ctx, uint256 amount, bytes calldata route) external returns (uint256 used);
+    function execute(Context calldata ctx, uint256 amount, bytes calldata route)
+        external
+        returns (uint256 used);
 }

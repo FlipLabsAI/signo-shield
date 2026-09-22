@@ -56,7 +56,11 @@ contract ClaimExecutorV1Test is Test {
         c.dust = 0;
     }
 
-    function _params(bytes32 action, ClaimExecutorV1.Config memory c) internal view returns (IShieldV1.MandateParams memory p) {
+    function _params(bytes32 action, ClaimExecutorV1.Config memory c)
+        internal
+        view
+        returns (IShieldV1.MandateParams memory p)
+    {
         p = IShieldV1.MandateParams({
             agent: agent,
             executor: address(exec),
@@ -104,7 +108,11 @@ contract ClaimExecutorV1Test is Test {
         return abi.encode(calls);
     }
 
-    function _route2(IExecutorV1.Call memory a, IExecutorV1.Call memory b) internal pure returns (bytes memory) {
+    function _route2(IExecutorV1.Call memory a, IExecutorV1.Call memory b)
+        internal
+        pure
+        returns (bytes memory)
+    {
         IExecutorV1.Call[] memory calls = new IExecutorV1.Call[](2);
         calls[0] = a;
         calls[1] = b;

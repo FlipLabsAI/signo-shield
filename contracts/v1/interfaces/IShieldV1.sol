@@ -77,7 +77,11 @@ interface IShieldV1 {
     }
 
     event MandateRegistered(
-        bytes32 indexed mandateId, address indexed principal, address indexed agent, address executor, address evaluator
+        bytes32 indexed mandateId,
+        address indexed principal,
+        address indexed agent,
+        address executor,
+        address evaluator
     );
     event MandateAmended(bytes32 indexed mandateId, uint32 revision);
     event MandateRevoked(bytes32 indexed mandateId, address indexed principal);

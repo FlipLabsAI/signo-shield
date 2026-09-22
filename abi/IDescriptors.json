@@ -1,0 +1,232 @@
+[
+  {
+    "type": "function",
+    "name": "descriptorId",
+    "inputs": [
+      {
+        "name": "d",
+        "type": "tuple",
+        "internalType": "struct IDescriptors.Descriptor",
+        "components": [
+          {
+            "name": "kind",
+            "type": "uint8",
+            "internalType": "enum IDescriptors.DescriptorKind"
+          },
+          {
+            "name": "target",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "selector",
+            "type": "bytes4",
+            "internalType": "bytes4"
+          },
+          {
+            "name": "argCount",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "subjectArg",
+            "type": "int8",
+            "internalType": "int8"
+          },
+          {
+            "name": "subjectRule",
+            "type": "uint8",
+            "internalType": "enum IDescriptors.SubjectRule"
+          },
+          {
+            "name": "word",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "isSigned",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "mustBePositive",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "decimals",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "freshness",
+            "type": "uint8",
+            "internalType": "enum IDescriptors.Freshness"
+          },
+          {
+            "name": "maxAge",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "gasStipend",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "copyBytes",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "descriptorOf",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "d",
+        "type": "tuple",
+        "internalType": "struct IDescriptors.Descriptor",
+        "components": [
+          {
+            "name": "kind",
+            "type": "uint8",
+            "internalType": "enum IDescriptors.DescriptorKind"
+          },
+          {
+            "name": "target",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "selector",
+            "type": "bytes4",
+            "internalType": "bytes4"
+          },
+          {
+            "name": "argCount",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "subjectArg",
+            "type": "int8",
+            "internalType": "int8"
+          },
+          {
+            "name": "subjectRule",
+            "type": "uint8",
+            "internalType": "enum IDescriptors.SubjectRule"
+          },
+          {
+            "name": "word",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "isSigned",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "mustBePositive",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "decimals",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "freshness",
+            "type": "uint8",
+            "internalType": "enum IDescriptors.Freshness"
+          },
+          {
+            "name": "maxAge",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "gasStipend",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "copyBytes",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ]
+      },
+      {
+        "name": "listed",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "revoked",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "DescriptorListed",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "listed",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "DescriptorRevoked",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "by",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  }
+]
