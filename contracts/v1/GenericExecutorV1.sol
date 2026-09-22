@@ -329,8 +329,7 @@ contract GenericExecutorV1 is IExecutorV1 {
         // forge-lint: disable-next-line(unsafe-typecast)
         if (f.debtBefore - debtAfter < int256(minDown)) revert DebtNotReduced(f.debtBefore, debtAfter, minDown);
         if (collAfter < f.collBefore) revert CollateralFell(f.collBefore, collAfter);
-        // forge-lint: disable-next-line(reentrancy-events)
-        // forge-lint: disable-next-line(unsafe-typecast)
+        // forge-lint: disable-next-line(reentrancy-events,unsafe-typecast)
         emit Executed(ctx.mandateId, ctx.principal, ctx.action, f.clone, spent, uint256(f.debtBefore - debtAfter), minDown);
     }
 
