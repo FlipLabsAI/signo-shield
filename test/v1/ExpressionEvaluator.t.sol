@@ -124,7 +124,7 @@ contract ExpressionEvaluatorTest is Test {
 
     function test_validateAcceptsOwnerReadAndJudges() public view {
         bytes memory t = _balanceAbove(500e6, principal, ExprLib.Subject.Principal);
-        ev.validate(t, IEvaluatorV1.Phase.Trigger, principal);
+        ev.validate(t, IEvaluatorV1.Phase.Trigger, principal, true);
         assertTrue(ev.judgeTrigger(t, principal, new int256[](0), 0));
         bytes memory t2 = _balanceAbove(2000e6, principal, ExprLib.Subject.Principal);
         assertFalse(ev.judgeTrigger(t2, principal, new int256[](0), 0));
@@ -133,18 +133,18 @@ contract ExpressionEvaluatorTest is Test {
     function test_principalBindingRejectsStrangerArgument() public {
         bytes memory t = _balanceAbove(1, stranger, ExprLib.Subject.Principal);
         vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.SubjectMismatch.selector, 0));
-        ev.validate(t, IEvaluatorV1.Phase.Trigger, principal);
+        ev.validate(t, IEvaluatorV1.Phase.Trigger, principal, true);
     }
 
     function test_principalRequiredRefusesNoSubject() public {
         bytes memory t = _balanceAbove(1, principal, ExprLib.Subject.None);
         vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.TreeInvalid.selector, "subject"));
-        ev.validate(t, IEvaluatorV1.Phase.Trigger, principal);
+        ev.validate(t, IEvaluatorV1.Phase.Trigger, principal, true);
     }
 
     function test_explicitOtherAccountIsAllowedWhenChosen() public view {
         bytes memory t = _balanceAbove(1, stranger, ExprLib.Subject.Explicit);
-        ev.validate(t, IEvaluatorV1.Phase.Trigger, principal);
+        ev.validate(t, IEvaluatorV1.Phase.Trigger, principal, true);
         assertTrue(ev.judgeTrigger(t, principal, new int256[](0), 0));
     }
 
@@ -157,7 +157,7 @@ contract ExpressionEvaluatorTest is Test {
         n[1] = _node(ExprLib.Kind.CONST, 1, 0);
         n[2] = _node(ExprLib.Kind.GT, 0, 1);
         vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.TreeInvalid.selector, "args"));
-        ev.validate(_enc(r, n), IEvaluatorV1.Phase.Trigger, principal);
+        ev.validate(_enc(r, n), IEvaluatorV1.Phase.Trigger, principal, true);
     }
 
     function test_beforeIsRefusedInTrigger() public {
@@ -168,9 +168,9 @@ contract ExpressionEvaluatorTest is Test {
         n[1] = _node(ExprLib.Kind.CONST, 1, 0);
         n[2] = _node(ExprLib.Kind.GT, 0, 1);
         vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.TreeInvalid.selector, "beforeInTrigger"));
-        ev.validate(_enc(r, n), IEvaluatorV1.Phase.Trigger, principal);
+        ev.validate(_enc(r, n), IEvaluatorV1.Phase.Trigger, principal, true);
         // and accepted in the outcome
-        ev.validate(_enc(r, n), IEvaluatorV1.Phase.Outcome, principal);
+        ev.validate(_enc(r, n), IEvaluatorV1.Phase.Outcome, principal, true);
     }
 
     function test_numericRootAndBoolMisuseAreRefused() public {
@@ -178,14 +178,14 @@ contract ExpressionEvaluatorTest is Test {
         ExprLib.Node[] memory n = new ExprLib.Node[](1);
         n[0] = _node(ExprLib.Kind.CONST, 1, 0);
         vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.TreeInvalid.selector, "root"));
-        ev.validate(_enc(r, n), IEvaluatorV1.Phase.Trigger, principal);
+        ev.validate(_enc(r, n), IEvaluatorV1.Phase.Trigger, principal, true);
 
         ExprLib.Node[] memory m = new ExprLib.Node[](3);
         m[0] = _node(ExprLib.Kind.CONST, 1, 0);
         m[1] = _node(ExprLib.Kind.CONST, 2, 0);
         m[2] = _node(ExprLib.Kind.AND, 0, 1); // AND over numbers
         vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.TreeInvalid.selector, "boolOperand"));
-        ev.validate(_enc(r, m), IEvaluatorV1.Phase.Trigger, principal);
+        ev.validate(_enc(r, m), IEvaluatorV1.Phase.Trigger, principal, true);
 
         ExprLib.Node[] memory q = new ExprLib.Node[](4);
         q[0] = _node(ExprLib.Kind.CONST, 1, 0);
@@ -193,7 +193,7 @@ contract ExpressionEvaluatorTest is Test {
         q[2] = _node(ExprLib.Kind.LT, 0, 1);
         q[3] = _node(ExprLib.Kind.ADD, 2, 0); // arithmetic over a Boolean
         vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.TreeInvalid.selector, "numOperand"));
-        ev.validate(_enc(r, q), IEvaluatorV1.Phase.Trigger, principal);
+        ev.validate(_enc(r, q), IEvaluatorV1.Phase.Trigger, principal, true);
     }
 
     function test_forwardReferenceIsRefused() public {
@@ -203,7 +203,7 @@ contract ExpressionEvaluatorTest is Test {
         n[1] = _node(ExprLib.Kind.LT, 0, 2); // refers forward
         n[2] = _node(ExprLib.Kind.CONST, 2, 0);
         vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.TreeInvalid.selector, "numOperand"));
-        ev.validate(_enc(r, n), IEvaluatorV1.Phase.Trigger, principal);
+        ev.validate(_enc(r, n), IEvaluatorV1.Phase.Trigger, principal, true);
     }
 
     // -------------------------------------------------------------- reads
@@ -317,7 +317,7 @@ contract ExpressionEvaluatorTest is Test {
         on[6] = _node(ExprLib.Kind.LE, 4, 5); // spent <= amount
         on[7] = _node(ExprLib.Kind.AND, 2, 6);
         bytes memory outcome = _enc(r, on);
-        ev.validate(outcome, IEvaluatorV1.Phase.Outcome, principal);
+        ev.validate(outcome, IEvaluatorV1.Phase.Outcome, principal, true);
         int256[] memory before = ev.snapshot(outcome, principal); // 1000e6
         assertEq(before[0], int256(1000e6));
         usdc.set(principal, 950e6); // 50 left the owner
@@ -373,13 +373,13 @@ contract ExpressionEvaluatorTest is Test {
         }
         n[64] = _node(ExprLib.Kind.GT, 0, 1);
         vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.TreeInvalid.selector, "nodes"));
-        ev.validate(_enc(r, n), IEvaluatorV1.Phase.Trigger, principal);
+        ev.validate(_enc(r, n), IEvaluatorV1.Phase.Trigger, principal, true);
     }
 
     function test_delistedOrRevokedDescriptorIsRefused() public {
         bytes memory t = _balanceAbove(1, principal, ExprLib.Subject.Principal);
         catalog.setRevoked(dBalance, true);
-        vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.TreeInvalid.selector, "descriptor"));
-        ev.validate(t, IEvaluatorV1.Phase.Trigger, principal);
+        vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.TreeInvalid.selector, "descriptorRevoked"));
+        ev.validate(t, IEvaluatorV1.Phase.Trigger, principal, true);
     }
 }

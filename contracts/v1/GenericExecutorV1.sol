@@ -111,6 +111,7 @@ contract GenericExecutorV1 is IExecutorV1 {
     error DebtNotReduced(int256 before, int256 after_, uint256 minDown);
     error CollateralFell(int256 before, int256 after_);
     error SanityBand(uint256 signedRate, uint256 currentRate);
+    error BeforeMissing();
 
     modifier onlyShield() {
         if (msg.sender != shield) revert NotShield();
@@ -238,10 +239,47 @@ contract GenericExecutorV1 is IExecutorV1 {
         (IDescriptors.Descriptor memory cd, bool cl, bool cr) =
             IDescriptors(shield).descriptorOf(c.collateralDescriptor);
         if (!dl || dr || !cl || cr) revert ConfigInvalid("repay:descriptor");
-        if (
-            dd.subjectRule != IDescriptors.SubjectRule.PrincipalRequired
-                || cd.subjectRule != IDescriptors.SubjectRule.PrincipalRequired
-        ) revert ConfigInvalid("repay:subject");
+        _checkRecipeRead(dd, c.market, "repay:debt");
+        _checkRecipeRead(cd, c.collateralTarget, "repay:collateral");
+        // The debt is measured in the asset's own units: the debt read is the
+        // debt token's balance (its decimals equal the asset's), never a
+        // base-currency figure.
+        uint8 assetDec = IERC20Metadata(asset).decimals();
+        uint8 debtDec = dd.kind == IDescriptors.DescriptorKind.PerAddress
+            ? dd.decimals
+            : IERC20Metadata(c.market).decimals();
+        if (debtDec != assetDec) revert ConfigInvalid("repay:units");
+    }
+
+    /// @dev A recipe read names the principal as the account, is bound to the
+    ///      target it will be made on, and takes exactly that one argument.
+    function _checkRecipeRead(IDescriptors.Descriptor memory d, address target, string memory field)
+        internal
+        pure
+    {
+        if (d.subjectRule != IDescriptors.SubjectRule.PrincipalRequired) revert ConfigInvalid(field);
+        if (d.argCount != 1 || d.subjectArg != 0) revert ConfigInvalid(field);
+        if (d.kind == IDescriptors.DescriptorKind.PerAddress && d.target != target) {
+            revert ConfigInvalid(field);
+        }
+    }
+
+    /// @inheritdoc IExecutorV1
+    function snapshot(Context calldata ctx, uint256) external view returns (bytes memory) {
+        Config memory c = _decode(ctx.actionConfig);
+        if (ctx.action == ACTION_REPAY) {
+            return abi.encode(
+                _read(c.debtDescriptor, c.market, ctx.principal),
+                _read(c.collateralDescriptor, c.collateralTarget, ctx.principal)
+            );
+        }
+        if (ctx.action == ACTION_REDEEM) {
+            // The vault's conversion before the redemption: the minimum is
+            // priced on what the owner had, not on what the call left.
+            _checkSanity(c, ctx.asset);
+            return abi.encode(_assetsPerShareUnit(ctx.asset));
+        }
+        return "";
     }
 
     // ================================================================== execute
@@ -305,18 +343,22 @@ contract GenericExecutorV1 is IExecutorV1 {
         internal
         returns (uint256 spent)
     {
-        _checkSanity(c, ctx.asset);
+        if (ctx.before.length != 32) revert BeforeMissing();
+        uint256 rateBefore = abi.decode(ctx.before, (uint256));
         Firing memory f;
         f.inBefore = IERC20(ctx.asset).balanceOf(ctx.principal);
         f.outBefore = IERC20(c.tokenOut).balanceOf(ctx.principal);
         _runSandbox(ctx, c, f, amount, calls);
+        // The band holds after the action too: a vault that reprices inside
+        // the call does not get to set its own minimum.
+        _checkSanity(c, ctx.asset);
         uint256 received = IERC20(c.tokenOut).balanceOf(ctx.principal) - f.outBefore;
         uint256 returned = IERC20(ctx.asset).balanceOf(ctx.principal) - f.inBefore;
         returned = returned > f.parked ? returned - f.parked : 0;
         spent = returned >= amount ? 0 : amount - returned;
         if (spent == 0) revert NothingSold();
-        // The vault's own conversion of what was consumed, less the tolerance (a withdrawal fee counts against it).
-        uint256 exact = IERC4626(ctx.asset).convertToAssets(spent);
+        // What was consumed at the pre-call conversion, less the tolerance (a withdrawal fee counts against it).
+        uint256 exact = Math.mulDiv(spent, rateBefore, 10 ** IERC20Metadata(ctx.asset).decimals());
         uint256 minOut = _lessRounding(Math.mulDiv(exact, BPS - c.maxSlippageBps, BPS));
         if (minOut == 0) minOut = 1;
         if (received < minOut) revert OutputBelowMinimum(received, minOut);
@@ -334,8 +376,9 @@ contract GenericExecutorV1 is IExecutorV1 {
     {
         Firing memory f;
         f.inBefore = IERC20(ctx.asset).balanceOf(ctx.principal);
-        f.debtBefore = _read(c.debtDescriptor, c.market, ctx.principal);
-        f.collBefore = _read(c.collateralDescriptor, c.collateralTarget, ctx.principal);
+        // Taken by the core before the pull (snapshot), not here after it.
+        if (ctx.before.length != 64) revert BeforeMissing();
+        (f.debtBefore, f.collBefore) = abi.decode(ctx.before, (int256, int256));
         _runSandbox(ctx, c, f, amount, calls);
         uint256 returned = IERC20(ctx.asset).balanceOf(ctx.principal) - f.inBefore;
         returned = returned > f.parked ? returned - f.parked : 0;
@@ -344,6 +387,8 @@ contract GenericExecutorV1 is IExecutorV1 {
         int256 debtAfter = _read(c.debtDescriptor, c.market, ctx.principal);
         int256 collAfter = _read(c.collateralDescriptor, c.collateralTarget, ctx.principal);
         uint256 minDown = Math.mulDiv(spent, BPS - c.maxSlippageBps, BPS);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        if (minDown > uint256(type(int256).max)) revert ConfigInvalid("repay:amount");
         // forge-lint: disable-next-line(unsafe-typecast)
         if (f.debtBefore - debtAfter < int256(minDown)) {
             revert DebtNotReduced(f.debtBefore, debtAfter, minDown);
@@ -443,8 +488,12 @@ contract GenericExecutorV1 is IExecutorV1 {
         return ExprLib.readValue(r, 0, IDescriptors(shield));
     }
 
+    function _assetsPerShareUnit(address vault) internal view returns (uint256) {
+        return IERC4626(vault).convertToAssets(10 ** IERC20Metadata(vault).decimals());
+    }
+
     function _checkSanity(Config memory c, address vault) internal view {
-        uint256 current = IERC4626(vault).convertToAssets(10 ** IERC20Metadata(vault).decimals());
+        uint256 current = _assetsPerShareUnit(vault);
         uint256 lo = Math.mulDiv(c.signedAssetsPerShare, BPS - c.sanityBandBps, BPS);
         uint256 hi = Math.mulDiv(c.signedAssetsPerShare, BPS + c.sanityBandBps, BPS);
         if (current < lo || current > hi) revert SanityBand(c.signedAssetsPerShare, current);
@@ -491,6 +540,8 @@ contract GenericExecutorV1 is IExecutorV1 {
         view
         returns (uint256 priceIn, uint256 priceOut)
     {
+        // The oracle is a dependency like any venue: a suspended or revoked one stops the firing.
+        if (IShieldV1(shield).isVenueBlocked(c.oracle)) revert VenueBlocked(c.oracle);
         priceIn = IPriceOracle(c.oracle).getAssetPrice(tokenIn);
         priceOut = IPriceOracle(c.oracle).getAssetPrice(c.tokenOut);
         if (priceIn == 0 || priceOut == 0) revert ConfigInvalid("oracle");

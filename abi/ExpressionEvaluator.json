@@ -175,6 +175,11 @@
         "name": "principal",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "requireListed",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "outputs": [],

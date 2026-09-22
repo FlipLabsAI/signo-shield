@@ -23,9 +23,9 @@ contract ExpressionEvaluator is IEvaluatorV1 {
     }
 
     /// @inheritdoc IEvaluatorV1
-    function validate(bytes calldata tree, Phase phase, address principal) external view {
+    function validate(bytes calldata tree, Phase phase, address principal, bool requireListed) external view {
         ExprLib.Tree memory t = ExprLib.decode(tree);
-        ExprLib.checkShape(t, phase, catalog, principal);
+        ExprLib.checkShape(t, phase, catalog, principal, requireListed);
         // One liveness read per Read, whatever node names it: a read that
         // cannot be taken is refused at signing.
         for (uint256 i = 0; i < t.reads.length; i++) {
@@ -68,6 +68,10 @@ contract ExpressionEvaluator is IEvaluatorV1 {
         uint256 amount
     ) external view returns (bool) {
         ExprLib.Tree memory t = ExprLib.decode(trigger);
+        // The runtime contract, not only the registration one: shape and
+        // limits again, the principal rebound, every named descriptor live.
+        ExprLib.checkShape(t, Phase.Trigger, catalog, principal, false);
+        ExprLib.checkLive(t, catalog);
         int256[] memory live = ExprLib.liveReads(t, catalog);
         ExprLib.Env memory env = ExprLib.Env({
             principal: principal,
@@ -88,6 +92,8 @@ contract ExpressionEvaluator is IEvaluatorV1 {
         uint256 amount
     ) external view returns (bool) {
         ExprLib.Tree memory t = ExprLib.decode(outcome);
+        ExprLib.checkShape(t, Phase.Outcome, catalog, principal, false);
+        ExprLib.checkLive(t, catalog);
         int256[] memory live = ExprLib.liveReads(t, catalog);
         ExprLib.Env memory env = ExprLib.Env({
             principal: principal,

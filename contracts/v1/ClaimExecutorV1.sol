@@ -131,6 +131,11 @@ contract ClaimExecutorV1 is IExecutorV1 {
     }
 
     /// @inheritdoc IExecutorV1
+    function snapshot(Context calldata, uint256) external pure returns (bytes memory) {
+        return "";
+    }
+
+    /// @inheritdoc IExecutorV1
     function execute(Context calldata ctx, uint256 amount, bytes calldata route)
         external
         onlyShield
@@ -189,20 +194,21 @@ contract ClaimExecutorV1 is IExecutorV1 {
             _checkVenue(c, k);
             if (k.claimStep) {
                 if (k.approveAmount != 0 || k.spender != address(0)) revert RouteInvalid("claimApproval");
-                uint256[] memory pre = _sandboxBalances(c, clone);
-                // forge-lint: disable-next-line(calls-loop)
-                DisposableCloneV1(clone).step(k);
-                uint256[] memory post = _sandboxBalances(c, clone);
-                for (uint256 j = 0; j < n; j++) {
-                    if (post[j] < pre[j]) revert RouteInvalid("claimDrained");
-                    claimed[j] += post[j] - pre[j];
-                }
-            } else {
-                if (k.approveAmount != 0 && !_isReward(c, k.approveToken)) {
-                    revert RouteInvalid("approveToken");
-                }
-                // forge-lint: disable-next-line(calls-loop)
-                DisposableCloneV1(clone).step(k);
+            } else if (k.approveAmount != 0 && !_isReward(c, k.approveToken)) {
+                revert RouteInvalid("approveToken");
+            }
+            // Every step is measured, whatever the route calls it: any reward
+            // that arrives in the sandbox counts as claimed, so a claim the
+            // agent labels as something else cannot escape the ledger. A
+            // claim step may fall in nothing; a spend step may not raise a
+            // declared reward.
+            uint256[] memory pre = _sandboxBalances(c, clone);
+            // forge-lint: disable-next-line(calls-loop)
+            DisposableCloneV1(clone).step(k);
+            uint256[] memory post = _sandboxBalances(c, clone);
+            for (uint256 j = 0; j < n; j++) {
+                if (k.claimStep && post[j] < pre[j]) revert RouteInvalid("claimDrained");
+                if (post[j] > pre[j]) claimed[j] += post[j] - pre[j];
             }
         }
         address[] memory sweep = new address[](n + 1);
@@ -259,13 +265,17 @@ contract ClaimExecutorV1 is IExecutorV1 {
 
     /// @dev Sum of claimed amounts at fair value, in tokenOut units, less the tolerance.
     function _minOut(Config memory c, uint256[] memory claimed) internal view returns (uint256 minOut) {
+        if (IShieldV1(shield).isVenueBlocked(c.oracle)) revert VenueBlocked(c.oracle);
         uint256 priceOut = IPriceOracle(c.oracle).getAssetPrice(c.tokenOut);
+        if (priceOut == 0) revert ConfigInvalid("oracle:out");
         uint256 decOut = 10 ** IERC20Metadata(c.tokenOut).decimals();
         uint256 fair = 0;
         for (uint256 j = 0; j < claimed.length; j++) {
             if (claimed[j] == 0) continue;
+            // A claimed token with no price is not worth zero; it is unpriceable, and the firing fails.
             // forge-lint: disable-next-line(calls-loop)
             uint256 p = IPriceOracle(c.oracle).getAssetPrice(c.rewardTokens[j]);
+            if (p == 0) revert ConfigInvalid("oracle:reward");
             // forge-lint: disable-next-line(calls-loop)
             uint256 dec = 10 ** IERC20Metadata(c.rewardTokens[j]).decimals();
             fair += Math.mulDiv(claimed[j], p * decOut, priceOut * dec);

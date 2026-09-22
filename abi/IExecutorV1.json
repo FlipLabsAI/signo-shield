@@ -47,6 +47,11 @@
             "name": "revision",
             "type": "uint32",
             "internalType": "uint32"
+          },
+          {
+            "name": "before",
+            "type": "bytes",
+            "internalType": "bytes"
           }
         ]
       },
@@ -85,6 +90,77 @@
         "name": "",
         "type": "uint8",
         "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "snapshot",
+    "inputs": [
+      {
+        "name": "ctx",
+        "type": "tuple",
+        "internalType": "struct IExecutorV1.Context",
+        "components": [
+          {
+            "name": "mandateId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "principal",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "agent",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "asset",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "funding",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "action",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "actionConfig",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "revision",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "before",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes",
+        "internalType": "bytes"
       }
     ],
     "stateMutability": "view"

@@ -23,6 +23,8 @@ contract DisposableCloneV1 {
 
     error NotExecutor();
     error AlreadyUsed();
+    error ApprovalExceedsBalance(uint256 asked, uint256 held);
+    error NotEmpty(address token);
     error CallFailed(bytes reason);
 
     constructor(address executor_) {
@@ -40,7 +42,13 @@ contract DisposableCloneV1 {
     function step(IExecutorV1.Call calldata c) external onlyExecutor {
         if (_finished) revert AlreadyUsed();
         _started = true;
-        if (c.approveAmount != 0) IERC20(c.approveToken).forceApprove(c.spender, c.approveAmount);
+        if (c.approveAmount != 0) {
+            // Exact and bounded: never more than the sandbox holds, so an
+            // approval can only ever cover what this firing brought in.
+            uint256 held = IERC20(c.approveToken).balanceOf(address(this));
+            if (c.approveAmount > held) revert ApprovalExceedsBalance(c.approveAmount, held);
+            IERC20(c.approveToken).forceApprove(c.spender, c.approveAmount);
+        }
         // forge-lint: disable-next-line(unchecked-call)
         (bool ok, bytes memory reason) = c.target.call(c.data);
         if (!ok) revert CallFailed(reason);
@@ -58,6 +66,9 @@ contract DisposableCloneV1 {
             uint256 held = IERC20(tokens[i]).balanceOf(address(this));
             // forge-lint: disable-next-line(calls-loop)
             if (held != 0) IERC20(tokens[i]).safeTransfer(owner, held);
+            // Proven empty, not assumed from a successful transfer.
+            // forge-lint: disable-next-line(calls-loop)
+            if (IERC20(tokens[i]).balanceOf(address(this)) > 0) revert NotEmpty(tokens[i]);
         }
     }
 }

@@ -192,6 +192,25 @@
     "stateMutability": "view"
   },
   {
+    "type": "function",
+    "name": "isVenueBlocked",
+    "inputs": [
+      {
+        "name": "target",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
     "type": "event",
     "name": "DescriptorListed",
     "inputs": [

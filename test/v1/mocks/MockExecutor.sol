@@ -58,6 +58,10 @@ contract MockExecutor is IExecutorV1 {
         if (cfg.length == 1 && cfg[0] == 0xff) revert("bad config");
     }
 
+    function snapshot(Context calldata, uint256) external pure returns (bytes memory) {
+        return "";
+    }
+
     function execute(Context calldata ctx, uint256 amount, bytes calldata route)
         external
         returns (uint256 used)

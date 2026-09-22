@@ -79,7 +79,7 @@ contract ShieldV1Test is Test {
             target: target,
             args: abi.encode(who),
             subject: ExprLib.Subject.Principal,
-            decimals: 6
+            decimals: target == address(usdc) ? 18 : 6 // pinned to the instance (MockToken 18, MockBalances 6)
         });
         ExprLib.Node[] memory n = new ExprLib.Node[](3);
         n[0] = ExprLib.Node({kind: uint8(ExprLib.Kind.READ), a: 0, b: 0});
@@ -164,7 +164,7 @@ contract ShieldV1Test is Test {
             target: address(gauge),
             args: abi.encode(principal),
             subject: ExprLib.Subject.Principal,
-            decimals: 0
+            decimals: 6
         });
         ExprLib.Node[] memory n = new ExprLib.Node[](3);
         n[0] = ExprLib.Node({kind: uint8(ExprLib.Kind.READ), a: 0, b: 0});
@@ -266,7 +266,7 @@ contract ShieldV1Test is Test {
             target: address(usdc),
             args: abi.encode(principal),
             subject: ExprLib.Subject.Principal,
-            decimals: 6
+            decimals: 18
         });
         ExprLib.Node[] memory n = new ExprLib.Node[](5);
         n[0] = ExprLib.Node({kind: uint8(ExprLib.Kind.BEFORE), a: 0, b: 0});
@@ -353,14 +353,16 @@ contract ShieldV1Test is Test {
         p.maxFeeBps = 50;
         p.asset = address(gauge);
         vm.prank(principal);
-        vm.expectRevert(abi.encodeWithSelector(IShieldV1.FieldImmutable.selector, "asset"));
+        vm.expectRevert(abi.encodeWithSelector(IShieldV1.FieldImmutable.selector, bytes32("asset")));
         shield.amendMandate(id, p);
         // budget cannot be moved under what was used
         p = _params();
         p.trigger = _tree(address(gauge), principal, ExprLib.Kind.GT, 400);
         p.maxCumulativeValue = 1e6;
         vm.prank(principal);
-        vm.expectRevert(abi.encodeWithSelector(IShieldV1.InvalidParams.selector, "maxCumulativeValue"));
+        vm.expectRevert(
+            abi.encodeWithSelector(IShieldV1.InvalidParams.selector, bytes32("maxCumulativeValue"))
+        );
         shield.amendMandate(id, p);
         // a valid amendment keeps cumulativeUsed and bumps the revision
         p.maxCumulativeValue = 20_000e6;

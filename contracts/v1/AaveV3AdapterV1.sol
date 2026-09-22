@@ -138,12 +138,19 @@ contract AaveV3AdapterV1 is IExecutorV1 {
     // =============================================================== execution
 
     /// @inheritdoc IExecutorV1
+    function snapshot(Context calldata, uint256) external pure returns (bytes memory) {
+        return "";
+    }
+
+    /// @inheritdoc IExecutorV1
     function execute(Context calldata ctx, uint256 amount, bytes calldata route)
         external
         onlyShield
         returns (uint256)
     {
         if (ctx.funding != uint8(IShieldV1.FundingMode.PULL)) revert ConfigInvalid("funding");
+        // The pool is the venue of every action here: suspended or revoked, nothing runs.
+        if (IShieldV1(shield).isVenueBlocked(address(pool))) revert VenueBlocked(address(pool));
         if (ctx.action == ACTION_SUPPLY) return _supply(ctx, amount, route);
         if (ctx.action == ACTION_REPAY) return _repay(ctx, amount, route);
         if (ctx.action == ACTION_REPAY_WITH_COLLATERAL) return _repayWithCollateral(ctx, amount, route);

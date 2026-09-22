@@ -8,7 +8,6 @@ import {ShieldV1} from "contracts/v1/ShieldV1.sol";
 import {IDescriptors} from "contracts/v1/interfaces/IDescriptors.sol";
 import {ExpressionEvaluator} from "contracts/v1/ExpressionEvaluator.sol";
 import {GenericExecutorV1} from "contracts/v1/GenericExecutorV1.sol";
-import {ClaimExecutorV1} from "contracts/v1/ClaimExecutorV1.sol";
 import {AaveV3AdapterV1} from "contracts/v1/AaveV3AdapterV1.sol";
 
 /// @title DeployV1
@@ -28,7 +27,6 @@ contract DeployV1 is Script {
         ShieldV1 shield;
         ExpressionEvaluator evaluator;
         GenericExecutorV1 generic;
-        ClaimExecutorV1 claims;
         AaveV3AdapterV1 aave;
     }
 
@@ -57,11 +55,11 @@ contract DeployV1 is Script {
         d.shield = new ShieldV1(deployer, feeBps);
         d.evaluator = new ExpressionEvaluator(d.shield);
         d.generic = new GenericExecutorV1(address(d.shield));
-        d.claims = new ClaimExecutorV1(address(d.shield));
         d.aave = new AaveV3AdapterV1(address(d.shield), IPool(pool));
         d.shield.setEvaluator(address(d.evaluator), true);
         d.shield.setExecutor(address(d.generic), true);
-        d.shield.setExecutor(address(d.claims), true);
+        // The claim executor is not deployed or listed at launch: claims wait
+        // for per-venue claimable reads and receiver rules (FLIP-280 F2, v1.1).
         d.shield.setExecutor(address(d.aave), true);
         _listCatalog(d.shield, pool);
         d.shield.setFeeRecipient(feeRecipient);
@@ -72,7 +70,6 @@ contract DeployV1 is Script {
         console.log("ShieldV1           ", address(d.shield));
         console.log("ExpressionEvaluator", address(d.evaluator));
         console.log("GenericExecutorV1  ", address(d.generic));
-        console.log("ClaimExecutorV1    ", address(d.claims));
         console.log("AaveV3AdapterV1    ", address(d.aave));
         console.log("Aave pool          ", pool);
         console.log("fee bps            ", feeBps);

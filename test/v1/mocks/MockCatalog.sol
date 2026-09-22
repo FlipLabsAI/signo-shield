@@ -27,6 +27,16 @@ contract MockCatalog is IDescriptors {
         return (_d[id], _listed[id], _revoked[id]);
     }
 
+    mapping(address => bool) public blocked;
+
+    function setBlocked(address t, bool v) external {
+        blocked[t] = v;
+    }
+
+    function isVenueBlocked(address target) external view returns (bool) {
+        return blocked[target];
+    }
+
     function descriptorId(Descriptor calldata d) external pure returns (bytes32) {
         return keccak256(abi.encode(d));
     }

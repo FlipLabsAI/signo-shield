@@ -114,8 +114,8 @@ interface IShieldV1 {
     error EvaluatorNotListed(address evaluator);
     error ActionNotSupported(address executor, bytes32 action);
     error FeeAboveMax(uint16 feeBps, uint16 maxFeeBps);
-    error InvalidParams(string field);
-    error FieldImmutable(string field);
+    error InvalidParams(bytes32 field);
+    error FieldImmutable(bytes32 field);
     error AdminCannotBeEnforcer(address account);
     error SpendExceedsAmount(uint256 spent, uint256 amount);
     error NothingMayLeave(uint256 left);

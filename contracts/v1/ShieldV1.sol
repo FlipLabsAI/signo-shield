@@ -77,7 +77,7 @@ contract ShieldV1 is IShieldV1, IDescriptors, Ownable2Step, ReentrancyGuard, EIP
         if (!_executors[p.executor]) revert ExecutorNotListed(p.executor);
         if (!_evaluators[p.evaluator]) revert EvaluatorNotListed(p.evaluator);
         if (feeBps > p.maxFeeBps) revert FeeAboveMax(feeBps, p.maxFeeBps);
-        _validateParams(p, feeBps, msg.sender);
+        _validateParams(p, feeBps, msg.sender, true, true);
 
         mandateId = keccak256(abi.encode(block.chainid, address(this), msg.sender, nonces[msg.sender]++));
         Mandate storage m = _mandates[mandateId];
@@ -110,10 +110,10 @@ contract ShieldV1 is IShieldV1, IDescriptors, Ownable2Step, ReentrancyGuard, EIP
         if (p.maxCumulativeValue < m.cumulativeUsed) revert InvalidParams("maxCumulativeValue");
         // The stamped fee is kept for life and must fit the newly signed ceiling.
         if (m.feeBps > p.maxFeeBps) revert FeeAboveMax(m.feeBps, p.maxFeeBps);
-        _validateParams(p, m.feeBps, msg.sender);
-
         bool triggerChanged = keccak256(p.trigger) != keccak256(m.trigger);
         bool outcomeChanged = keccak256(p.outcome) != keccak256(m.outcome);
+        // An unchanged tree may keep a delisted descriptor; a changed one is a new tree.
+        _validateParams(p, m.feeBps, msg.sender, triggerChanged, outcomeChanged);
         _writeMutable(m, p);
         m.revision += 1;
         // An unchanged tree keeps its baseline; a changed one is re-taken.
@@ -190,14 +190,18 @@ contract ShieldV1 is IShieldV1, IDescriptors, Ownable2Step, ReentrancyGuard, EIP
             }
         }
         Firing memory f;
-        // 4. The before values the outcome names.
+        // 4. The before values the outcome names, and the executor's own
+        //    mandatory before values (a debt, a collateral, a vault rate):
+        //    both taken before anything is pulled.
         if (m.outcome.length != 0) {
             f.beforeValues = IEvaluatorV1(m.evaluator).snapshot(m.outcome, m.principal);
         }
+        IExecutorV1.Context memory ctx = _context(m, mandateId);
+        ctx.before = IExecutorV1(m.executor).snapshot(ctx, amount);
         // 5. Reserve, take the fee's worst case, pull the amount (funding PULL).
         _fund(m, f, amount);
         // 6. The executor runs its action and its mandatory checks.
-        f.used = _runExecutor(m, mandateId, amount, route);
+        f.used = _runExecutor(m, mandateId, ctx, amount, route);
         // 7. Measure, apply the spend rule, settle the fee, reconcile, record.
         spent = _settle(m, f, amount);
         // 8. The owner's outcome tree, on the final state.
@@ -254,11 +258,12 @@ contract ShieldV1 is IShieldV1, IDescriptors, Ownable2Step, ReentrancyGuard, EIP
         m.firings += 1;
     }
 
-    function _runExecutor(Mandate storage m, bytes32 mandateId, uint256 amount, bytes calldata route)
+    function _context(Mandate storage m, bytes32 mandateId)
         internal
-        returns (uint256 used)
+        view
+        returns (IExecutorV1.Context memory)
     {
-        IExecutorV1.Context memory ctx = IExecutorV1.Context({
+        return IExecutorV1.Context({
             mandateId: mandateId,
             principal: m.principal,
             agent: m.agent,
@@ -266,8 +271,18 @@ contract ShieldV1 is IShieldV1, IDescriptors, Ownable2Step, ReentrancyGuard, EIP
             funding: m.funding,
             action: m.action,
             actionConfig: m.actionConfig,
-            revision: m.revision
+            revision: m.revision,
+            before: ""
         });
+    }
+
+    function _runExecutor(
+        Mandate storage m,
+        bytes32 mandateId,
+        IExecutorV1.Context memory ctx,
+        uint256 amount,
+        bytes calldata route
+    ) internal returns (uint256 used) {
         try IExecutorV1(m.executor).execute(ctx, amount, route) returns (uint256 consumed) {
             used = consumed;
         } catch (bytes memory executorError) {
@@ -324,7 +339,7 @@ contract ShieldV1 is IShieldV1, IDescriptors, Ownable2Step, ReentrancyGuard, EIP
     }
 
     /// @inheritdoc IShieldV1
-    function isVenueBlocked(address target) external view returns (bool) {
+    function isVenueBlocked(address target) external view override(IDescriptors, IShieldV1) returns (bool) {
         return _suspensions[target].active || _revokedTargets[target];
     }
 
@@ -478,7 +493,10 @@ contract ShieldV1 is IShieldV1, IDescriptors, Ownable2Step, ReentrancyGuard, EIP
             revert InvalidParams("subjectArg");
         }
         if (uint256(d.copyBytes) < (uint256(d.word) + 1) * 32) revert InvalidParams("copyBytes");
-        if (d.freshness == Freshness.ChainlinkRound && (d.copyBytes < 160 || d.maxAge == 0)) {
+        if (
+            d.freshness == Freshness.ChainlinkRound
+                && (d.copyBytes < 160 || d.maxAge == 0 || !d.mustBePositive)
+        ) {
             revert InvalidParams("freshness");
         }
         if (d.gasStipend == 0) revert InvalidParams("gasStipend");
@@ -525,8 +543,12 @@ contract ShieldV1 is IShieldV1, IDescriptors, Ownable2Step, ReentrancyGuard, EIP
         if (m.principal == address(0)) return MandateReason.NONEXISTENT;
         if (_frozen[m.agent]) return MandateReason.AGENT_FROZEN;
         if (caller != m.agent) return MandateReason.NOT_AGENT;
-        if (_halts[m.executor].active) return MandateReason.EXECUTOR_HALTED;
-        if (_halts[m.evaluator].active) return MandateReason.EVALUATOR_HALTED;
+        if (_halts[m.executor].active || _suspensions[m.executor].active || _revokedTargets[m.executor]) {
+            return MandateReason.EXECUTOR_HALTED;
+        }
+        if (_halts[m.evaluator].active || _suspensions[m.evaluator].active || _revokedTargets[m.evaluator]) {
+            return MandateReason.EVALUATOR_HALTED;
+        }
         if (block.timestamp < m.validFrom) return MandateReason.NOT_YET_VALID;
         if (block.timestamp > m.validUntil) return MandateReason.EXPIRED;
         if (m.revoked) return MandateReason.REVOKED;
@@ -549,7 +571,13 @@ contract ShieldV1 is IShieldV1, IDescriptors, Ownable2Step, ReentrancyGuard, EIP
         return MandateReason.OK;
     }
 
-    function _validateParams(MandateParams calldata p, uint16 feeBpsFor, address principal) internal view {
+    function _validateParams(
+        MandateParams calldata p,
+        uint16 feeBpsFor,
+        address principal,
+        bool triggerNew,
+        bool outcomeNew
+    ) internal view {
         if (p.agent == address(0) || p.agent == principal || p.agent == address(this)) {
             revert InvalidParams("agent");
         }
@@ -573,13 +601,18 @@ contract ShieldV1 is IShieldV1, IDescriptors, Ownable2Step, ReentrancyGuard, EIP
             revert InvalidParams("validUntil");
         }
         IExecutorV1 x = IExecutorV1(p.executor);
-        if (x.semanticsOf(p.action) == SemanticsV1.UNSUPPORTED) {
+        // Fail closed: only the semantics this core knows, nothing reserved upward.
+        uint8 sem = x.semanticsOf(p.action);
+        if (sem == SemanticsV1.UNSUPPORTED || sem > SemanticsV1.MAX) {
             revert ActionNotSupported(p.executor, p.action);
         }
+        // Funding NONE is only for the claim semantics; everything else pulls.
+        bool noInput = sem == SemanticsV1.CLAIM_COLLECT || sem == SemanticsV1.CLAIM_COMPOSE;
+        if (noInput != (p.funding == uint8(FundingMode.NONE))) revert InvalidParams("funding");
         x.validateConfig(p.action, p.asset, p.actionConfig);
         IEvaluatorV1 e = IEvaluatorV1(p.evaluator);
-        if (p.trigger.length != 0) e.validate(p.trigger, IEvaluatorV1.Phase.Trigger, principal);
-        if (p.outcome.length != 0) e.validate(p.outcome, IEvaluatorV1.Phase.Outcome, principal);
+        if (p.trigger.length != 0) e.validate(p.trigger, IEvaluatorV1.Phase.Trigger, principal, triggerNew);
+        if (p.outcome.length != 0) e.validate(p.outcome, IEvaluatorV1.Phase.Outcome, principal, outcomeNew);
     }
 
     function _writeMutable(Mandate storage m, MandateParams calldata p) internal {

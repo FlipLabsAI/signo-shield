@@ -91,10 +91,13 @@ library ExprLib {
     /// @dev Everything about the tree that does not need a chain read:
     ///      counts, references, phases, operand kinds, descriptor binding.
     ///      Returns nothing; reverts with the first fault.
-    function checkShape(Tree memory t, IEvaluatorV1.Phase phase, IDescriptors catalog, address principal)
-        internal
-        view
-    {
+    function checkShape(
+        Tree memory t,
+        IEvaluatorV1.Phase phase,
+        IDescriptors catalog,
+        address principal,
+        bool requireListed
+    ) internal view {
         uint256 nr = t.reads.length;
         uint256 nn = t.nodes.length;
         if (nr > MAX_READS) revert IEvaluatorV1.TreeInvalid("reads");
@@ -102,7 +105,7 @@ library ExprLib {
 
         for (uint256 i = 0; i < nr; i++) {
             // forge-lint: disable-next-line(calls-loop)
-            _checkRead(t.reads[i], i, catalog, principal);
+            _checkRead(t.reads[i], i, catalog, principal, requireListed);
         }
 
         // isBool[i]: node i yields 0/1 and may feed AND/OR/NOT; a comparison
@@ -141,15 +144,29 @@ library ExprLib {
         if (!isBool[nn - 1]) revert IEvaluatorV1.TreeInvalid("root");
     }
 
-    function _checkRead(Read memory r, uint256 i, IDescriptors catalog, address principal) private view {
+    function _checkRead(Read memory r, uint256 i, IDescriptors catalog, address principal, bool requireListed)
+        private
+        view
+    {
         // forge-lint: disable-next-line(calls-loop)
         (IDescriptors.Descriptor memory d, bool listed, bool revoked) = catalog.descriptorOf(r.descriptor);
-        if (!listed || revoked) revert IEvaluatorV1.TreeInvalid("descriptor");
+        // Revoked blocks everything; delisted blocks only a NEW tree (an unchanged
+        // tree on amendment keeps reading through a delisted descriptor).
+        if (revoked) revert IEvaluatorV1.TreeInvalid("descriptorRevoked");
+        if (requireListed && !listed) revert IEvaluatorV1.TreeInvalid("descriptor");
         if (r.args.length != uint256(d.argCount) * 32) revert IEvaluatorV1.TreeInvalid("args");
+        // A suspended or revoked read target must not be read through.
+        // forge-lint: disable-next-line(calls-loop)
+        if (catalog.isVenueBlocked(r.target)) revert IEvaluatorV1.TreeInvalid("targetBlocked");
         if (d.kind == IDescriptors.DescriptorKind.PerAddress) {
             if (r.target != d.target) revert IEvaluatorV1.TreeInvalid("target");
         } else {
             if (r.target.code.length == 0) revert IEvaluatorV1.TreeInvalid("target");
+            // The pinned decimals are the instance's own (or, for a vault's
+            // convertToAssets, its underlying's): a mis-scaled tree is refused at signing.
+            if (r.decimals != _instanceDecimals(r.target, d.selector)) {
+                revert IEvaluatorV1.TreeInvalid("decimals");
+            }
         }
         if (d.subjectRule == IDescriptors.SubjectRule.PrincipalRequired) {
             if (r.subject == Subject.None) revert IEvaluatorV1.TreeInvalid("subject");
@@ -172,6 +189,44 @@ library ExprLib {
         }
     }
 
+    /// @dev `decimals()` of the value a shape read returns: the target's own, except
+    ///      convertToAssets, whose value is in the vault's underlying.
+    bytes4 private constant SEL_ASSET = 0x38d52e0f; // asset()
+    bytes4 private constant SEL_DECIMALS = 0x313ce567; // decimals()
+    bytes4 private constant SEL_CONVERT_TO_ASSETS = 0x07a2d13a; // convertToAssets(uint256)
+
+    function _instanceDecimals(address target, bytes4 selector) private view returns (uint8) {
+        address unit = target;
+        if (selector == SEL_CONVERT_TO_ASSETS) {
+            // forge-lint: disable-next-line(calls-loop)
+            (bool okA, bytes memory retA) = target.staticcall(abi.encodeWithSelector(SEL_ASSET));
+            if (!okA || retA.length < 32) revert IEvaluatorV1.TreeInvalid("decimals");
+            unit = abi.decode(retA, (address));
+        }
+        // forge-lint: disable-next-line(calls-loop)
+        (bool ok, bytes memory ret) = unit.staticcall(abi.encodeWithSelector(SEL_DECIMALS));
+        // An instance with no decimals() (a gauge, a staking balance) is read
+        // in raw units: the tree must pin 0.
+        if (!ok || ret.length < 32) return 0;
+        uint256 dec = abi.decode(ret, (uint256));
+        if (dec > type(uint8).max) revert IEvaluatorV1.TreeInvalid("decimals");
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint8(dec);
+    }
+
+    /// @dev Every descriptor the tree names, live or cached (SIGNED, BEFORE),
+    ///      is still unrevoked and its target unblocked. Run at every judgement:
+    ///      a value captured at signing must not outlive its descriptor.
+    function checkLive(Tree memory t, IDescriptors catalog) internal view {
+        for (uint256 i = 0; i < t.reads.length; i++) {
+            // forge-lint: disable-next-line(calls-loop,unused-return)
+            (,, bool revoked) = catalog.descriptorOf(t.reads[i].descriptor);
+            if (revoked) revert IEvaluatorV1.TreeInvalid("descriptorRevoked");
+            // forge-lint: disable-next-line(calls-loop)
+            if (catalog.isVenueBlocked(t.reads[i].target)) revert IEvaluatorV1.TreeInvalid("targetBlocked");
+        }
+    }
+
     // ----------------------------------------------------------------- reads
 
     /// @dev One bounded read through its descriptor. Reverts on any failure.
@@ -181,6 +236,8 @@ library ExprLib {
         // forge-lint: disable-next-line(calls-loop,unused-return)
         (IDescriptors.Descriptor memory d,, bool revoked) = catalog.descriptorOf(r.descriptor);
         if (revoked) revert IEvaluatorV1.TreeInvalid("descriptorRevoked");
+        // forge-lint: disable-next-line(calls-loop)
+        if (catalog.isVenueBlocked(r.target)) revert IEvaluatorV1.TreeInvalid("targetBlocked");
         uint256 need = _needBytes(d);
         bytes memory out = _staticRead(r.target, d.gasStipend, abi.encodePacked(d.selector, r.args), need, i);
         if (d.freshness == IDescriptors.Freshness.ChainlinkRound) _checkRound(out, d.maxAge, i);
@@ -195,7 +252,7 @@ library ExprLib {
 
     function _needBytes(IDescriptors.Descriptor memory d) private pure returns (uint256 need) {
         need = uint256(d.copyBytes);
-        uint256 wordEnd = uint256(d.word + 1) * 32;
+        uint256 wordEnd = (uint256(d.word) + 1) * 32;
         if (need < wordEnd) need = wordEnd;
         if (d.freshness == IDescriptors.Freshness.ChainlinkRound && need < 160) need = 160;
     }

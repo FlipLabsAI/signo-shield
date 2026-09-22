@@ -21,7 +21,10 @@ interface IEvaluatorV1 {
     error ValueOutOfRange(uint256 nodeIndex);
 
     /// @notice Shape, type and descriptor checks, and one liveness read per Read. Reverts with a named reason.
-    function validate(bytes calldata tree, Phase phase, address principal) external view;
+    ///         `requireListed` is true for a new tree (registration, or a changed tree on amendment): every
+    ///         descriptor must be listed. An unchanged tree on amendment passes with delisted descriptors;
+    ///         revoked ones always fail.
+    function validate(bytes calldata tree, Phase phase, address principal, bool requireListed) external view;
 
     /// @notice The values every SIGNED node names, indexed by read.
     function capture(bytes calldata tree, address principal)

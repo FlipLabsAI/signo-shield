@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import {MockToken} from "./MockExecutor.sol";
@@ -77,6 +78,11 @@ contract MockMarket {
 
     function setDebt(address u, uint256 d) external {
         debtOf[u] = d;
+    }
+
+    /// @dev The debt figure is in the asset's units, as a debt token's balance would be.
+    function decimals() external view returns (uint8) {
+        return IERC20Metadata(address(asset)).decimals();
     }
 
     function setCollateral(address u, uint256 c) external {

@@ -51,6 +51,9 @@ interface IDescriptors {
     /// @notice The descriptor behind `id`, whether it is listed for new registrations, and whether it is revoked.
     function descriptorOf(bytes32 id) external view returns (Descriptor memory d, bool listed, bool revoked);
 
+    /// @notice Whether a concrete read target is suspended or revoked: a read through it must not happen.
+    function isVenueBlocked(address target) external view returns (bool);
+
     /// @notice The id a descriptor would have: the hash of its contents.
     function descriptorId(Descriptor calldata d) external pure returns (bytes32);
 }

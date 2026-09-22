@@ -15,7 +15,6 @@ contract DeployV1ForkTest is Test {
         DeployV1 deploy = new DeployV1();
         DeployV1.Deployed memory d = deploy.deployWith(owner, owner, enforcer, 10);
         assertTrue(d.shield.isExecutorListed(address(d.generic)));
-        assertTrue(d.shield.isExecutorListed(address(d.claims)));
         assertTrue(d.shield.isExecutorListed(address(d.aave)));
         assertTrue(d.shield.isEvaluatorListed(address(d.evaluator)));
         assertTrue(d.shield.isEnforcer(enforcer));

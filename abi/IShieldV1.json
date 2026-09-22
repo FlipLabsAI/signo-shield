@@ -997,8 +997,8 @@
     "inputs": [
       {
         "name": "field",
-        "type": "string",
-        "internalType": "string"
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ]
   },
@@ -1008,8 +1008,8 @@
     "inputs": [
       {
         "name": "field",
-        "type": "string",
-        "internalType": "string"
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ]
   },

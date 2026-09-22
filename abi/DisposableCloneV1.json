@@ -93,12 +93,39 @@
   },
   {
     "type": "error",
+    "name": "ApprovalExceedsBalance",
+    "inputs": [
+      {
+        "name": "asked",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "held",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "CallFailed",
     "inputs": [
       {
         "name": "reason",
         "type": "bytes",
         "internalType": "bytes"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotEmpty",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
       }
     ]
   },
