@@ -20,6 +20,20 @@ library SemanticsV1 {
 }
 
 interface IExecutorV1 {
+    /// @dev One call the sandbox makes. `spender`/`approveToken`/`approveAmount`
+    ///      describe the approval granted just before the call and cleared just
+    ///      after; zero means no approval. `claimStep` marks a claim call: it
+    ///      may carry no approval, and the executor measures the declared reward
+    ///      tokens in the sandbox around it.
+    struct Call {
+        address target;
+        address spender;
+        address approveToken;
+        uint256 approveAmount;
+        bool claimStep;
+        bytes data;
+    }
+
     struct Context {
         bytes32 mandateId;
         address principal;
