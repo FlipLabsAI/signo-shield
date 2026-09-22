@@ -113,7 +113,7 @@ contract MovingPriceVenue {
     }
 }
 
-contract FLIP270ReviewTest is Test {
+contract ReviewTest is Test {
     SignoShield internal shield;
     ConditionModule internal reader;
     GenericExecutor internal executor;

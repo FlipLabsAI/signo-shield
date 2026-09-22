@@ -157,7 +157,7 @@ contract Draft21LogicTwo {
     }
 }
 
-contract Draft21UpgradeableVenue is ERC1967Proxy {
+contract ReviewUpgradeableVenue is ERC1967Proxy {
     address internal immutable admin;
 
     receive() external payable {}
@@ -186,7 +186,7 @@ contract Draft21DailyMonitor {
         approvedImplementation = approved;
     }
 
-    function poll(Draft21UpgradeableVenue venue) external {
+    function poll(ReviewUpgradeableVenue venue) external {
         if (venue.implementationNow() != approvedImplementation) suspended = true;
     }
 
@@ -231,7 +231,7 @@ contract Draft21RepayVenue {
     }
 }
 
-contract FLIP270Draft21Test is Test {
+contract Draft21Test is Test {
     address internal principal = makeAddr("draft21-principal");
     address internal thief = makeAddr("draft21-thief");
 
@@ -367,7 +367,7 @@ contract FLIP270Draft21Test is Test {
 
     function test_upgradeCanFireBeforeDailyMonitorSuspendsIt() public {
         Draft21LogicOne oldLogic = new Draft21LogicOne();
-        Draft21UpgradeableVenue venue = new Draft21UpgradeableVenue(address(oldLogic));
+        ReviewUpgradeableVenue venue = new ReviewUpgradeableVenue(address(oldLogic));
         Draft21DailyMonitor monitor = new Draft21DailyMonitor(address(oldLogic));
         assertEq(monitor.fire(address(venue)), 1);
         bytes32 oldCodeHash = address(venue).codehash;

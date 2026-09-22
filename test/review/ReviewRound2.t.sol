@@ -40,7 +40,7 @@ contract DraftPermitVenue {
 }
 
 /// Minimal models of draft ambiguities, NOT an implementation of Shield v1.
-contract FLIP270V1DraftModelTest is Test {
+contract V1DraftModelTest is Test {
     function test_permitSignatureDoesNotBindPaymentRecipient() public {
         uint256 key = 0xA11CE;
         address owner = vm.addr(key);
@@ -123,7 +123,7 @@ contract FLIP270V1DraftModelTest is Test {
 }
 
 /// Representative fork probes, not certification of the entire read catalog.
-contract FLIP270V1ReadBudgetTest is Test {
+contract V1ReadBudgetTest is Test {
     address internal constant POOL = 0xE3F3Caefdd7180F884c01E57f65Df979Af84f116;
     address internal constant XETH = 0xE7B000003A45145decf8a28FC755aD5eC5EA025A;
     address internal constant A_XETH = 0xe6639ba6c1d79Be6d4c776E4c17504538d1719cD;

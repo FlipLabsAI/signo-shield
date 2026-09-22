@@ -9,7 +9,7 @@ import {ConditionModule} from "contracts/core/ConditionModule.sol";
 import {GenericExecutor} from "contracts/executors/GenericExecutor.sol";
 import {ISignoShield} from "contracts/core/interfaces/ISignoShield.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
-import {Draft21UpgradeableVenue} from "./FLIP270Draft21.t.sol";
+import {ReviewUpgradeableVenue} from "./ReviewRound3.t.sol";
 
 // Draft 3.1 boundary MODELS. The upgrade test alone executes the actual v0.1 core/executor.
 // No deployed venue is attacked and no v1 implementation exists at the pinned main revision.
@@ -163,7 +163,7 @@ contract Draft31FutureSemantics {
     }
 }
 
-contract FLIP270Draft31Test is Test {
+contract Draft31Test is Test {
     address private principal = makeAddr("draft31-principal");
     address private stranger = makeAddr("draft31-stranger");
     address private thief = makeAddr("draft31-thief");
@@ -212,7 +212,7 @@ contract FLIP270Draft31Test is Test {
         shield.setAdapter(address(executor), true);
         Draft31TradeLogic good = new Draft31TradeLogic(input, output, other, principal, thief, false);
         Draft31TradeLogic bad = new Draft31TradeLogic(input, output, other, principal, thief, true);
-        Draft21UpgradeableVenue proxy = new Draft21UpgradeableVenue(address(good));
+        ReviewUpgradeableVenue proxy = new ReviewUpgradeableVenue(address(good));
         input.mint(principal, 1_000);
         other.mint(principal, 1_000_000);
         output.mint(address(proxy), 100);

@@ -84,7 +84,7 @@ contract DeployV1 is Script {
 
     // ---------------------------------------------------------------- catalog
 
-    /// @dev The launch read catalog (flip-hq: 2026-09-22-read-catalog-v1.md).
+    /// @dev The launch read catalog (the read-catalog note in docs/).
     ///      Shape descriptors are chain-independent; per-address ones are
     ///      listed for the chains they exist on.
     function _listCatalog(ShieldV1 shield, address pool) internal {
