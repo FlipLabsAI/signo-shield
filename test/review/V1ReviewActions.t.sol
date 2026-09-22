@@ -87,7 +87,7 @@ contract V1ReviewActionsTest is V1ReviewBase {
         bytes32 id = _register(_genericParams(generic.ACTION_TRANSFORM(), _genericConfig()));
         address clone = generic.nextClone(id);
         vm.prank(enforcer);
-        core.revoke(address(oracle));
+        registry.revoke(address(oracle));
         vm.expectRevert();
         _fire(id, 100e18, _route(_swap(address(asset), 100e18, clone)));
         assertEq(output.balanceOf(principal), 0);
@@ -131,11 +131,11 @@ contract V1ReviewActionsTest is V1ReviewBase {
         bytes32 id = _register(_genericParams(generic.ACTION_TRANSFORM(), _genericConfig()));
         bytes memory route = _route(_swap(address(asset), 100e18, generic.nextClone(id)));
         vm.prank(enforcer);
-        core.suspend(address(dex));
+        registry.suspend(address(dex));
         vm.expectRevert();
         _fire(id, 100e18, route);
         vm.prank(enforcer);
-        core.revoke(address(dex));
+        registry.revoke(address(dex));
         vm.expectRevert();
         _fire(id, 100e18, route);
     }
@@ -283,9 +283,9 @@ contract V1ReviewActionsTest is V1ReviewBase {
         d.target = address(m);
         d.copyBytes = 64;
         d.decimals = 8;
-        bytes32 col = core.listDescriptor(d);
+        bytes32 col = registry.listDescriptor(d);
         d.word = 1;
-        bytes32 debt = core.listDescriptor(d);
+        bytes32 debt = registry.listDescriptor(d);
         GenericExecutorV1.Config memory c = _repayConfig();
         c.venues = new GenericExecutorV1.Venue[](2);
         c.venues[0] = GenericExecutorV1.Venue(address(m), address(m));
@@ -307,7 +307,7 @@ contract V1ReviewActionsTest is V1ReviewBase {
         IDescriptors.Descriptor memory d = _descriptor(bytes4(keccak256("debtOf(address)")));
         d.kind = IDescriptors.DescriptorKind.PerAddress;
         d.target = address(market);
-        bytes32 perAddressDebt = core.listDescriptor(d);
+        bytes32 perAddressDebt = registry.listDescriptor(d);
         MockMarket other = new MockMarket(IERC20(address(asset)));
         other.setDebt(principal, 100e18);
         other.setCollateral(principal, 200e18);

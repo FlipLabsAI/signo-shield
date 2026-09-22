@@ -282,6 +282,19 @@
   },
   {
     "type": "function",
+    "name": "registry",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IShieldRegistryV1"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "semanticsOf",
     "inputs": [
       {

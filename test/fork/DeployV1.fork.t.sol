@@ -14,11 +14,13 @@ contract DeployV1ForkTest is Test {
         address enforcer = makeAddr("enforcer");
         DeployV1 deploy = new DeployV1();
         DeployV1.Deployed memory d = deploy.deployWith(owner, owner, enforcer, 10);
-        assertTrue(d.shield.isExecutorListed(address(d.generic)));
-        assertTrue(d.shield.isExecutorListed(address(d.aave)));
-        assertTrue(d.shield.isEvaluatorListed(address(d.evaluator)));
-        assertTrue(d.shield.isEnforcer(enforcer));
+        assertTrue(d.registry.isExecutorListed(address(d.generic)));
+        assertTrue(d.registry.isExecutorListed(address(d.aave)));
+        assertTrue(d.registry.isEvaluatorListed(address(d.evaluator)));
+        assertTrue(d.registry.isEnforcer(enforcer));
         assertEq(d.shield.pendingOwner(), owner);
+        assertEq(d.registry.pendingOwner(), owner);
+        assertEq(address(d.shield.registry()), address(d.registry));
         assertEq(d.shield.feeBps(), 10);
         // the ETH/USD feed descriptor resolves by its content id and is listed
         IDescriptors.Descriptor memory feed = IDescriptors.Descriptor({
@@ -37,8 +39,8 @@ contract DeployV1ForkTest is Test {
             gasStipend: 160_000,
             copyBytes: 160
         });
-        bytes32 id = d.shield.descriptorId(feed);
-        (IDescriptors.Descriptor memory got, bool listed, bool revoked) = d.shield.descriptorOf(id);
+        bytes32 id = d.registry.descriptorId(feed);
+        (IDescriptors.Descriptor memory got, bool listed, bool revoked) = d.registry.descriptorOf(id);
         assertTrue(listed);
         assertFalse(revoked);
         assertEq(got.target, feed.target);

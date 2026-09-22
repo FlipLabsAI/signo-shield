@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ShieldV1} from "contracts/v1/ShieldV1.sol";
+import {ShieldRegistryV1} from "contracts/v1/ShieldRegistryV1.sol";
 import {IShieldV1} from "contracts/v1/interfaces/IShieldV1.sol";
 import {IDescriptors} from "contracts/v1/interfaces/IDescriptors.sol";
 import {IExecutorV1} from "contracts/v1/interfaces/IExecutorV1.sol";
@@ -15,6 +16,7 @@ import {MockDex, MockOracle, MockVault, MockMarket} from "./mocks/MockVenues.sol
 
 contract GenericExecutorV1Test is Test {
     ShieldV1 internal shield;
+    ShieldRegistryV1 internal registry;
     ExpressionEvaluator internal ev;
     GenericExecutorV1 internal exec;
     MockToken internal usdc;
@@ -37,8 +39,9 @@ contract GenericExecutorV1Test is Test {
     bytes32 internal constant REPAY = keccak256("generic.repay");
 
     function setUp() public {
-        shield = new ShieldV1(admin, 0);
-        ev = new ExpressionEvaluator(shield);
+        registry = new ShieldRegistryV1(admin);
+        shield = new ShieldV1(admin, registry, 0);
+        ev = new ExpressionEvaluator(registry);
         exec = new GenericExecutorV1(address(shield));
         usdc = new MockToken();
         weth = new MockToken();
@@ -50,11 +53,11 @@ contract GenericExecutorV1Test is Test {
         oracle.set(address(usdc), 1e8);
         oracle.set(address(weth), 1e8); // 1:1 for readable numbers
         vm.startPrank(admin);
-        shield.setEnforcer(enforcer, true);
-        shield.setExecutor(address(exec), true);
-        shield.setEvaluator(address(ev), true);
-        dDebt = shield.listDescriptor(_shape(bytes4(keccak256("debtOf(address)"))));
-        dColl = shield.listDescriptor(_shape(bytes4(keccak256("collateralOf(address)"))));
+        registry.setEnforcer(enforcer, true);
+        registry.setExecutor(address(exec), true);
+        registry.setEvaluator(address(ev), true);
+        dDebt = registry.listDescriptor(_shape(bytes4(keccak256("debtOf(address)"))));
+        dColl = registry.listDescriptor(_shape(bytes4(keccak256("collateralOf(address)"))));
         vm.stopPrank();
         usdc.mint(principal, 1_000_000e18);
         vm.prank(principal);
@@ -170,7 +173,7 @@ contract GenericExecutorV1Test is Test {
         shield.fire(id, 100e18, _route(k));
         // the signed venue, suspended by the enforcer, is refused too
         vm.prank(enforcer);
-        shield.suspend(address(dex));
+        registry.suspend(address(dex));
         address clone = exec.nextClone(id);
         vm.prank(agent);
         vm.expectRevert();

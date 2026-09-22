@@ -9,6 +9,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IPool} from "contracts/adapters/aave-v3/interfaces/IAaveV3.sol";
 import {ShieldV1} from "contracts/v1/ShieldV1.sol";
+import {ShieldRegistryV1} from "contracts/v1/ShieldRegistryV1.sol";
 import {IShieldV1} from "contracts/v1/interfaces/IShieldV1.sol";
 import {IDescriptors} from "contracts/v1/interfaces/IDescriptors.sol";
 import {IExecutorV1} from "contracts/v1/interfaces/IExecutorV1.sol";
@@ -27,6 +28,8 @@ contract GenericExecutorV1ForkTest is Test {
     bytes32 internal constant REPAY = keccak256("generic.repay");
 
     ShieldV1 internal shield;
+
+    ShieldRegistryV1 internal registry;
     ExpressionEvaluator internal ev;
     GenericExecutorV1 internal exec;
     IPool internal pool = IPool(POOL);
@@ -36,12 +39,13 @@ contract GenericExecutorV1ForkTest is Test {
 
     function setUp() public {
         vm.createSelectFork(vm.envOr("XLAYER_RPC_URL", string("https://rpc.xlayer.tech")), FORK_BLOCK);
-        shield = new ShieldV1(address(this), 0);
-        ev = new ExpressionEvaluator(shield);
+        registry = new ShieldRegistryV1(address(this));
+        shield = new ShieldV1(address(this), registry, 0);
+        ev = new ExpressionEvaluator(registry);
         exec = new GenericExecutorV1(address(shield));
-        shield.setExecutor(address(exec), true);
-        shield.setEvaluator(address(ev), true);
-        dBalance = shield.listDescriptor(
+        registry.setExecutor(address(exec), true);
+        registry.setEvaluator(address(ev), true);
+        dBalance = registry.listDescriptor(
             IDescriptors.Descriptor({
                 kind: IDescriptors.DescriptorKind.Shape,
                 target: address(0),

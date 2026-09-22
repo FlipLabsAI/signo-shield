@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {IShieldRegistryV1} from "./IShieldRegistryV1.sol";
+
 /// @title IShieldV1
 /// @notice The Shield v1 core: mandates, listings, the read catalog, halts,
 ///         suspensions and revocations, and the firing.
@@ -91,25 +93,12 @@ interface IShieldV1 {
         uint256 spent,
         uint256 fee
     );
-    event AgentFrozen(address indexed agent, address indexed enforcer);
-    event AgentUnfrozen(address indexed agent, address indexed enforcer);
-    event EnforcerSet(address indexed enforcer, bool enabled);
-    event ExecutorListed(address indexed executor, bool listed);
-    event EvaluatorListed(address indexed evaluator, bool listed);
     event FeeRecipientSet(address indexed recipient);
     event FeeBpsSet(uint16 feeBps);
-    event Halted(address indexed listed, uint64 epoch, address indexed by);
-    event UnhaltQueued(address indexed listed, uint64 epoch, address indexed by);
-    event UnhaltExecuted(address indexed listed, uint64 epoch, address indexed by);
-    event Suspended(address indexed target, uint64 epoch, address indexed by);
-    event LiftQueued(address indexed target, uint64 epoch, address indexed by);
-    event LiftExecuted(address indexed target, uint64 epoch, address indexed by);
-    event Revoked(address indexed target, address indexed by);
 
     error MandateBlocked(bytes32 mandateId, MandateReason reason);
     error OutcomeRejected(bytes32 mandateId, MandateReason reason, bytes detail);
     error NotPrincipal();
-    error NotEnforcer();
     error ExecutorNotListed(address executor);
     error EvaluatorNotListed(address evaluator);
     error ActionNotSupported(address executor, bytes32 action);
@@ -119,9 +108,6 @@ interface IShieldV1 {
     error AdminCannotBeEnforcer(address account);
     error SpendExceedsAmount(uint256 spent, uint256 amount);
     error NothingMayLeave(uint256 left);
-    error RestoreNotReady(address target, uint64 epoch);
-    error EpochMismatch(address target, uint64 epoch);
-    error TargetRevoked(address target);
     error BadSignature();
     error SignatureExpired();
 
@@ -135,8 +121,6 @@ interface IShieldV1 {
         view
         returns (bool ok, MandateReason reason);
     function getMandate(bytes32 mandateId) external view returns (Mandate memory);
-    function isHalted(address listed) external view returns (bool);
-    function isSuspended(address target) external view returns (bool);
-    function isRevoked(address target) external view returns (bool);
-    function isVenueBlocked(address target) external view returns (bool);
+    /// @notice The registry this core consults: listings, descriptors, emergency controls.
+    function registry() external view returns (IShieldRegistryV1);
 }

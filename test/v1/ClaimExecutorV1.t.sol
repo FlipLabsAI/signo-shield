@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 import {ShieldV1} from "contracts/v1/ShieldV1.sol";
+import {ShieldRegistryV1} from "contracts/v1/ShieldRegistryV1.sol";
 import {IShieldV1} from "contracts/v1/interfaces/IShieldV1.sol";
 import {IExecutorV1} from "contracts/v1/interfaces/IExecutorV1.sol";
 import {ExpressionEvaluator} from "contracts/v1/ExpressionEvaluator.sol";
@@ -12,6 +13,7 @@ import {MockDex, MockOracle, MockDistributor} from "./mocks/MockVenues.sol";
 
 contract ClaimExecutorV1Test is Test {
     ShieldV1 internal shield;
+    ShieldRegistryV1 internal registry;
     ExpressionEvaluator internal ev;
     ClaimExecutorV1 internal exec;
     MockToken internal reward;
@@ -27,8 +29,9 @@ contract ClaimExecutorV1Test is Test {
     bytes32 internal constant COMPOSE = keccak256("claim.compose");
 
     function setUp() public {
-        shield = new ShieldV1(admin, 0);
-        ev = new ExpressionEvaluator(shield);
+        registry = new ShieldRegistryV1(admin);
+        shield = new ShieldV1(admin, registry, 0);
+        ev = new ExpressionEvaluator(registry);
         exec = new ClaimExecutorV1(address(shield));
         reward = new MockToken();
         weth = new MockToken();
@@ -38,8 +41,8 @@ contract ClaimExecutorV1Test is Test {
         oracle.set(address(reward), 1e8);
         oracle.set(address(weth), 1e8);
         vm.startPrank(admin);
-        shield.setExecutor(address(exec), true);
-        shield.setEvaluator(address(ev), true);
+        registry.setExecutor(address(exec), true);
+        registry.setEvaluator(address(ev), true);
         vm.stopPrank();
         dist.setOwed(principal, 100e18);
     }

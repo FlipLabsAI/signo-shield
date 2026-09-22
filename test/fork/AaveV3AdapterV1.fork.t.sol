@@ -10,6 +10,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IAaveOracle, IPool} from "contracts/adapters/aave-v3/interfaces/IAaveV3.sol";
 import {ShieldV1} from "contracts/v1/ShieldV1.sol";
+import {ShieldRegistryV1} from "contracts/v1/ShieldRegistryV1.sol";
 import {IShieldV1} from "contracts/v1/interfaces/IShieldV1.sol";
 import {IDescriptors} from "contracts/v1/interfaces/IDescriptors.sol";
 import {ExpressionEvaluator} from "contracts/v1/ExpressionEvaluator.sol";
@@ -31,6 +32,8 @@ contract AaveV3AdapterV1ForkTest is Test {
     bytes32 internal constant RWC = keccak256("aave-v3.repayWithCollateral");
 
     ShieldV1 internal shield;
+
+    ShieldRegistryV1 internal registry;
     ExpressionEvaluator internal ev;
     AaveV3AdapterV1 internal adapter;
     MockRouter internal router;
@@ -46,13 +49,14 @@ contract AaveV3AdapterV1ForkTest is Test {
         vm.createSelectFork(vm.envOr("XLAYER_RPC_URL", string("https://rpc.xlayer.tech")), FORK_BLOCK);
         assertEq(block.chainid, 196);
         validUntil = uint48(block.timestamp + 30 days);
-        shield = new ShieldV1(address(this), 10);
-        ev = new ExpressionEvaluator(shield);
+        registry = new ShieldRegistryV1(address(this));
+        shield = new ShieldV1(address(this), registry, 10);
+        ev = new ExpressionEvaluator(registry);
         adapter = new AaveV3AdapterV1(address(shield), pool);
         router = new MockRouter();
-        shield.setExecutor(address(adapter), true);
-        shield.setEvaluator(address(ev), true);
-        dHf = shield.listDescriptor(
+        registry.setExecutor(address(adapter), true);
+        registry.setEvaluator(address(ev), true);
+        dHf = registry.listDescriptor(
             IDescriptors.Descriptor({
                 kind: IDescriptors.DescriptorKind.PerAddress,
                 target: POOL,
@@ -257,9 +261,9 @@ contract AaveV3AdapterV1ForkTest is Test {
         IShieldV1.MandateParams memory p = _params(RWC, A_XETH, 0.01e18, 0.02e18, _hfBelow(1.6e18));
         p.actionConfig = _rwcConfig(1e18);
         bytes32 id = _register(p);
-        shield.setEnforcer(makeAddr("enforcer"), true);
+        registry.setEnforcer(makeAddr("enforcer"), true);
         vm.prank(makeAddr("enforcer"));
-        shield.suspend(address(router));
+        registry.suspend(address(router));
         bytes memory route = _swapCalldata(0.0005e18, _fairUsdt0(0.0005e18), address(adapter));
         vm.prank(agent);
         vm.expectRevert();

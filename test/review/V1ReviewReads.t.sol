@@ -28,9 +28,9 @@ contract V1ReviewReadsTest is V1ReviewBase {
         d.subjectArg = -1;
         d.gasStipend = 100_000;
         d.copyBytes = 64;
-        bytes32 first = core.listDescriptor(d);
+        bytes32 first = registry.listDescriptor(d);
         d.word = 1;
-        bytes32 second = core.listDescriptor(d);
+        bytes32 second = registry.listDescriptor(d);
         ExprLib.Read[] memory reads = new ExprLib.Read[](2);
         reads[0] = ExprLib.Read(first, address(wide), "", ExprLib.Subject.None, 0);
         reads[1] = ExprLib.Read(second, address(wide), "", ExprLib.Subject.None, 0);
@@ -53,11 +53,11 @@ contract V1ReviewReadsTest is V1ReviewBase {
         d.gasStipend = 100_000;
         d.copyBytes = 8192;
         d.word = 255;
-        bytes32 id = core.listDescriptor(d);
+        bytes32 id = registry.listDescriptor(d);
         ReviewReadHarness h = new ReviewReadHarness();
         ExprLib.Read memory r = ExprLib.Read(id, address(wide), "", ExprLib.Subject.None, 0);
         // F10 (fixed): no arithmetic panic; word 255 is read like any other.
-        assertEq(h.read(r, core), 0);
+        assertEq(h.read(r, registry), 0);
     }
 
     /// F7 (fixed): the pinned decimals must be the instance's own.
@@ -78,11 +78,11 @@ contract V1ReviewReadsTest is V1ReviewBase {
         p.trigger = _tree(address(asset), balanceId, ExprLib.Kind.READ, 18);
         bytes32 id = _register(p);
         vm.prank(enforcer);
-        core.suspend(address(asset));
+        registry.suspend(address(asset));
         vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.TreeInvalid.selector, "targetBlocked"));
         _fire(id, 1e18, "");
         vm.prank(enforcer);
-        core.revoke(address(asset));
+        registry.revoke(address(asset));
         vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.TreeInvalid.selector, "targetBlocked"));
         _fire(id, 1e18, "");
         assertEq(core.getMandate(id).firings, 0);
@@ -94,7 +94,7 @@ contract V1ReviewReadsTest is V1ReviewBase {
         p.trigger = _tree(address(asset), balanceId, ExprLib.Kind.SIGNED, 18);
         bytes32 id = _register(p);
         vm.prank(enforcer);
-        core.revokeDescriptor(balanceId);
+        registry.revokeDescriptor(balanceId);
         vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.TreeInvalid.selector, "descriptorRevoked"));
         _fire(id, 1e18, "");
         assertEq(core.getMandate(id).firings, 0);
@@ -106,7 +106,7 @@ contract V1ReviewReadsTest is V1ReviewBase {
         bytes32 id = _register(p);
         uint256 before = asset.balanceOf(principal);
         vm.prank(enforcer);
-        core.revokeDescriptor(balanceId);
+        registry.revokeDescriptor(balanceId);
         vm.expectRevert();
         _fire(id, 1e18, "");
         assertEq(asset.balanceOf(principal), before);
@@ -115,16 +115,16 @@ contract V1ReviewReadsTest is V1ReviewBase {
 
     function test_controlDescriptorContentsAreWriteOnceAndDelistingDoesNotStopLiveRead() public {
         IDescriptors.Descriptor memory d = _descriptor(IERC20.balanceOf.selector);
-        assertEq(core.listDescriptor(d), balanceId);
+        assertEq(registry.listDescriptor(d), balanceId);
         d.gasStipend = 99_999;
-        bytes32 other = core.listDescriptor(d);
+        bytes32 other = registry.listDescriptor(d);
         assertTrue(other != balanceId);
-        (IDescriptors.Descriptor memory original,,) = core.descriptorOf(balanceId);
+        (IDescriptors.Descriptor memory original,,) = registry.descriptorOf(balanceId);
         assertEq(original.gasStipend, 100_000);
         IShieldV1.MandateParams memory p = _mockParams();
         p.trigger = _tree(address(asset), balanceId, ExprLib.Kind.READ, 18);
         bytes32 id = _register(p);
-        core.delistDescriptor(balanceId);
+        registry.delistDescriptor(balanceId);
         _fire(id, 1e18, "");
         vm.expectRevert();
         _register(p);
@@ -135,7 +135,7 @@ contract V1ReviewReadsTest is V1ReviewBase {
         IShieldV1.MandateParams memory p = _mockParams();
         p.trigger = _tree(address(asset), balanceId, ExprLib.Kind.READ, 18);
         bytes32 id = _register(p);
-        core.delistDescriptor(balanceId);
+        registry.delistDescriptor(balanceId);
         p.maxTransactionValue = 500e18;
         vm.prank(principal);
         core.amendMandate(id, p);
@@ -225,26 +225,26 @@ contract V1ReviewReadsTest is V1ReviewBase {
 
     function test_controlRoundAgeFutureIncompleteAndPositiveRules() public {
         MockFeed feed = new MockFeed();
-        bytes32 id = core.listDescriptor(_feedDescriptor(feed));
+        bytes32 id = registry.listDescriptor(_feedDescriptor(feed));
         ExprLib.Read memory r = ExprLib.Read(id, address(feed), "", ExprLib.Subject.None, 8);
         ReviewReadHarness h = new ReviewReadHarness();
         feed.set(10, 100, vm.getBlockTimestamp(), 10);
-        assertEq(h.read(r, core), 100);
+        assertEq(h.read(r, registry), 100);
         feed.set(10, 100, vm.getBlockTimestamp(), 9);
         vm.expectRevert();
-        h.read(r, core);
+        h.read(r, registry);
         feed.set(10, 100, vm.getBlockTimestamp() + 1, 10);
         vm.expectRevert();
-        h.read(r, core);
+        h.read(r, registry);
         feed.set(10, 100, vm.getBlockTimestamp() - 3601, 10);
         vm.expectRevert();
-        h.read(r, core);
+        h.read(r, registry);
         feed.set(10, 0, vm.getBlockTimestamp(), 10);
         vm.expectRevert();
-        h.read(r, core);
+        h.read(r, registry);
         feed.set(10, -1, vm.getBlockTimestamp(), 10);
         vm.expectRevert();
-        h.read(r, core);
+        h.read(r, registry);
     }
 
     /// F10 (fixed): a round descriptor cannot be listed without the positive-answer rule.
@@ -253,7 +253,7 @@ contract V1ReviewReadsTest is V1ReviewBase {
         IDescriptors.Descriptor memory d = _feedDescriptor(feed);
         d.mustBePositive = false;
         vm.expectRevert(abi.encodeWithSelector(IShieldV1.InvalidParams.selector, bytes32("freshness")));
-        core.listDescriptor(d);
+        registry.listDescriptor(d);
     }
 
     function test_controlBoundedCopyShortReturnStipendAndUnsignedRange() public {
@@ -266,22 +266,22 @@ contract V1ReviewReadsTest is V1ReviewBase {
         d.subjectArg = -1;
         d.gasStipend = 100_000;
         d.copyBytes = 32;
-        bytes32 id = core.listDescriptor(d);
-        assertEq(h.read(ExprLib.Read(id, address(wide), "", ExprLib.Subject.None, 0), core), 7);
+        bytes32 id = registry.listDescriptor(d);
+        assertEq(h.read(ExprLib.Read(id, address(wide), "", ExprLib.Subject.None, 0), registry), 7);
         MockNasty nasty = new MockNasty();
         d.target = address(nasty);
         d.selector = MockNasty.value.selector;
-        id = core.listDescriptor(d);
+        id = registry.listDescriptor(d);
         ExprLib.Read memory r = ExprLib.Read(id, address(nasty), "", ExprLib.Subject.None, 0);
         vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.ValueOutOfRange.selector, 0));
-        h.read(r, core);
+        h.read(r, registry);
         nasty.setShort(true);
         vm.expectRevert();
-        h.read(r, core);
+        h.read(r, registry);
         nasty.setShort(false);
         nasty.setBurn(true);
         vm.expectRevert();
-        h.read(r, core);
+        h.read(r, registry);
     }
 
     function test_controlArithmeticFailureCannotHideBehindTrueSibling() public {

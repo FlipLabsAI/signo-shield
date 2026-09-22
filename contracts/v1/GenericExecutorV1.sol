@@ -9,6 +9,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IExecutorV1, SemanticsV1} from "./interfaces/IExecutorV1.sol";
 import {IShieldV1} from "./interfaces/IShieldV1.sol";
+import {IShieldRegistryV1} from "./interfaces/IShieldRegistryV1.sol";
 import {IDescriptors} from "./interfaces/IDescriptors.sol";
 import {ExprLib} from "./libraries/ExprLib.sol";
 import {DisposableCloneV1} from "./DisposableCloneV1.sol";
@@ -87,6 +88,8 @@ contract GenericExecutorV1 is IExecutorV1 {
     }
 
     address public immutable shield;
+    /// @dev The listings, catalog and emergency controls the core is bound to.
+    IShieldRegistryV1 public immutable registry;
     address public immutable cloneTemplate;
     mapping(bytes32 mandateId => uint256) public firings;
 
@@ -122,6 +125,7 @@ contract GenericExecutorV1 is IExecutorV1 {
     constructor(address shield_) {
         if (shield_.code.length == 0) revert ConfigInvalid("shield");
         shield = shield_;
+        registry = IShieldV1(shield_).registry();
         cloneTemplate = address(new DisposableCloneV1(address(this)));
     }
 
@@ -235,9 +239,9 @@ contract GenericExecutorV1 is IExecutorV1 {
         if (c.market.code.length == 0 || c.collateralTarget.code.length == 0) revert ConfigInvalid("market");
         if (c.tokenOut != asset) revert ConfigInvalid("repay:asset"); // v1: repay in the debt's own asset
         (IDescriptors.Descriptor memory dd, bool dl, bool dr) =
-            IDescriptors(shield).descriptorOf(c.debtDescriptor);
+            IDescriptors(address(registry)).descriptorOf(c.debtDescriptor);
         (IDescriptors.Descriptor memory cd, bool cl, bool cr) =
-            IDescriptors(shield).descriptorOf(c.collateralDescriptor);
+            IDescriptors(address(registry)).descriptorOf(c.collateralDescriptor);
         if (!dl || dr || !cl || cr) revert ConfigInvalid("repay:descriptor");
         _checkRecipeRead(dd, c.market, "repay:debt");
         _checkRecipeRead(cd, c.collateralTarget, "repay:collateral");
@@ -419,14 +423,15 @@ contract GenericExecutorV1 is IExecutorV1 {
         f.parked = IERC20(ctx.asset).balanceOf(f.clone);
         IERC20(ctx.asset).safeTransfer(f.clone, amount);
         DisposableCloneV1 clone = DisposableCloneV1(f.clone);
-        IShieldV1 core = IShieldV1(shield);
         for (uint256 i = 0; i < calls.length; i++) {
             Call memory k = calls[i];
             if (k.claimStep) revert RouteInvalid("claimStep");
             if (!_venueAllowed(c, k.target, k.spender)) revert VenueNotAllowed(k.target, k.spender);
-            // forge-lint: disable-next-line(calls-loop)
-            if (core.isVenueBlocked(k.target) || (k.spender != address(0) && core.isVenueBlocked(k.spender)))
-            {
+            // forge-lint: disable-next-item(calls-loop)
+            if (
+                registry.isVenueBlocked(k.target)
+                    || (k.spender != address(0) && registry.isVenueBlocked(k.spender))
+            ) {
                 revert VenueBlocked(k.target);
             }
             if (k.approveAmount != 0 && !_sweepable(c, ctx.asset, k.approveToken)) {
@@ -485,7 +490,7 @@ contract GenericExecutorV1 is IExecutorV1 {
             subject: ExprLib.Subject.Principal,
             decimals: 0
         });
-        return ExprLib.readValue(r, 0, IDescriptors(shield));
+        return ExprLib.readValue(r, 0, IDescriptors(address(registry)));
     }
 
     function _assetsPerShareUnit(address vault) internal view returns (uint256) {
@@ -541,7 +546,7 @@ contract GenericExecutorV1 is IExecutorV1 {
         returns (uint256 priceIn, uint256 priceOut)
     {
         // The oracle is a dependency like any venue: a suspended or revoked one stops the firing.
-        if (IShieldV1(shield).isVenueBlocked(c.oracle)) revert VenueBlocked(c.oracle);
+        if (registry.isVenueBlocked(c.oracle)) revert VenueBlocked(c.oracle);
         priceIn = IPriceOracle(c.oracle).getAssetPrice(tokenIn);
         priceOut = IPriceOracle(c.oracle).getAssetPrice(c.tokenOut);
         if (priceIn == 0 || priceOut == 0) revert ConfigInvalid("oracle");

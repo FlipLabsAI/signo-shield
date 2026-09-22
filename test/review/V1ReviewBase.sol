@@ -5,6 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ShieldV1} from "contracts/v1/ShieldV1.sol";
+import {ShieldRegistryV1} from "contracts/v1/ShieldRegistryV1.sol";
+import {IShieldRegistryV1} from "contracts/v1/interfaces/IShieldRegistryV1.sol";
 import {IShieldV1} from "contracts/v1/interfaces/IShieldV1.sol";
 import {IExecutorV1} from "contracts/v1/interfaces/IExecutorV1.sol";
 import {IEvaluatorV1} from "contracts/v1/interfaces/IEvaluatorV1.sol";
@@ -20,6 +22,7 @@ import {MockFeed, MockNasty} from "test/v1/mocks/MockCatalog.sol";
 
 abstract contract V1ReviewBase is Test {
     ShieldV1 internal core;
+    ShieldRegistryV1 internal registry;
     ExpressionEvaluator internal evaluator;
     GenericExecutorV1 internal generic;
     ClaimExecutorV1 internal claims;
@@ -43,8 +46,9 @@ abstract contract V1ReviewBase is Test {
     function setUp() public virtual {
         vm.warp(1_800_000_000);
         principal = vm.addr(OWNER_KEY);
-        core = new ShieldV1(address(this), 0);
-        evaluator = new ExpressionEvaluator(core);
+        registry = new ShieldRegistryV1(address(this));
+        core = new ShieldV1(address(this), registry, 0);
+        evaluator = new ExpressionEvaluator(registry);
         generic = new GenericExecutorV1(address(core));
         claims = new ClaimExecutorV1(address(core));
         mock = new MockExecutor(address(core));
@@ -55,14 +59,14 @@ abstract contract V1ReviewBase is Test {
         oracle = new MockOracle();
         distributor = new MockDistributor(reward);
         market = new MockMarket(IERC20(address(asset)));
-        core.setEnforcer(enforcer, true);
-        core.setExecutor(address(generic), true);
-        core.setExecutor(address(claims), true);
-        core.setExecutor(address(mock), true);
-        core.setEvaluator(address(evaluator), true);
-        balanceId = core.listDescriptor(_descriptor(IERC20.balanceOf.selector));
-        debtId = core.listDescriptor(_descriptor(bytes4(keccak256("debtOf(address)"))));
-        collateralId = core.listDescriptor(_descriptor(bytes4(keccak256("collateralOf(address)"))));
+        registry.setEnforcer(enforcer, true);
+        registry.setExecutor(address(generic), true);
+        registry.setExecutor(address(claims), true);
+        registry.setExecutor(address(mock), true);
+        registry.setEvaluator(address(evaluator), true);
+        balanceId = registry.listDescriptor(_descriptor(IERC20.balanceOf.selector));
+        debtId = registry.listDescriptor(_descriptor(bytes4(keccak256("debtOf(address)"))));
+        collateralId = registry.listDescriptor(_descriptor(bytes4(keccak256("collateralOf(address)"))));
         oracle.set(address(asset), 1e8);
         oracle.set(address(output), 1e8);
         oracle.set(address(reward), 1e8);

@@ -6,6 +6,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IExecutorV1, SemanticsV1} from "./interfaces/IExecutorV1.sol";
 import {IShieldV1} from "./interfaces/IShieldV1.sol";
+import {IShieldRegistryV1} from "./interfaces/IShieldRegistryV1.sol";
 import {
     IAaveOracle,
     IPool,
@@ -38,6 +39,8 @@ contract AaveV3AdapterV1 is IExecutorV1 {
     uint256 public constant MIN_TARGET_HEALTH_FACTOR = 1e18;
 
     address public immutable shield;
+    /// @dev The listings, catalog and emergency controls the core is bound to.
+    IShieldRegistryV1 public immutable registry;
     IPool public immutable pool;
     IPoolAddressesProvider public immutable addressesProvider;
 
@@ -92,6 +95,7 @@ contract AaveV3AdapterV1 is IExecutorV1 {
         if (shield_.code.length == 0) revert ConfigInvalid("shield");
         if (address(pool_).code.length == 0) revert ConfigInvalid("pool");
         shield = shield_;
+        registry = IShieldV1(shield_).registry();
         pool = pool_;
         addressesProvider = IPoolAddressesProvider(pool_.ADDRESSES_PROVIDER());
     }
@@ -150,7 +154,7 @@ contract AaveV3AdapterV1 is IExecutorV1 {
     {
         if (ctx.funding != uint8(IShieldV1.FundingMode.PULL)) revert ConfigInvalid("funding");
         // The pool is the venue of every action here: suspended or revoked, nothing runs.
-        if (IShieldV1(shield).isVenueBlocked(address(pool))) revert VenueBlocked(address(pool));
+        if (registry.isVenueBlocked(address(pool))) revert VenueBlocked(address(pool));
         if (ctx.action == ACTION_SUPPLY) return _supply(ctx, amount, route);
         if (ctx.action == ACTION_REPAY) return _repay(ctx, amount, route);
         if (ctx.action == ACTION_REPAY_WITH_COLLATERAL) return _repayWithCollateral(ctx, amount, route);
@@ -201,9 +205,8 @@ contract AaveV3AdapterV1 is IExecutorV1 {
         returns (uint256)
     {
         RepayWithCollateralConfig memory c = _decode(ctx.actionConfig);
-        IShieldV1 core = IShieldV1(shield);
-        if (core.isVenueBlocked(c.router)) revert VenueBlocked(c.router);
-        if (core.isVenueBlocked(c.spender)) revert VenueBlocked(c.spender);
+        if (registry.isVenueBlocked(c.router)) revert VenueBlocked(c.router);
+        if (registry.isVenueBlocked(c.spender)) revert VenueBlocked(c.spender);
         (,, address variableDebt) = _reserveTokens(c.debtAsset);
         uint256 debtBefore = IERC20(variableDebt).balanceOf(ctx.principal);
         if (debtBefore == 0) revert NoDebt();

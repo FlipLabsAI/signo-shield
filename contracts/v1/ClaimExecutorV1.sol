@@ -7,6 +7,7 @@ import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IExecutorV1, SemanticsV1} from "./interfaces/IExecutorV1.sol";
 import {IShieldV1} from "./interfaces/IShieldV1.sol";
+import {IShieldRegistryV1} from "./interfaces/IShieldRegistryV1.sol";
 import {DisposableCloneV1} from "./DisposableCloneV1.sol";
 import {IPriceOracle} from "contracts/executors/interfaces/IPriceOracle.sol";
 
@@ -49,6 +50,8 @@ contract ClaimExecutorV1 is IExecutorV1 {
     }
 
     address public immutable shield;
+    /// @dev The listings, catalog and emergency controls the core is bound to.
+    IShieldRegistryV1 public immutable registry;
     address public immutable cloneTemplate;
     mapping(bytes32 mandateId => uint256) public firings;
 
@@ -79,6 +82,7 @@ contract ClaimExecutorV1 is IExecutorV1 {
     constructor(address shield_) {
         if (shield_.code.length == 0) revert ConfigInvalid("shield");
         shield = shield_;
+        registry = IShieldV1(shield_).registry();
         cloneTemplate = address(new DisposableCloneV1(address(this)));
     }
 
@@ -249,9 +253,11 @@ contract ClaimExecutorV1 is IExecutorV1 {
             if (c.venues[i].target == k.target && c.venues[i].spender == k.spender) ok = true;
         }
         if (!ok) revert VenueNotAllowed(k.target, k.spender);
-        IShieldV1 core = IShieldV1(shield);
-        // forge-lint: disable-next-line(calls-loop)
-        if (core.isVenueBlocked(k.target) || (k.spender != address(0) && core.isVenueBlocked(k.spender))) {
+        // forge-lint: disable-next-item(calls-loop)
+        if (
+            registry.isVenueBlocked(k.target)
+                || (k.spender != address(0) && registry.isVenueBlocked(k.spender))
+        ) {
             revert VenueBlocked(k.target);
         }
     }
@@ -265,7 +271,7 @@ contract ClaimExecutorV1 is IExecutorV1 {
 
     /// @dev Sum of claimed amounts at fair value, in tokenOut units, less the tolerance.
     function _minOut(Config memory c, uint256[] memory claimed) internal view returns (uint256 minOut) {
-        if (IShieldV1(shield).isVenueBlocked(c.oracle)) revert VenueBlocked(c.oracle);
+        if (registry.isVenueBlocked(c.oracle)) revert VenueBlocked(c.oracle);
         uint256 priceOut = IPriceOracle(c.oracle).getAssetPrice(c.tokenOut);
         if (priceOut == 0) revert ConfigInvalid("oracle:out");
         uint256 decOut = 10 ** IERC20Metadata(c.tokenOut).decimals();

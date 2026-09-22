@@ -4,7 +4,9 @@ pragma solidity 0.8.28;
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ShieldV1} from "contracts/v1/ShieldV1.sol";
+import {ShieldRegistryV1} from "contracts/v1/ShieldRegistryV1.sol";
 import {IShieldV1} from "contracts/v1/interfaces/IShieldV1.sol";
+import {IShieldRegistryV1} from "contracts/v1/interfaces/IShieldRegistryV1.sol";
 import {IDescriptors} from "contracts/v1/interfaces/IDescriptors.sol";
 import {IEvaluatorV1} from "contracts/v1/interfaces/IEvaluatorV1.sol";
 import {ExpressionEvaluator} from "contracts/v1/ExpressionEvaluator.sol";
@@ -14,6 +16,7 @@ import {MockBalances} from "./mocks/MockCatalog.sol";
 
 contract ShieldV1Test is Test {
     ShieldV1 internal shield;
+    ShieldRegistryV1 internal registry;
     ExpressionEvaluator internal ev;
     MockExecutor internal exec;
     MockToken internal usdc;
@@ -32,17 +35,18 @@ contract ShieldV1Test is Test {
 
     function setUp() public {
         principal = vm.addr(principalKey);
-        shield = new ShieldV1(admin, 10); // 10 bps
-        ev = new ExpressionEvaluator(shield);
+        registry = new ShieldRegistryV1(admin);
+        shield = new ShieldV1(admin, registry, 10); // 10 bps
+        ev = new ExpressionEvaluator(registry);
         exec = new MockExecutor(address(shield));
         usdc = new MockToken();
         gauge = new MockBalances();
         vm.startPrank(admin);
-        shield.setEnforcer(enforcer, true);
-        shield.setExecutor(address(exec), true);
-        shield.setEvaluator(address(ev), true);
+        registry.setEnforcer(enforcer, true);
+        registry.setExecutor(address(exec), true);
+        registry.setEvaluator(address(ev), true);
         shield.setFeeRecipient(feeSink);
-        dBalance = shield.listDescriptor(
+        dBalance = registry.listDescriptor(
             IDescriptors.Descriptor({
                 kind: IDescriptors.DescriptorKind.Shape,
                 target: address(0),
@@ -451,7 +455,7 @@ contract ShieldV1Test is Test {
     function test_haltEpochsQueuedRestorationAndDelay() public {
         bytes32 id = _register(_params());
         vm.prank(enforcer);
-        shield.halt(address(exec));
+        registry.halt(address(exec));
         vm.prank(agent);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -461,27 +465,33 @@ contract ShieldV1Test is Test {
         shield.fire(id, 10e6, "");
         // admin cannot restore without a queued approval
         vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(IShieldV1.EpochMismatch.selector, address(exec), uint64(1)));
-        shield.executeUnhalt(address(exec), 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShieldRegistryV1.EpochMismatch.selector, address(exec), uint64(1))
+        );
+        registry.executeUnhalt(address(exec), 1);
         vm.prank(enforcer);
-        shield.queueUnhalt(address(exec), 1);
+        registry.queueUnhalt(address(exec), 1);
         vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(IShieldV1.RestoreNotReady.selector, address(exec), uint64(1)));
-        shield.executeUnhalt(address(exec), 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShieldRegistryV1.RestoreNotReady.selector, address(exec), uint64(1))
+        );
+        registry.executeUnhalt(address(exec), 1);
         // a new halt bumps the epoch and cancels the queue
         vm.prank(enforcer);
-        shield.halt(address(exec));
+        registry.halt(address(exec));
         // forge-lint: disable-next-line(environment-read-across-mutation)
         vm.warp(block.timestamp + 25 hours);
         vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(IShieldV1.EpochMismatch.selector, address(exec), uint64(1)));
-        shield.executeUnhalt(address(exec), 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShieldRegistryV1.EpochMismatch.selector, address(exec), uint64(1))
+        );
+        registry.executeUnhalt(address(exec), 1);
         vm.prank(enforcer);
-        shield.queueUnhalt(address(exec), 2);
+        registry.queueUnhalt(address(exec), 2);
         vm.warp(block.timestamp + 25 hours);
         vm.prank(admin);
-        shield.executeUnhalt(address(exec), 2);
-        assertFalse(shield.isHalted(address(exec)));
+        registry.executeUnhalt(address(exec), 2);
+        assertFalse(registry.isHalted(address(exec)));
         vm.prank(agent);
         shield.fire(id, 10e6, "");
     }
@@ -489,23 +499,23 @@ contract ShieldV1Test is Test {
     function test_suspensionAndPermanentRevocation() public {
         address venue = address(0x5E);
         vm.prank(enforcer);
-        shield.suspend(venue);
-        assertTrue(shield.isVenueBlocked(venue));
+        registry.suspend(venue);
+        assertTrue(registry.isVenueBlocked(venue));
         vm.prank(enforcer);
-        shield.queueLift(venue, 1);
+        registry.queueLift(venue, 1);
         vm.warp(block.timestamp + 25 hours);
         vm.prank(admin);
-        shield.executeLift(venue, 1);
-        assertFalse(shield.isVenueBlocked(venue));
+        registry.executeLift(venue, 1);
+        assertFalse(registry.isVenueBlocked(venue));
         vm.prank(enforcer);
-        shield.revoke(venue);
-        assertTrue(shield.isVenueBlocked(venue));
+        registry.revoke(venue);
+        assertTrue(registry.isVenueBlocked(venue));
         vm.prank(enforcer);
-        vm.expectRevert(abi.encodeWithSelector(IShieldV1.TargetRevoked.selector, venue));
-        shield.suspend(venue);
+        vm.expectRevert(abi.encodeWithSelector(IShieldRegistryV1.TargetRevoked.selector, venue));
+        registry.suspend(venue);
         vm.prank(enforcer);
-        vm.expectRevert(abi.encodeWithSelector(IShieldV1.TargetRevoked.selector, venue));
-        shield.queueLift(venue, 1);
+        vm.expectRevert(abi.encodeWithSelector(IShieldRegistryV1.TargetRevoked.selector, venue));
+        registry.queueLift(venue, 1);
     }
 
     function test_descriptorRevocationStopsFiringsThatReadIt() public {
@@ -514,14 +524,14 @@ contract ShieldV1Test is Test {
         p.trigger = _tree(address(gauge), principal, ExprLib.Kind.GT, 400);
         bytes32 id = _register(p);
         vm.prank(enforcer);
-        shield.revokeDescriptor(dBalance);
+        registry.revokeDescriptor(dBalance);
         vm.prank(agent);
         vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.TreeInvalid.selector, "descriptorRevoked"));
         shield.fire(id, 10e6, "");
         // and cannot be re-listed under the same id
         vm.prank(admin);
         vm.expectRevert();
-        shield.listDescriptor(
+        registry.listDescriptor(
             IDescriptors.Descriptor({
                 kind: IDescriptors.DescriptorKind.Shape,
                 target: address(0),
@@ -544,10 +554,10 @@ contract ShieldV1Test is Test {
     function test_rolesAdminCannotBeEnforcerAndListingGatesNewOnly() public {
         vm.prank(admin);
         vm.expectRevert(abi.encodeWithSelector(IShieldV1.AdminCannotBeEnforcer.selector, admin));
-        shield.setEnforcer(admin, true);
+        registry.setEnforcer(admin, true);
         bytes32 id = _register(_params());
         vm.prank(admin);
-        shield.setExecutor(address(exec), false); // delisted: live mandate keeps firing
+        registry.setExecutor(address(exec), false); // delisted: live mandate keeps firing
         vm.prank(agent);
         shield.fire(id, 10e6, "");
         vm.prank(principal);

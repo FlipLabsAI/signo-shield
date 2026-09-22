@@ -8,6 +8,11 @@
         "internalType": "address"
       },
       {
+        "name": "registry_",
+        "type": "address",
+        "internalType": "contract IShieldRegistryV1"
+      },
+      {
         "name": "feeBps_",
         "type": "uint16",
         "internalType": "uint16"
@@ -24,19 +29,6 @@
         "name": "",
         "type": "uint16",
         "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "RESTORE_DELAY",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint64",
-        "internalType": "uint64"
       }
     ],
     "stateMutability": "view"
@@ -187,211 +179,6 @@
   },
   {
     "type": "function",
-    "name": "delistDescriptor",
-    "inputs": [
-      {
-        "name": "id",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "descriptorId",
-    "inputs": [
-      {
-        "name": "d",
-        "type": "tuple",
-        "internalType": "struct IDescriptors.Descriptor",
-        "components": [
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum IDescriptors.DescriptorKind"
-          },
-          {
-            "name": "target",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "selector",
-            "type": "bytes4",
-            "internalType": "bytes4"
-          },
-          {
-            "name": "argCount",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "subjectArg",
-            "type": "int8",
-            "internalType": "int8"
-          },
-          {
-            "name": "subjectRule",
-            "type": "uint8",
-            "internalType": "enum IDescriptors.SubjectRule"
-          },
-          {
-            "name": "word",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "isSigned",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "mustBePositive",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "decimals",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "freshness",
-            "type": "uint8",
-            "internalType": "enum IDescriptors.Freshness"
-          },
-          {
-            "name": "maxAge",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "gasStipend",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "copyBytes",
-            "type": "uint16",
-            "internalType": "uint16"
-          }
-        ]
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "pure"
-  },
-  {
-    "type": "function",
-    "name": "descriptorOf",
-    "inputs": [
-      {
-        "name": "id",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "d",
-        "type": "tuple",
-        "internalType": "struct IDescriptors.Descriptor",
-        "components": [
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum IDescriptors.DescriptorKind"
-          },
-          {
-            "name": "target",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "selector",
-            "type": "bytes4",
-            "internalType": "bytes4"
-          },
-          {
-            "name": "argCount",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "subjectArg",
-            "type": "int8",
-            "internalType": "int8"
-          },
-          {
-            "name": "subjectRule",
-            "type": "uint8",
-            "internalType": "enum IDescriptors.SubjectRule"
-          },
-          {
-            "name": "word",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "isSigned",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "mustBePositive",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "decimals",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "freshness",
-            "type": "uint8",
-            "internalType": "enum IDescriptors.Freshness"
-          },
-          {
-            "name": "maxAge",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "gasStipend",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "copyBytes",
-            "type": "uint16",
-            "internalType": "uint16"
-          }
-        ]
-      },
-      {
-        "name": "listed",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "revoked",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "eip712Domain",
     "inputs": [],
     "outputs": [
@@ -432,42 +219,6 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "executeLift",
-    "inputs": [
-      {
-        "name": "target",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "epoch",
-        "type": "uint64",
-        "internalType": "uint64"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "executeUnhalt",
-    "inputs": [
-      {
-        "name": "listed",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "epoch",
-        "type": "uint64",
-        "internalType": "uint64"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -522,19 +273,6 @@
         "internalType": "uint256"
       }
     ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "freezeAgent",
-    "inputs": [
-      {
-        "name": "agent",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
@@ -675,262 +413,6 @@
   },
   {
     "type": "function",
-    "name": "halt",
-    "inputs": [
-      {
-        "name": "listed",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "isAgentFrozen",
-    "inputs": [
-      {
-        "name": "agent",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isEnforcer",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isEvaluatorListed",
-    "inputs": [
-      {
-        "name": "evaluator",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isExecutorListed",
-    "inputs": [
-      {
-        "name": "executor",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isHalted",
-    "inputs": [
-      {
-        "name": "listed",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isRevoked",
-    "inputs": [
-      {
-        "name": "target",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isSuspended",
-    "inputs": [
-      {
-        "name": "target",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isVenueBlocked",
-    "inputs": [
-      {
-        "name": "target",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "listDescriptor",
-    "inputs": [
-      {
-        "name": "d",
-        "type": "tuple",
-        "internalType": "struct IDescriptors.Descriptor",
-        "components": [
-          {
-            "name": "kind",
-            "type": "uint8",
-            "internalType": "enum IDescriptors.DescriptorKind"
-          },
-          {
-            "name": "target",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "selector",
-            "type": "bytes4",
-            "internalType": "bytes4"
-          },
-          {
-            "name": "argCount",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "subjectArg",
-            "type": "int8",
-            "internalType": "int8"
-          },
-          {
-            "name": "subjectRule",
-            "type": "uint8",
-            "internalType": "enum IDescriptors.SubjectRule"
-          },
-          {
-            "name": "word",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "isSigned",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "mustBePositive",
-            "type": "bool",
-            "internalType": "bool"
-          },
-          {
-            "name": "decimals",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "freshness",
-            "type": "uint8",
-            "internalType": "enum IDescriptors.Freshness"
-          },
-          {
-            "name": "maxAge",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "gasStipend",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "copyBytes",
-            "type": "uint16",
-            "internalType": "uint16"
-          }
-        ]
-      }
-    ],
-    "outputs": [
-      {
-        "name": "id",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "nonces",
     "inputs": [
       {
@@ -973,42 +455,6 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "queueLift",
-    "inputs": [
-      {
-        "name": "target",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "epoch",
-        "type": "uint64",
-        "internalType": "uint64"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "queueUnhalt",
-    "inputs": [
-      {
-        "name": "listed",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "epoch",
-        "type": "uint64",
-        "internalType": "uint64"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -1103,36 +549,23 @@
   },
   {
     "type": "function",
-    "name": "renounceOwnership",
+    "name": "registry",
     "inputs": [],
-    "outputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IShieldRegistryV1"
+      }
+    ],
     "stateMutability": "view"
   },
   {
     "type": "function",
-    "name": "revoke",
-    "inputs": [
-      {
-        "name": "target",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
+    "name": "renounceOwnership",
+    "inputs": [],
     "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "revokeDescriptor",
-    "inputs": [
-      {
-        "name": "id",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1165,60 +598,6 @@
         "name": "signature",
         "type": "bytes",
         "internalType": "bytes"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setEnforcer",
-    "inputs": [
-      {
-        "name": "enforcer",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "enabled",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setEvaluator",
-    "inputs": [
-      {
-        "name": "evaluator",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "listed",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setExecutor",
-    "inputs": [
-      {
-        "name": "executor",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "listed",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -1271,19 +650,6 @@
   },
   {
     "type": "function",
-    "name": "suspend",
-    "inputs": [
-      {
-        "name": "target",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "transferOwnership",
     "inputs": [
       {
@@ -1296,155 +662,9 @@
     "stateMutability": "nonpayable"
   },
   {
-    "type": "function",
-    "name": "unfreezeAgent",
-    "inputs": [
-      {
-        "name": "agent",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "event",
-    "name": "AgentFrozen",
-    "inputs": [
-      {
-        "name": "agent",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "enforcer",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "AgentUnfrozen",
-    "inputs": [
-      {
-        "name": "agent",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "enforcer",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "DescriptorListed",
-    "inputs": [
-      {
-        "name": "id",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "listed",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "DescriptorRevoked",
-    "inputs": [
-      {
-        "name": "id",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "by",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
     "type": "event",
     "name": "EIP712DomainChanged",
     "inputs": [],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "EnforcerSet",
-    "inputs": [
-      {
-        "name": "enforcer",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "enabled",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "EvaluatorListed",
-    "inputs": [
-      {
-        "name": "evaluator",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "listed",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ExecutorListed",
-    "inputs": [
-      {
-        "name": "executor",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "listed",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
     "anonymous": false
   },
   {
@@ -1466,81 +686,6 @@
     "inputs": [
       {
         "name": "recipient",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "Halted",
-    "inputs": [
-      {
-        "name": "listed",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "epoch",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      },
-      {
-        "name": "by",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "LiftExecuted",
-    "inputs": [
-      {
-        "name": "target",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "epoch",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      },
-      {
-        "name": "by",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "LiftQueued",
-    "inputs": [
-      {
-        "name": "target",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "epoch",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      },
-      {
-        "name": "by",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -1711,100 +856,6 @@
     "anonymous": false
   },
   {
-    "type": "event",
-    "name": "Revoked",
-    "inputs": [
-      {
-        "name": "target",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "by",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "Suspended",
-    "inputs": [
-      {
-        "name": "target",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "epoch",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      },
-      {
-        "name": "by",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "UnhaltExecuted",
-    "inputs": [
-      {
-        "name": "listed",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "epoch",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      },
-      {
-        "name": "by",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "UnhaltQueued",
-    "inputs": [
-      {
-        "name": "listed",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "epoch",
-        "type": "uint64",
-        "indexed": false,
-        "internalType": "uint64"
-      },
-      {
-        "name": "by",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
     "type": "error",
     "name": "ActionNotSupported",
     "inputs": [
@@ -1835,22 +886,6 @@
     "type": "error",
     "name": "BadSignature",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "EpochMismatch",
-    "inputs": [
-      {
-        "name": "target",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "epoch",
-        "type": "uint64",
-        "internalType": "uint64"
-      }
-    ]
   },
   {
     "type": "error",
@@ -1935,11 +970,6 @@
   },
   {
     "type": "error",
-    "name": "NotEnforcer",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "NotPrincipal",
     "inputs": []
   },
@@ -2004,22 +1034,6 @@
   },
   {
     "type": "error",
-    "name": "RestoreNotReady",
-    "inputs": [
-      {
-        "name": "target",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "epoch",
-        "type": "uint64",
-        "internalType": "uint64"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "SafeERC20FailedOperation",
     "inputs": [
       {
@@ -2058,17 +1072,6 @@
         "name": "str",
         "type": "string",
         "internalType": "string"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "TargetRevoked",
-    "inputs": [
-      {
-        "name": "target",
-        "type": "address",
-        "internalType": "address"
       }
     ]
   }

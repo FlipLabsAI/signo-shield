@@ -69,11 +69,11 @@ contract V1ReviewControlsTest is V1ReviewBase {
         vm.expectRevert();
         _fire(id, 1_001e18, "");
         vm.prank(enforcer);
-        core.freezeAgent(agent);
+        registry.freezeAgent(agent);
         vm.expectRevert();
         _fire(id, 1e18, "");
         vm.prank(enforcer);
-        core.unfreezeAgent(agent);
+        registry.unfreezeAgent(agent);
         _fire(id, 1e18, "");
         vm.warp(uint256(p.validUntil) + 1);
         vm.expectRevert();
@@ -229,7 +229,7 @@ contract V1ReviewControlsTest is V1ReviewBase {
         vm.expectRevert();
         _register(p);
         ReviewUnknownSemantics odd = new ReviewUnknownSemantics();
-        core.setExecutor(address(odd), true);
+        registry.setExecutor(address(odd), true);
         p = _params(address(odd), bytes32(uint256(99)));
         vm.expectRevert();
         _register(p);
@@ -246,7 +246,7 @@ contract V1ReviewControlsTest is V1ReviewBase {
         d.gasStipend = 300_000;
         d.copyBytes = 32;
         ExprLib.Read[] memory reads = new ExprLib.Read[](1);
-        reads[0] = ExprLib.Read(core.listDescriptor(d), address(lens), "", ExprLib.Subject.None, 0);
+        reads[0] = ExprLib.Read(registry.listDescriptor(d), address(lens), "", ExprLib.Subject.None, 0);
         ExprLib.Node[] memory nodes = new ExprLib.Node[](3);
         nodes[0] = ExprLib.Node(uint8(ExprLib.Kind.READ), 0, 0);
         nodes[1] = ExprLib.Node(uint8(ExprLib.Kind.CONST), 1, 0);
@@ -268,7 +268,7 @@ contract V1ReviewControlsTest is V1ReviewBase {
         bytes32 id = _register(_genericParams(generic.ACTION_TRANSFORM(), _genericConfig()));
         bytes memory route = _route(_swap(address(asset), 100e18, generic.nextClone(id)));
         vm.prank(enforcer);
-        core.suspend(address(generic));
+        registry.suspend(address(generic));
         vm.expectRevert(
             abi.encodeWithSelector(
                 IShieldV1.MandateBlocked.selector, id, IShieldV1.MandateReason.EXECUTOR_HALTED
@@ -276,9 +276,9 @@ contract V1ReviewControlsTest is V1ReviewBase {
         );
         _fire(id, 100e18, route);
         vm.prank(enforcer);
-        core.suspend(address(evaluator));
+        registry.suspend(address(evaluator));
         vm.prank(enforcer);
-        core.revoke(address(generic));
+        registry.revoke(address(generic));
         vm.expectRevert(
             abi.encodeWithSelector(
                 IShieldV1.MandateBlocked.selector, id, IShieldV1.MandateReason.EXECUTOR_HALTED
@@ -296,10 +296,10 @@ contract V1ReviewControlsTest is V1ReviewBase {
         MockAddressesProvider provider = new MockAddressesProvider(address(oracle), address(dp));
         ReviewSupplyPool pool = new ReviewSupplyPool(address(provider), receipt);
         AaveV3AdapterV1 adapter = new AaveV3AdapterV1(address(core), IPool(address(pool)));
-        core.setExecutor(address(adapter), true);
+        registry.setExecutor(address(adapter), true);
         bytes32 id = _register(_params(address(adapter), adapter.ACTION_SUPPLY()));
         vm.prank(enforcer);
-        core.revoke(address(pool));
+        registry.revoke(address(pool));
         vm.expectRevert();
         _fire(id, 100e18, "");
         assertEq(receipt.balanceOf(principal), 0);
@@ -308,45 +308,45 @@ contract V1ReviewControlsTest is V1ReviewBase {
 
     function test_controlHaltAndLiftEpochsDelayRolesAndPermanentRevocation() public {
         vm.expectRevert();
-        core.halt(address(generic));
+        registry.halt(address(generic));
         vm.prank(enforcer);
-        core.halt(address(generic));
+        registry.halt(address(generic));
         vm.prank(enforcer);
-        core.queueUnhalt(address(generic), 1);
+        registry.queueUnhalt(address(generic), 1);
         vm.expectRevert();
-        core.executeUnhalt(address(generic), 1);
+        registry.executeUnhalt(address(generic), 1);
         vm.warp(vm.getBlockTimestamp() + 1 days);
         vm.prank(enforcer);
         vm.expectRevert();
-        core.executeUnhalt(address(generic), 1);
-        core.executeUnhalt(address(generic), 1);
-        assertFalse(core.isHalted(address(generic)));
+        registry.executeUnhalt(address(generic), 1);
+        registry.executeUnhalt(address(generic), 1);
+        assertFalse(registry.isHalted(address(generic)));
         vm.startPrank(enforcer);
-        core.halt(address(generic));
-        core.queueUnhalt(address(generic), 2);
-        core.halt(address(generic));
+        registry.halt(address(generic));
+        registry.queueUnhalt(address(generic), 2);
+        registry.halt(address(generic));
         vm.stopPrank();
         vm.warp(vm.getBlockTimestamp() + 1 days);
         vm.expectRevert();
-        core.executeUnhalt(address(generic), 2);
+        registry.executeUnhalt(address(generic), 2);
         vm.startPrank(enforcer);
-        core.suspend(address(dex));
-        core.queueLift(address(dex), 1);
-        core.suspend(address(dex));
+        registry.suspend(address(dex));
+        registry.queueLift(address(dex), 1);
+        registry.suspend(address(dex));
         vm.stopPrank();
         vm.warp(vm.getBlockTimestamp() + 1 days);
         vm.expectRevert();
-        core.executeLift(address(dex), 1);
+        registry.executeLift(address(dex), 1);
         vm.prank(enforcer);
-        core.queueLift(address(dex), 2);
+        registry.queueLift(address(dex), 2);
         vm.prank(enforcer);
-        core.revoke(address(dex));
+        registry.revoke(address(dex));
         vm.warp(vm.getBlockTimestamp() + 1 days);
         vm.expectRevert();
-        core.executeLift(address(dex), 2);
-        assertTrue(core.isVenueBlocked(address(dex)));
+        registry.executeLift(address(dex), 2);
+        assertTrue(registry.isVenueBlocked(address(dex)));
         vm.expectRevert();
-        core.setEnforcer(address(this), true);
+        registry.setEnforcer(address(this), true);
         vm.expectRevert();
         core.transferOwnership(enforcer);
     }

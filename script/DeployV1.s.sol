@@ -5,6 +5,7 @@ import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
 import {IPool} from "contracts/adapters/aave-v3/interfaces/IAaveV3.sol";
 import {ShieldV1} from "contracts/v1/ShieldV1.sol";
+import {ShieldRegistryV1} from "contracts/v1/ShieldRegistryV1.sol";
 import {IDescriptors} from "contracts/v1/interfaces/IDescriptors.sol";
 import {ExpressionEvaluator} from "contracts/v1/ExpressionEvaluator.sol";
 import {GenericExecutorV1} from "contracts/v1/GenericExecutorV1.sol";
@@ -24,6 +25,7 @@ contract DeployV1 is Script {
     uint256 internal constant ARBITRUM_ONE = 42_161;
 
     struct Deployed {
+        ShieldRegistryV1 registry;
         ShieldV1 shield;
         ExpressionEvaluator evaluator;
         GenericExecutorV1 generic;
@@ -52,21 +54,24 @@ contract DeployV1 is Script {
         if (enforcer != address(0) && (enforcer == deployer || enforcer == owner)) {
             revert("ENFORCER must be neither deployer nor owner");
         }
-        d.shield = new ShieldV1(deployer, feeBps);
-        d.evaluator = new ExpressionEvaluator(d.shield);
+        d.registry = new ShieldRegistryV1(deployer);
+        d.shield = new ShieldV1(deployer, d.registry, feeBps);
+        d.evaluator = new ExpressionEvaluator(d.registry);
         d.generic = new GenericExecutorV1(address(d.shield));
         d.aave = new AaveV3AdapterV1(address(d.shield), IPool(pool));
-        d.shield.setEvaluator(address(d.evaluator), true);
-        d.shield.setExecutor(address(d.generic), true);
+        d.registry.setEvaluator(address(d.evaluator), true);
+        d.registry.setExecutor(address(d.generic), true);
         // The claim executor is not deployed or listed at launch: claims wait
         // for per-venue claimable reads and receiver rules (FLIP-280 F2, v1.1).
-        d.shield.setExecutor(address(d.aave), true);
-        _listCatalog(d.shield, pool);
+        d.registry.setExecutor(address(d.aave), true);
+        _listCatalog(d.registry, pool);
         d.shield.setFeeRecipient(feeRecipient);
-        if (enforcer != address(0)) d.shield.setEnforcer(enforcer, true);
+        if (enforcer != address(0)) d.registry.setEnforcer(enforcer, true);
+        d.registry.transferOwnership(owner);
         d.shield.transferOwnership(owner);
         vm.stopBroadcast();
         console.log("chainId            ", block.chainid);
+        console.log("ShieldRegistryV1   ", address(d.registry));
         console.log("ShieldV1           ", address(d.shield));
         console.log("ExpressionEvaluator", address(d.evaluator));
         console.log("GenericExecutorV1  ", address(d.generic));
@@ -84,7 +89,7 @@ contract DeployV1 is Script {
     /// @dev The launch read catalog (the read-catalog note in docs/).
     ///      Shape descriptors are chain-independent; per-address ones are
     ///      listed for the chains they exist on.
-    function _listCatalog(ShieldV1 shield, address pool) internal {
+    function _listCatalog(ShieldRegistryV1 shield, address pool) internal {
         _log(
             "erc20.balanceOf",
             shield.listDescriptor(_shape(bytes4(keccak256("balanceOf(address)")), 1, 0, true, 100_000, 32))
