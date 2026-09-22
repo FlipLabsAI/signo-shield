@@ -32,7 +32,10 @@ deny = "warnings"
 # Mandate validity is a timestamp window by design (ERC-8226 uses the same
 # `validFrom` / `validUntil` seconds). A validator can nudge a block by seconds,
 # not by the days a window spans, so the comparison is the intended check.
-exclude_lints = ["block-timestamp"]
+exclude_lints = ["block-timestamp", "require-revert-in-loop"]
+# `require-revert-in-loop`: the v1 expression evaluator walks a bounded tree
+# and reverts on the first fault by design (a tree with one bad node is not a
+# tree that can be judged), and the core checks every venue pair in a route.
 
 [profile.ci]
 verbosity = 3

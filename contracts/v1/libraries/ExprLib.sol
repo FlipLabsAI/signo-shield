@@ -138,6 +138,7 @@ library ExprLib {
     }
 
     function _checkRead(Read memory r, uint256 i, IDescriptors catalog, address principal) private view {
+        // forge-lint: disable-next-line(calls-loop)
         (IDescriptors.Descriptor memory d, bool listed, bool revoked) = catalog.descriptorOf(r.descriptor);
         if (!listed || revoked) revert IEvaluatorV1.TreeInvalid("descriptor");
         if (r.args.length != uint256(d.argCount) * 32) revert IEvaluatorV1.TreeInvalid("args");
@@ -148,9 +149,11 @@ library ExprLib {
         }
         if (d.subjectRule == IDescriptors.SubjectRule.PrincipalRequired) {
             if (r.subject == Subject.None) revert IEvaluatorV1.TreeInvalid("subject");
+            // forge-lint: disable-next-line(unsafe-typecast)
             if (d.subjectArg < 0 || uint8(d.subjectArg) >= d.argCount) revert IEvaluatorV1.TreeInvalid("subjectArg");
             if (r.subject == Subject.Principal) {
                 bytes memory args = r.args;
+                // forge-lint: disable-next-line(unsafe-typecast)
                 uint256 off = uint256(uint8(d.subjectArg)) * 32;
                 uint256 wordv;
                 assembly ("memory-safe") {
@@ -167,17 +170,39 @@ library ExprLib {
 
     /// @dev One bounded read through its descriptor. Reverts on any failure.
     function readValue(Read memory r, uint256 i, IDescriptors catalog) internal view returns (int256 value) {
-        (IDescriptors.Descriptor memory d,,) = catalog.descriptorOf(r.descriptor);
-        bytes memory data = abi.encodePacked(d.selector, r.args);
-        uint256 need = uint256(d.copyBytes);
-        if (need < uint256(d.word + 1) * 32) need = uint256(d.word + 1) * 32;
-        if (d.freshness == IDescriptors.Freshness.ChainlinkRound && need < 160) need = 160;
+        // A revoked descriptor blocks every firing that reads through it;
+        // a delisted one only stops new registrations (checked in shape).
+        // forge-lint: disable-next-line(calls-loop,unused-return)
+        (IDescriptors.Descriptor memory d,, bool revoked) = catalog.descriptorOf(r.descriptor);
+        if (revoked) revert IEvaluatorV1.TreeInvalid("descriptorRevoked");
+        uint256 need = _needBytes(d);
+        bytes memory out = _staticRead(r.target, d.gasStipend, abi.encodePacked(d.selector, r.args), need, i);
+        if (d.freshness == IDescriptors.Freshness.ChainlinkRound) _checkRound(out, d.maxAge, i);
+        uint256 raw = _word(out, d.word);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        if (!d.isSigned && raw > uint256(type(int256).max)) revert IEvaluatorV1.ValueOutOfRange(i);
+        // Signed reads are int256 bit patterns; unsigned ones were range-checked above.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        value = int256(raw);
+        if (d.mustBePositive && value <= 0) revert IEvaluatorV1.ReadNotPositive(i);
+    }
 
-        bytes memory out = new bytes(need);
+    function _needBytes(IDescriptors.Descriptor memory d) private pure returns (uint256 need) {
+        need = uint256(d.copyBytes);
+        uint256 wordEnd = uint256(d.word + 1) * 32;
+        if (need < wordEnd) need = wordEnd;
+        if (d.freshness == IDescriptors.Freshness.ChainlinkRound && need < 160) need = 160;
+    }
+
+    /// @dev The staticcall with the descriptor's stipend; copies exactly `need` bytes, never more.
+    function _staticRead(address target, uint256 stipend, bytes memory data, uint256 need, uint256 i)
+        private
+        view
+        returns (bytes memory out)
+    {
+        out = new bytes(need);
         bool ok;
         uint256 size;
-        address target = r.target;
-        uint256 stipend = d.gasStipend;
         assembly ("memory-safe") {
             ok := staticcall(stipend, target, add(data, 32), mload(data), 0, 0)
             size := returndatasize()
@@ -185,33 +210,24 @@ library ExprLib {
         }
         if (!ok) revert IEvaluatorV1.ReadFailed(i, "");
         if (size < need) revert IEvaluatorV1.ReadTooShort(i, size, need);
+    }
 
-        uint256 raw;
-        uint256 wordOff = uint256(d.word) * 32;
+    function _word(bytes memory out, uint8 word) private pure returns (uint256 raw) {
+        uint256 off = uint256(word) * 32;
         assembly ("memory-safe") {
-            raw := mload(add(add(out, 32), wordOff))
+            raw := mload(add(add(out, 32), off))
         }
-        if (d.freshness == IDescriptors.Freshness.ChainlinkRound) {
-            uint256 roundId;
-            uint256 updatedAt;
-            uint256 answeredInRound;
-            assembly ("memory-safe") {
-                roundId := mload(add(out, 32))
-                updatedAt := mload(add(out, 128))
-                answeredInRound := mload(add(out, 160))
-            }
-            if (updatedAt == 0 || updatedAt > block.timestamp || block.timestamp - updatedAt > d.maxAge) {
-                revert IEvaluatorV1.ReadStale(i);
-            }
-            if (answeredInRound < roundId) revert IEvaluatorV1.ReadStale(i);
+    }
+
+    /// @dev Chainlink's round rule over the five copied words.
+    function _checkRound(bytes memory out, uint32 maxAge, uint256 i) private view {
+        uint256 roundId = _word(out, 0);
+        uint256 updatedAt = _word(out, 3);
+        uint256 answeredInRound = _word(out, 4);
+        if (updatedAt == 0 || updatedAt > block.timestamp || block.timestamp - updatedAt > maxAge) {
+            revert IEvaluatorV1.ReadStale(i);
         }
-        if (d.isSigned) {
-            value = int256(raw);
-        } else {
-            if (raw > uint256(type(int256).max)) revert IEvaluatorV1.ValueOutOfRange(i);
-            value = int256(raw);
-        }
-        if (d.mustBePositive && value <= 0) revert IEvaluatorV1.ReadNotPositive(i);
+        if (answeredInRound < roundId) revert IEvaluatorV1.ReadStale(i);
     }
 
     // ------------------------------------------------------------ evaluation
@@ -225,6 +241,7 @@ library ExprLib {
         for (uint256 i = 0; i < t.nodes.length; i++) {
             if (t.nodes[i].kind == uint8(Kind.READ)) needed[t.nodes[i].a] = true;
         }
+        // One external read per needed index is the design; each is bounded by its descriptor.
         for (uint256 i = 0; i < nr; i++) {
             // forge-lint: disable-next-line(calls-loop)
             if (needed[i]) vals[i] = readValue(t.reads[i], i, catalog);
@@ -255,6 +272,8 @@ library ExprLib {
             Node memory n = t.nodes[i];
             Kind k = Kind(n.kind);
             if (k == Kind.CONST) {
+                // A constant is the int256 bit pattern by definition; negatives are encoded this way.
+                // forge-lint: disable-next-line(unsafe-typecast)
                 v[i] = int256(n.a);
             } else if (k == Kind.READ) {
                 v[i] = live[n.a];
@@ -265,7 +284,9 @@ library ExprLib {
                 if (!env.haveBefore || n.a >= env.beforeValues.length) revert IEvaluatorV1.TreeInvalid("beforeIndex");
                 v[i] = env.beforeValues[n.a];
             } else if (k == Kind.AMOUNT) {
+                // forge-lint: disable-next-line(unsafe-typecast)
                 if (env.amount > uint256(type(int256).max)) revert IEvaluatorV1.ValueOutOfRange(i);
+                // forge-lint: disable-next-line(unsafe-typecast)
                 v[i] = int256(env.amount);
             } else if (k == Kind.ADD) {
                 v[i] = v[n.a] + v[n.b];

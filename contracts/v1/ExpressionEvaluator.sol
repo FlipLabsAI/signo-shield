@@ -29,7 +29,7 @@ contract ExpressionEvaluator is IEvaluatorV1 {
         // One liveness read per Read, whatever node names it: a read that
         // cannot be taken is refused at signing.
         for (uint256 i = 0; i < t.reads.length; i++) {
-            // forge-lint: disable-next-line(calls-loop)
+            // forge-lint: disable-next-line(calls-loop,unused-return)
             ExprLib.readValue(t.reads[i], i, catalog);
         }
     }
