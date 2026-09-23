@@ -254,9 +254,10 @@ library ExprLib {
         uint256 raw = _word(out, d.word);
         // An unsigned value above the int256 range is refused, unless the
         // descriptor says its top means "unbounded" (Aave's no-debt health
-        // factor): then it reads as the top, above every limit. An amount never
-        // saturates, so two different amounts never read as equal (FLIP-280
-        // round 7 finding, round 8). Arithmetic on the top value is checked.
+        // factor): then it reads as the top of the signed range. The reviewed
+        // catalog leaves amount descriptors unflagged; the registry cannot
+        // prove that classification. A wrongly flagged amount would saturate
+        // too (FLIP-280 O1). Arithmetic on the top value remains checked.
         // forge-lint: disable-next-line(unsafe-typecast)
         if (!d.isSigned && raw > uint256(type(int256).max)) {
             if (!d.unboundedTop) revert IEvaluatorV1.ValueOutOfRange(i);

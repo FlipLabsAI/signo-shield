@@ -46,7 +46,8 @@ interface IDescriptors {
         // Unsigned only: the value's top of range means "unbounded" (Aave reports
         // "no debt" as a health factor of type(uint256).max), so a value above the
         // int256 range reads as the top of that range. Every other descriptor
-        // refuses such a value: two amounts must never read as equal (round 8).
+        // refuses such a value. Amount strictness relies on correct catalog
+        // classification: the registry cannot distinguish a ratio from an amount.
         bool unboundedTop;
     }
 

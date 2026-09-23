@@ -12,8 +12,14 @@ Full design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Status
 
-**Core and Aave adapter built; not yet deployed.** The contracts enforce the
-design in `docs/ARCHITECTURE.md`:
+**Execute is staff-only for now** (Austin, 23 September 2026), including the
+Shield v1 rollout. Publishing or deploying v1 does not open Execute to
+non-staff users. This is an app rollout policy, not an additional on-chain
+staff role; the contracts enforce their own mandate and caller rules.
+
+The deployed v0.1 contracts are recorded in `deployments/manifest.json`.
+The v1 implementation is under `contracts/v1/`; the v0.1 design in
+`docs/ARCHITECTURE.md` describes these earlier components:
 
 - `contracts/core/SignoShield.sol`: the mandate record, budget accounting,
   reason codes, amendment rules, revocation, the enforcer freeze and the
@@ -30,8 +36,10 @@ aggregator calldata is replayed through the swap leg, and the Shield firing is
 shown to do exactly what the app's own action plan does. See
 [Build and test](#build-and-test) and [`docs/TESTS.md`](docs/TESTS.md).
 
-Not built: the Tier 1 bounded executor (research scope), the execution signer,
-the app integration. Deployed on X Layer (chain 196); `deployments/manifest.json` carries the addresses and the source commit, and `docs/TRUST.md` states what each party can and cannot do.
+The repository also includes the Tier 1 bounded executor and its tests.
+`deployments/manifest.json` carries deployed addresses and source commits;
+`docs/TRUST.md` describes the v0.1 trust boundaries. A successful build or
+review of a newer version is not a public-release decision.
 
 ## Build and test
 

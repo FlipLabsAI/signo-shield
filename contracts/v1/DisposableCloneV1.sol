@@ -20,7 +20,8 @@ contract DisposableCloneV1 {
     using SafeERC20 for IERC20;
 
     address public immutable executor;
-    /// @notice The owner this clone swept to; zero until the firing finishes.
+    /// @notice The owner this clone swept to; zero until this clone's sweep
+    ///         completes (not the whole firing: the core still settles after).
     ///         Packed with the two flags: one storage slot per firing.
     address public owner;
     bool private _started;
@@ -86,10 +87,13 @@ contract DisposableCloneV1 {
     }
 
     /// @notice Send the whole balance of each token to the owner this clone
-    ///         swept to. Anyone may call it, only once the firing is over, and
-    ///         it pays no one else: a token the mandate did not declare (a
-    ///         protocol that paid the caller more than was declared, a
-    ///         transfer after the firing) still reaches the owner.
+    ///         swept to. Anyone may call it, only after this clone's sweep
+    ///         completes, and it pays no one else: a token the mandate did not
+    ///         declare (a protocol that paid the caller more than was declared,
+    ///         a transfer after the firing) still reaches the owner. It opens
+    ///         before the core settles the firing (fee, outcome), so a token
+    ///         callback there can reach it; it still pays only the owner, and
+    ///         a failed outcome rolls it back with the firing (FLIP-280 G8-L1).
     function sendToOwner(address[] calldata tokens) external {
         address to = owner;
         if (to == address(0)) revert NotFinished();
