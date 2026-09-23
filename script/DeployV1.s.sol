@@ -10,10 +10,12 @@ import {IDescriptors} from "contracts/v1/interfaces/IDescriptors.sol";
 import {ExpressionEvaluator} from "contracts/v1/ExpressionEvaluator.sol";
 import {GenericExecutorV1} from "contracts/v1/GenericExecutorV1.sol";
 import {AaveV3AdapterV1} from "contracts/v1/AaveV3AdapterV1.sol";
+import {ClaimExecutorV1} from "contracts/v1/ClaimExecutorV1.sol";
+import {IShieldRegistryV1} from "contracts/v1/interfaces/IShieldRegistryV1.sol";
 
 /// @title DeployV1
-/// @notice Shield v1 on one chain: the core, the expression evaluator, the two
-///         Tier 1 executors and the Aave adapter, listed; the launch read
+/// @notice Shield v1 on one chain: the core, the expression evaluator, the
+///         generic executor, the claims executor and the Aave adapter, listed; the launch read
 ///         catalog listed by content id; fee recipient and enforcer set; the
 ///         admin seat handed to SHIELD_OWNER (two-step, to be accepted).
 ///
@@ -30,6 +32,7 @@ contract DeployV1 is Script {
         ExpressionEvaluator evaluator;
         GenericExecutorV1 generic;
         AaveV3AdapterV1 aave;
+        ClaimExecutorV1 claims;
     }
 
     function run() external returns (Deployed memory d) {
@@ -61,9 +64,11 @@ contract DeployV1 is Script {
         d.aave = new AaveV3AdapterV1(address(d.shield), IPool(pool));
         d.registry.setEvaluator(address(d.evaluator), true);
         d.registry.setExecutor(address(d.generic), true);
-        // The claim executor is not deployed or listed at launch: claims wait
-        // for per-venue claimable reads and receiver rules (FLIP-280 F2, v1.1).
         d.registry.setExecutor(address(d.aave), true);
+        // Collect-only claims, each through a listed claim rule that writes the
+        // owner into the call (FLIP-280 F1/F2 closed 23 Sep; Pendle in launch scope).
+        d.claims = new ClaimExecutorV1(address(d.shield));
+        d.registry.setExecutor(address(d.claims), true);
         _listCatalog(d.registry, pool);
         d.shield.setFeeRecipient(feeRecipient);
         if (enforcer != address(0)) d.registry.setEnforcer(enforcer, true);
@@ -76,6 +81,7 @@ contract DeployV1 is Script {
         console.log("ExpressionEvaluator", address(d.evaluator));
         console.log("GenericExecutorV1  ", address(d.generic));
         console.log("AaveV3AdapterV1    ", address(d.aave));
+        console.log("ClaimExecutorV1    ", address(d.claims));
         console.log("Aave pool          ", pool);
         console.log("fee bps            ", feeBps);
         console.log("fee recipient      ", feeRecipient);
@@ -160,7 +166,50 @@ contract DeployV1 is Script {
                 0xF959E1B5cA535C28aD24F7f672Bf1A93900810cF,
                 3600
             );
+            _pendleClaim(shield, PENDLE_USDG_MARKET);
         }
+    }
+
+    /// @dev Pendle's USDG market on X Layer (expiry 29 Oct 2026; not a proxy). Its reward
+    ///      claim is permissionless and pays the user named in it: `redeemRewards(owner)`.
+    ///      The claimable read is the owner's accrued PENDLE in that market
+    ///      (`userReward(PENDLE, owner)`, word 1): a lower bound, since the market only
+    ///      brings `accrued` up to date when the user interacts.
+    address public constant PENDLE_USDG_MARKET = 0xcFB506cb34DD340e80d3dF8764182a5187636032;
+    address public constant PENDLE_XLAYER = 0x5E49E1f85813F2B65858860A3FA231b4186f2e0E;
+
+    function _pendleClaim(ShieldRegistryV1 shield, address market) internal {
+        _log("pendle.usdg.userReward.accrued", shield.listDescriptor(pendleAccrued(market)));
+        _log("pendle.usdg.redeemRewards", shield.listClaimRule(pendleRedeemRewards(market)));
+    }
+
+    function pendleAccrued(address market) public pure returns (IDescriptors.Descriptor memory) {
+        return IDescriptors.Descriptor({
+            kind: IDescriptors.DescriptorKind.PerAddress,
+            target: market,
+            selector: bytes4(keccak256("userReward(address,address)")),
+            argCount: 2,
+            subjectArg: 1,
+            subjectRule: IDescriptors.SubjectRule.PrincipalRequired,
+            word: 1,
+            isSigned: false,
+            mustBePositive: false,
+            decimals: 18,
+            freshness: IDescriptors.Freshness.None,
+            maxAge: 0,
+            gasStipend: 100_000,
+            copyBytes: 64
+        });
+    }
+
+    function pendleRedeemRewards(address market) public pure returns (IShieldRegistryV1.ClaimRule memory) {
+        return IShieldRegistryV1.ClaimRule({
+            target: market,
+            selector: bytes4(keccak256("redeemRewards(address)")),
+            argCount: 1,
+            ownerArgs: 1,
+            args: abi.encode(address(0))
+        });
     }
 
     /// @dev List a feed's round descriptor and bind it as the fresh round of `token`.

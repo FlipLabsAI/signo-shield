@@ -17,6 +17,8 @@ import {IDescriptors} from "./interfaces/IDescriptors.sol";
 /// queued restoration after the delay. An enforcer freezes agents, halts
 /// listed contracts, suspends and revokes venues and descriptors, and queues
 /// restorations. The admin cannot be an enforcer.
+/// Claim rules (FLIP-280 F1/F2, 23 Sep): the admin lists the exact claim calls
+/// a claim mandate may sign; an enforcer can revoke one for every mandate.
 contract ShieldRegistryV1 is IShieldRegistryV1, IDescriptors, Ownable2Step {
     string public constant VERSION = "1.0.0";
     uint64 public constant RESTORE_DELAY = 24 hours;
@@ -49,6 +51,9 @@ contract ShieldRegistryV1 is IShieldRegistryV1, IDescriptors, Ownable2Step {
     }
 
     mapping(address token => PriceRound) private _priceRounds;
+    mapping(bytes32 id => ClaimRule) private _claimRules;
+    mapping(bytes32 id => bool) private _claimRuleListed;
+    mapping(bytes32 id => bool) private _claimRuleRevoked;
 
     constructor(address initialOwner) Ownable(initialOwner) {}
 
@@ -199,6 +204,22 @@ contract ShieldRegistryV1 is IShieldRegistryV1, IDescriptors, Ownable2Step {
         emit Revoked(target, msg.sender);
     }
 
+    /// @inheritdoc IShieldRegistryV1
+    function claimRuleOf(bytes32 id)
+        external
+        view
+        returns (ClaimRule memory rule, bool listed, bool revoked)
+    {
+        return (_claimRules[id], _claimRuleListed[id], _claimRuleRevoked[id]);
+    }
+
+    /// @notice Permanently refuse a claim rule: no live mandate may make that claim again.
+    function revokeClaimRule(bytes32 id) external onlyEnforcer {
+        _claimRuleRevoked[id] = true;
+        _claimRuleListed[id] = false;
+        emit ClaimRuleRevoked(id, msg.sender);
+    }
+
     /// @notice Permanently refuse a descriptor: no firing may read through it.
     function revokeDescriptor(bytes32 id) external onlyEnforcer {
         _descriptorRevoked[id] = true;
@@ -284,6 +305,36 @@ contract ShieldRegistryV1 is IShieldRegistryV1, IDescriptors, Ownable2Step {
         }
         _priceRounds[token] = PriceRound({descriptor: descriptor, feed: feed});
         emit PriceRoundSet(token, descriptor, feed);
+    }
+
+    /// @notice Store a claim rule under the hash of its contents and list it for NEW claim
+    ///         mandates. The owner words must be zero in `args`: the executor writes the
+    ///         owner's address there at firing, so no listed claim can pay anyone else
+    ///         through those arguments.
+    function listClaimRule(ClaimRule calldata r) external onlyOwner returns (bytes32 id) {
+        id = keccak256(abi.encode(r));
+        if (_claimRuleRevoked[id]) revert InvalidParams("revoked");
+        if (r.target.code.length == 0) revert InvalidParams("target");
+        if (r.selector == bytes4(0)) revert InvalidParams("selector");
+        if (r.argCount == 0 || r.argCount > 16 || r.args.length != uint256(r.argCount) * 32) {
+            revert InvalidParams("args");
+        }
+        uint256 owners = r.ownerArgs;
+        if (owners == 0 || owners >> r.argCount != 0) revert InvalidParams("ownerArgs");
+        for (uint256 i = 0; i < r.argCount; i++) {
+            if ((owners >> i) & 1 != 0 && bytes32(r.args[i * 32:i * 32 + 32]) != bytes32(0)) {
+                revert InvalidParams("ownerWord");
+            }
+        }
+        if (_claimRules[id].target == address(0)) _claimRules[id] = r;
+        _claimRuleListed[id] = true;
+        emit ClaimRuleListed(id, true);
+    }
+
+    /// @notice Delist a claim rule for NEW claim mandates; live mandates keep using it.
+    function delistClaimRule(bytes32 id) external onlyOwner {
+        _claimRuleListed[id] = false;
+        emit ClaimRuleListed(id, false);
     }
 
     /// @notice Delist a descriptor for NEW registrations; live mandates keep reading through it.

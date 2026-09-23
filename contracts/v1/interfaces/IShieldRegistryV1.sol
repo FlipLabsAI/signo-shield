@@ -6,6 +6,18 @@ pragma solidity 0.8.28;
 ///         core, the evaluator and the executors consult. Narrowing only:
 ///         nothing here can widen what an owner signed.
 interface IShieldRegistryV1 {
+    /// @notice An approved claim: the one call a claim mandate may make on a venue, with the
+    ///         owner's address written into the `ownerArgs` words at firing. `args` holds every
+    ///         static argument word; the owner words are zero in it. Content-addressed like a
+    ///         descriptor: nothing can be stored under an id with different contents.
+    struct ClaimRule {
+        address target; // the venue whose claim function runs (for example a Pendle market)
+        bytes4 selector; // the claim function (for example redeemRewards(address))
+        uint8 argCount; // static 32-byte argument words after the selector
+        uint16 ownerArgs; // bit i set: argument i is the owner (at least one bit, below argCount)
+        bytes args; // argCount words; the owner words zero
+    }
+
     event AgentFrozen(address indexed agent, address indexed enforcer);
     event AgentUnfrozen(address indexed agent, address indexed enforcer);
     event EnforcerSet(address indexed enforcer, bool enabled);
@@ -19,6 +31,8 @@ interface IShieldRegistryV1 {
     event LiftExecuted(address indexed target, uint64 epoch, address indexed by);
     event Revoked(address indexed target, address indexed by);
     event PriceRoundSet(address indexed token, bytes32 descriptor, address feed);
+    event ClaimRuleListed(bytes32 indexed id, bool listed);
+    event ClaimRuleRevoked(bytes32 indexed id, address indexed by);
 
     error NotEnforcer();
     error InvalidParams(bytes32 field);
@@ -43,4 +57,7 @@ interface IShieldRegistryV1 {
     ///         listed (the read catalog's rule: a positive price AND a fresh underlying round where one
     ///         exists). A zero descriptor means positivity only.
     function priceRound(address token) external view returns (bytes32 descriptor, address feed);
+    /// @notice The claim rule behind `id`, whether new mandates may sign it, and whether it is revoked
+    ///         (a revoked rule stops every live mandate that uses it).
+    function claimRuleOf(bytes32 id) external view returns (ClaimRule memory rule, bool listed, bool revoked);
 }

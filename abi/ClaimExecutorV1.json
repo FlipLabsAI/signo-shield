@@ -25,32 +25,6 @@
   },
   {
     "type": "function",
-    "name": "ACTION_CLAIM_COMPOSE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "BPS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "CONFIG_VERSION",
     "inputs": [],
     "outputs": [
@@ -64,7 +38,7 @@
   },
   {
     "type": "function",
-    "name": "MAX_CALLS",
+    "name": "MAX_CLAIMS",
     "inputs": [],
     "outputs": [
       {
@@ -78,58 +52,6 @@
   {
     "type": "function",
     "name": "MAX_REWARDS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MAX_ROUTE_BYTES",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MAX_SLIPPAGE_BPS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MAX_SLIPPAGE_OVERRIDE_BPS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MAX_VENUES",
     "inputs": [],
     "outputs": [
       {
@@ -330,7 +252,7 @@
     "name": "snapshot",
     "inputs": [
       {
-        "name": "",
+        "name": "ctx",
         "type": "tuple",
         "internalType": "struct IExecutorV1.Context",
         "components": [
@@ -394,7 +316,7 @@
         "internalType": "bytes"
       }
     ],
-    "stateMutability": "pure"
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -436,25 +358,51 @@
         "internalType": "address"
       },
       {
-        "name": "action",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "clone",
+        "name": "token",
         "type": "address",
-        "indexed": false,
+        "indexed": true,
         "internalType": "address"
       },
       {
-        "name": "valueOut",
+        "name": "amount",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "BelowClaimable",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "received",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "claimable",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ClaimRuleRevoked",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
   },
   {
     "type": "error",
@@ -501,22 +449,6 @@
         "name": "token",
         "type": "address",
         "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "OutputBelowMinimum",
-    "inputs": [
-      {
-        "name": "received",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "minOut",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ]
   },
@@ -592,15 +524,10 @@
   },
   {
     "type": "error",
-    "name": "SandboxNotEmpty",
+    "name": "SubjectMismatch",
     "inputs": [
       {
-        "name": "token",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "held",
+        "name": "readIndex",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -645,22 +572,6 @@
     "inputs": [
       {
         "name": "target",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "VenueNotAllowed",
-    "inputs": [
-      {
-        "name": "target",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "spender",
         "type": "address",
         "internalType": "address"
       }

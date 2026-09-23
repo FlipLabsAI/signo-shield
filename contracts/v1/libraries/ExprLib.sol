@@ -343,6 +343,41 @@ library ExprLib {
         readValue(r, 0, IDescriptors(address(registry)));
     }
 
+    /// @dev A mandatory recipe read about the owner (for example a claimable amount):
+    ///      the same checks as a tree read at signing, with the owner's word left zero
+    ///      in `args` (the executor writes the owner in at firing, see `readAbout`).
+    function checkRecipeRead(Read memory r, IDescriptors catalog) internal view {
+        if (r.subject != Subject.Principal) revert IEvaluatorV1.TreeInvalid("subject");
+        _checkRead(r, 0, catalog, address(0), true);
+    }
+
+    /// @dev `r` read live about `account`: its subject word set to the account.
+    function readAbout(Read memory r, address account, uint256 i, IDescriptors catalog)
+        internal
+        view
+        returns (int256)
+    {
+        // forge-lint: disable-next-line(calls-loop,unused-return)
+        (IDescriptors.Descriptor memory d,,) = catalog.descriptorOf(r.descriptor);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        r.args = bindAccount(r.args, uint256(uint8(d.subjectArg)), account);
+        return readValue(r, i, catalog);
+    }
+
+    /// @dev A copy of the static argument words `args` with word `index` set to `account`.
+    function bindAccount(bytes memory args, uint256 index, address account)
+        internal
+        pure
+        returns (bytes memory out)
+    {
+        out = bytes.concat(args);
+        uint256 off = index * 32;
+        if (off + 32 > out.length) revert IEvaluatorV1.TreeInvalid("subjectArg");
+        assembly ("memory-safe") {
+            mstore(add(add(out, 32), off), account)
+        }
+    }
+
     function pair(address a, address b) internal pure returns (address[] memory tokens) {
         tokens = new address[](2);
         tokens[0] = a;

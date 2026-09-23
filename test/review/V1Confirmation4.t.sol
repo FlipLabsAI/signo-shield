@@ -132,40 +132,6 @@ contract V1Confirmation4Test is V1ReviewBase {
         core.registerMandate(p);
     }
 
-    function _composeRoute(bytes32 id) internal view returns (bytes memory) {
-        address clone = claims.nextClone(id);
-        IExecutorV1.Call[] memory calls = new IExecutorV1.Call[](2);
-        calls[0] = _claim(principal, clone, true);
-        calls[1] = _swap(address(reward), 100e18, clone);
-        return abi.encode(calls);
-    }
-
-    function _claimPinnedRule(bool onOutput) internal {
-        address priced = onOutput ? address(output) : address(reward);
-        (MockFeed feed,) = _bind(priced);
-        distributor.setOwed(principal, 100e18);
-        bytes32 id = _register(_claimParams(true, _claimConfig(true)));
-        feed.set(7, 1e8, vm.getBlockTimestamp() - 3601, 7);
-        registry.setPriceRound(priced, bytes32(0), address(0));
-        bytes memory route = _composeRoute(id);
-        _expectedOutcome(id, abi.encodeWithSelector(IEvaluatorV1.ReadStale.selector, 0));
-        _fire(id, 0, route);
-        assertEq(distributor.claimable(principal), 100e18);
-        assertEq(output.balanceOf(principal), 0);
-        assertEq(core.getMandate(id).firings, 0);
-        feed.set(8, 1e8, vm.getBlockTimestamp(), 8);
-        assertEq(_fire(id, 0, route), 0);
-        assertEq(output.balanceOf(principal), 100e18);
-    }
-
-    function test_claimComposeKeepsPinnedRewardRuleAndRollsBack() public {
-        _claimPinnedRule(false);
-    }
-
-    function test_claimComposeKeepsPinnedOutputRuleAndRollsBack() public {
-        _claimPinnedRule(true);
-    }
-
     function _smallVault(uint256 sample)
         internal
         returns (MockVault vault, IShieldV1.MandateParams memory p)

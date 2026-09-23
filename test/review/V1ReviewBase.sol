@@ -43,6 +43,8 @@ abstract contract V1ReviewBase is Test {
     bytes32 internal balanceId;
     bytes32 internal debtId;
     bytes32 internal collateralId;
+    bytes32 internal claimRuleId; // distributor.claim(owner, owner)
+    bytes32 internal claimableId; // distributor.claimable(owner)
 
     function setUp() public virtual {
         vm.warp(1_800_000_000);
@@ -68,6 +70,8 @@ abstract contract V1ReviewBase is Test {
         balanceId = registry.listDescriptor(_descriptor(IERC20.balanceOf.selector));
         debtId = registry.listDescriptor(_descriptor(IERC20.balanceOf.selector)); // a debt token's balance
         collateralId = registry.listDescriptor(_descriptor(bytes4(keccak256("collateralOf(address)"))));
+        claimRuleId = registry.listClaimRule(_claimRule(address(distributor)));
+        claimableId = registry.listDescriptor(_claimableDescriptor(address(distributor)));
         oracle.set(address(asset), 1e8);
         oracle.set(address(output), 1e8);
         oracle.set(address(reward), 1e8);
@@ -195,38 +199,51 @@ abstract contract V1ReviewBase is Test {
         return abi.encode(calls);
     }
 
-    function _claimConfig(bool compose) internal view returns (ClaimExecutorV1.Config memory c) {
-        c.venues = new ClaimExecutorV1.Venue[](compose ? 2 : 1);
-        c.venues[0] = ClaimExecutorV1.Venue(address(distributor), address(0));
-        if (compose) c.venues[1] = ClaimExecutorV1.Venue(address(dex), address(dex));
-        c.rewardTokens = new address[](1);
-        c.rewardTokens[0] = address(reward);
-        c.tokenOut = address(output);
-        c.oracle = address(oracle);
-        c.maxSlippageBps = 50;
+    /// @dev The listed claim for a distributor: claim(owner, owner), both words written at firing.
+    function _claimRule(address dist) internal pure returns (IShieldRegistryV1.ClaimRule memory r) {
+        r.target = dist;
+        r.selector = MockDistributor.claim.selector;
+        r.argCount = 2;
+        r.ownerArgs = 3;
+        r.args = abi.encode(address(0), address(0));
     }
 
-    function _claimParams(bool compose, ClaimExecutorV1.Config memory c)
+    /// @dev The distributor's claimable(owner) read, 18 decimals.
+    function _claimableDescriptor(address dist) internal pure returns (IDescriptors.Descriptor memory d) {
+        d.kind = IDescriptors.DescriptorKind.PerAddress;
+        d.target = dist;
+        d.selector = MockDistributor.claimable.selector;
+        d.argCount = 1;
+        d.subjectArg = 0;
+        d.subjectRule = IDescriptors.SubjectRule.PrincipalRequired;
+        d.decimals = 18;
+        d.gasStipend = 100_000;
+        d.copyBytes = 32;
+    }
+
+    /// @dev Collect the reward through the listed rule; the claimable read leaves the owner word zero.
+    function _claimConfig() internal view returns (ClaimExecutorV1.Config memory c) {
+        c.claims = new bytes32[](1);
+        c.claims[0] = claimRuleId;
+        c.rewardTokens = new address[](1);
+        c.rewardTokens[0] = address(reward);
+        c.claimable = new ExprLib.Read[](1);
+        c.claimable[0] = ExprLib.Read(
+            claimableId, address(distributor), abi.encode(address(0)), ExprLib.Subject.Principal, 18
+        );
+    }
+
+    function _claimParams(ClaimExecutorV1.Config memory c)
         internal
         view
         returns (IShieldV1.MandateParams memory p)
     {
-        p = _params(address(claims), compose ? claims.ACTION_CLAIM_COMPOSE() : claims.ACTION_CLAIM_COLLECT());
+        p = _params(address(claims), claims.ACTION_CLAIM_COLLECT());
         p.asset = address(reward);
         p.funding = 1;
         p.maxTransactionValue = 0;
         p.maxCumulativeValue = 0;
-        ExprLib.PriceRound[] memory given = c.prices;
-        if (compose && given.length == 0) {
-            address[] memory priced = new address[](c.rewardTokens.length + 1);
-            priced[0] = c.tokenOut;
-            for (uint256 i = 0; i < c.rewardTokens.length; i++) {
-                priced[i + 1] = c.rewardTokens[i];
-            }
-            c.prices = _pinned(priced);
-        }
         p.actionConfig = abi.encode(uint8(1), c);
-        c.prices = given;
         p.outcome = _trueTree();
     }
 

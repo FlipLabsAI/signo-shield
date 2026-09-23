@@ -71,37 +71,18 @@ contract V1FixFollowupTest is V1ReviewBase {
         core.registerMandate(p);
     }
 
-    /// R5 (open, claims unlisted at launch): a false-labelled claim may still carry an approval.
-    /// Closed by the signed per-venue claim recipe (v1.1, with the Pendle venue review).
-    function test_knownGapComposeUnlabelledClaimCanStillCarryApprovalAndHideGrossRewards() public {
-        MockDistributor second = new MockDistributor(reward);
-        distributor.setOwed(principal, 100e18);
-        second.setOwed(principal, 100e18);
-        second.setDrain(9_900);
-        ClaimExecutorV1.Config memory c = _claimConfig(true);
-        c.venues = new ClaimExecutorV1.Venue[](3);
-        c.venues[0] = ClaimExecutorV1.Venue(address(distributor), address(0));
-        c.venues[1] = ClaimExecutorV1.Venue(address(second), address(second));
-        c.venues[2] = ClaimExecutorV1.Venue(address(dex), address(dex));
-        bytes32 id = _register(_claimParams(true, c));
-        address clone = claims.nextClone(id);
-        IExecutorV1.Call[] memory calls = new IExecutorV1.Call[](3);
-        calls[0] = _claim(principal, clone, true);
-        calls[1] = IExecutorV1.Call(
-            address(second),
-            address(second),
-            address(reward),
-            99e18,
-            false,
-            abi.encodeCall(MockDistributor.claim, (principal, clone))
+    /// R5 (closed, claim round 23 Sep): compose is gone, so the false-labelled claim that
+    /// carried an approval has nothing to run in; a compose mandate cannot be registered.
+    function test_fixComposeClaimCannotBeRegistered() public {
+        IShieldV1.MandateParams memory p = _claimParams(_claimConfig());
+        p.action = keccak256("claim.compose");
+        vm.prank(principal);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IShieldV1.ActionNotSupported.selector, address(claims), keccak256("claim.compose")
+            )
         );
-        calls[2] = _swap(address(reward), 101e18, clone);
-        _fire(id, 0, abi.encode(calls));
-        assertEq(output.balanceOf(principal), 101e18);
-        assertEq(reward.balanceOf(address(0xBAD)), 99e18);
-        assertEq(distributor.claimable(principal) + second.claimable(principal), 0);
-        assertEq(reward.balanceOf(clone), 0);
-        assertEq(reward.allowance(clone, address(second)), 0);
+        core.registerMandate(p);
     }
 
     function _vaultParams(address vault, address underlying, uint256 sampleShares)

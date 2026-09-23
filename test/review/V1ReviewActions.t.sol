@@ -148,99 +148,51 @@ contract V1ReviewActionsTest is V1ReviewBase {
         _fire(id, 100e18, route);
     }
 
-    /// F1 (fixed): every step is measured, so a claim labelled as a non-claim still counts.
-    function test_fixComposeMeasuresEveryStep() public {
+    /// F1 (closed, claim round 23 Sep): claim-and-reinvest is not an action any more, and a
+    /// collect firing takes no calls from the agent, so there is no claim to label or relabel.
+    function test_fixComposeIsNotAnActionAndCollectTakesNoAgentCalls() public {
+        IShieldV1.MandateParams memory p = _claimParams(_claimConfig());
+        p.action = keccak256("claim.compose");
+        vm.prank(principal);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IShieldV1.ActionNotSupported.selector, address(claims), keccak256("claim.compose")
+            )
+        );
+        core.registerMandate(p);
         distributor.setOwed(principal, 100e18);
-        distributor.setOwed(recipient, 1e18);
-        bytes32 id = _register(_claimParams(true, _claimConfig(true)));
-        address clone = claims.nextClone(id);
-        IExecutorV1.Call[] memory route = new IExecutorV1.Call[](4);
-        route[0] = _claim(principal, clone, false); // same legitimate claim method, but agent labels it false
-        route[1] = _claim(recipient, clone, true); // only this one enters the claimed[] ledger
-        route[2] = _swap(address(reward), 100e18, recipient);
-        route[3] = _swap(address(reward), 1e18, clone);
+        bytes32 id = _register(_claimParams(_claimConfig()));
+        bytes memory route = _route(_claim(principal, recipient, true));
         vm.expectRevert();
-        _fire(id, 0, abi.encode(route));
-        assertEq(output.balanceOf(principal), 0);
-        assertEq(output.balanceOf(recipient), 0);
+        _fire(id, 0, route);
         assertEq(distributor.claimable(principal), 100e18);
+        assertEq(reward.balanceOf(recipient), 0);
     }
 
-    /// F2 (open, deferred to v1.1 with per-venue claimable reads and a receiver
-    /// rule): collect still measures only the owner's rise. The claim executor
-    /// is not deployed or listed at launch (script/DeployV1.s.sol).
-    function test_knownGapCollectUnboundReceiverAndMissingClaimableFloor() public {
+    /// F2 (closed, claim round 23 Sep): the claim call is built from the listed rule with the
+    /// owner in both of its account arguments, so the owner's 100 reach the owner and nobody
+    /// else's claim is touched; the claimable amount read first is met.
+    function test_fixCollectIsBoundToTheOwnerAndMeetsTheClaimableFloor() public {
         distributor.setOwed(principal, 100e18);
         distributor.setOwed(recipient, 1e18);
-        bytes32 id = _register(_claimParams(false, _claimConfig(false)));
-        IExecutorV1.Call[] memory route = new IExecutorV1.Call[](2);
-        route[0] = _claim(principal, recipient, true);
-        route[1] = _claim(recipient, principal, true);
-        _fire(id, 0, abi.encode(route));
-        assertEq(reward.balanceOf(principal), 1e18);
-        assertEq(reward.balanceOf(recipient), 100e18);
+        bytes32 id = _register(_claimParams(_claimConfig()));
+        _fire(id, 0, "");
+        assertEq(reward.balanceOf(principal), 100e18);
+        assertEq(reward.balanceOf(recipient), 0);
         assertEq(distributor.claimable(principal), 0);
+        assertEq(distributor.claimable(recipient), 1e18);
     }
 
     function test_controlClaimApprovalRejectedEvenWithTrueOutcome() public {
-        ClaimExecutorV1.Config memory c = _claimConfig(true);
-        c.venues[0].spender = address(distributor);
-        bytes32 id = _register(_claimParams(true, c));
+        distributor.setOwed(principal, 100e18);
+        bytes32 id = _register(_claimParams(_claimConfig()));
         IExecutorV1.Call memory k = _claim(principal, claims.nextClone(id), true);
         k.spender = address(distributor);
         k.approveToken = address(reward);
         k.approveAmount = 100e18;
         vm.expectRevert();
         _fire(id, 0, _route(k));
-    }
-
-    function test_controlMeasuredComposeShortfallRevertsAndFairReinvestmentPasses() public {
-        distributor.setOwed(principal, 100e18);
-        bytes32 id = _register(_claimParams(true, _claimConfig(true)));
-        address clone = claims.nextClone(id);
-        IExecutorV1.Call[] memory route = new IExecutorV1.Call[](2);
-        route[0] = _claim(principal, clone, true);
-        route[1] = _swap(address(reward), 1e18, clone);
-        vm.expectRevert();
-        _fire(id, 0, abi.encode(route));
         assertEq(distributor.claimable(principal), 100e18);
-        assertEq(claims.firings(id), 0);
-        route[1] = _swap(address(reward), 100e18, clone);
-        _fire(id, 0, abi.encode(route));
-        assertEq(output.balanceOf(principal), 100e18);
-    }
-
-    /// F6 (fixed): a claimed token with no price fails the firing.
-    function test_fixComposeZeroPriceRevertsInsteadOfDroppingTheReward() public {
-        MockDistributor other = new MockDistributor(asset);
-        ClaimExecutorV1.Config memory c = _claimConfig(true);
-        c.rewardTokens = new address[](2);
-        c.rewardTokens[0] = address(reward);
-        c.rewardTokens[1] = address(asset);
-        c.venues = new ClaimExecutorV1.Venue[](3);
-        c.venues[0] = ClaimExecutorV1.Venue(address(distributor), address(0));
-        c.venues[1] = ClaimExecutorV1.Venue(address(other), address(0));
-        c.venues[2] = ClaimExecutorV1.Venue(address(dex), address(dex));
-        distributor.setOwed(principal, 100e18);
-        other.setOwed(principal, 100e18);
-        bytes32 id = _register(_claimParams(true, c));
-        oracle.set(address(asset), 0); // positive at registration, zero at firing
-        address clone = claims.nextClone(id);
-        IExecutorV1.Call[] memory route = new IExecutorV1.Call[](4);
-        route[0] = _claim(principal, clone, true);
-        route[1] = IExecutorV1.Call(
-            address(other),
-            address(0),
-            address(0),
-            0,
-            true,
-            abi.encodeCall(MockDistributor.claim, (principal, clone))
-        );
-        route[2] = _swap(address(reward), 100e18, clone);
-        route[3] = _swap(address(asset), 100e18, recipient);
-        vm.expectRevert();
-        _fire(id, 0, abi.encode(route));
-        assertEq(output.balanceOf(recipient), 0);
     }
 
     /// F4 (fixed): the minimum is priced at the pre-call conversion and the
