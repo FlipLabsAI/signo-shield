@@ -19,6 +19,10 @@ import {
 } from "contracts/adapters/aave-v3/interfaces/IAaveV3.sol";
 import {MockRouter} from "test/mocks/MockRouter.sol";
 
+interface IRound {
+    function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80);
+}
+
 /// Stock deployment, real X Layer prices and round sources, local routing fixture.
 contract V1Confirmation3ForkTest is Test {
     address internal constant ORACLE = 0x91FC11136d5615575a0fC5981Ab5C0C54418E2C6;
@@ -64,7 +68,9 @@ contract V1Confirmation3ForkTest is Test {
             assertTrue(listed);
             assertFalse(revoked);
             assertEq(descriptor.target, feeds[i]);
-            assertEq(descriptor.maxAge, i == 1 || i == 2 ? 86_400 : 3600);
+            // Round 9: every X Layer feed has a 24 h heartbeat (Chainlink's
+            // directory); 25 h for all six (was 1 h, and 24 h for the stables).
+            assertEq(descriptor.maxAge, 25 hours);
             assertEq(uint256(descriptor.freshness), uint256(IDescriptors.Freshness.ChainlinkRound));
             assertEq(descriptor.word, 1);
             assertTrue(descriptor.isSigned && descriptor.mustBePositive);
@@ -129,9 +135,15 @@ contract V1Confirmation3ForkTest is Test {
         assertEq(IERC20(USDT0).balanceOf(principal), out);
     }
 
-    function test_controlStockDeploymentRefusesStaleXethAtPinnedBlock() public {
-        // The historical xETH round is 6,143 seconds old, exceeding the configured 3,600.
-        (bytes32 id, bytes memory route,) = _position(false);
+    /// Fix round 9 (was test_controlStockDeploymentRefusesStaleXethAtPinnedBlock):
+    /// the historical xETH round is 6,143 seconds old, a current price for a
+    /// feed with a 24 h heartbeat. The 1 h limit refused it; 25 h accepts it
+    /// and still refuses a round one second past 25 h.
+    function test_fixStockDeploymentAcceptsCurrentXethAndRefusesPast25Hours() public {
+        (bytes32 id, bytes memory route, uint256 out) = _position(false);
+        (,,, uint256 updatedAt,) = IRound(0x8b85b50535551F8E8cDAF78dA235b5Cf1005907b).latestRoundData();
+        uint256 pinned = block.timestamp;
+        vm.warp(updatedAt + 25 hours + 1);
         vm.prank(agent);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -142,8 +154,11 @@ contract V1Confirmation3ForkTest is Test {
             )
         );
         d.shield.fire(id, 0.001e18, route);
-        assertEq(d.shield.getMandate(id).firings, 0);
-        assertEq(IERC20(XETH).balanceOf(principal), 0.001e18);
+        vm.warp(pinned);
+        vm.prank(agent);
+        assertEq(d.shield.fire(id, 0.001e18, route), 0.001e18);
+        assertEq(IERC20(USDT0).balanceOf(principal), out);
+        assertEq(d.shield.getMandate(id).firings, 1);
     }
 
     /// Fix round 4 (was test_gap...): the admin clearing both bindings no longer reaches the

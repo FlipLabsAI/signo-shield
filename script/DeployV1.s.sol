@@ -25,6 +25,9 @@ import {IShieldRegistryV1} from "contracts/v1/interfaces/IShieldRegistryV1.sol";
 contract DeployV1 is Script {
     uint256 internal constant XLAYER = 196;
     uint256 internal constant ARBITRUM_ONE = 42_161;
+    /// @dev Freshness of the X Layer Chainlink rounds: the published 24 h
+    ///      heartbeat plus one hour for an update that lands late.
+    uint32 internal constant FEED_MAX_AGE = 25 hours;
 
     struct Deployed {
         ShieldRegistryV1 registry;
@@ -124,47 +127,50 @@ contract DeployV1 is Script {
             _log("aave.price", shield.listDescriptor(_price(oracle)));
             // The fresh round every mandatory price of a reserve must pass
             // (read catalog rule); GHO and USDG have no round-capable source.
+            // FEED_MAX_AGE: Chainlink's directory lists every X Layer feed
+            // below with a 24 h heartbeat and a 0.5 % deviation; the 1 h this
+            // had before refused prices that were current (FLIP-280 round 9).
             _feed(
                 shield,
                 "feed.eth",
                 0xE7B000003A45145decf8a28FC755aD5eC5EA025A,
                 0x8b85b50535551F8E8cDAF78dA235b5Cf1005907b,
-                3600
+                FEED_MAX_AGE
             );
             _feed(
                 shield,
                 "feed.usdt",
                 0x779Ded0c9e1022225f8E0630b35a9b54bE713736,
                 0xb928a0678352005a2e51F614efD0b54C9830dB80,
-                86_400
+                FEED_MAX_AGE
             );
             _feed(
                 shield,
                 "feed.usdc",
                 0xB6CEceAB302E2E4948951eE7843FC24E92933061,
                 0xB8a08c178D96C315FbFB5661ABD208477391BC40,
-                86_400
+                FEED_MAX_AGE
             );
             _feed(
                 shield,
                 "feed.btc",
                 0xb7C00000bcDEeF966b20B3D884B98E64d2b06b4f,
                 0x4D6f6488a2B3a5f7b088f276887f608a1e9805c4,
-                3600
+                FEED_MAX_AGE
             );
             _feed(
                 shield,
                 "feed.okb",
                 0xe538905cf8410324e03A5A23C1c177a474D59b2b,
                 0x4Ff345b18a2bF894F8627F41501FBf30d5C5e7BE,
-                3600
+                FEED_MAX_AGE
             );
             _feed(
                 shield,
                 "feed.sol",
                 0x505000008DE8748DBd4422ff4687a4FC9bEba15b,
                 0xF959E1B5cA535C28aD24F7f672Bf1A93900810cF,
-                3600
+                FEED_MAX_AGE
             );
             _pendleClaim(shield, PENDLE_USDG_MARKET);
         }

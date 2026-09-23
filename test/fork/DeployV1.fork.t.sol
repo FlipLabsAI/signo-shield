@@ -34,7 +34,7 @@ contract DeployV1ForkTest is Test {
             mustBePositive: true,
             decimals: 8,
             freshness: IDescriptors.Freshness.ChainlinkRound,
-            maxAge: 3600,
+            maxAge: 25 hours,
             gasStipend: 160_000,
             copyBytes: 160,
             unboundedTop: false
@@ -44,6 +44,6 @@ contract DeployV1ForkTest is Test {
         assertTrue(listed);
         assertFalse(revoked);
         assertEq(got.target, feed.target);
-        assertEq(got.maxAge, 3600);
+        assertEq(got.maxAge, 25 hours);
     }
 }
