@@ -142,7 +142,7 @@ contract V1Confirmation3ForkTest is Test {
     function test_fixStockDeploymentAcceptsCurrentXethAndRefusesPast25Hours() public {
         (bytes32 id, bytes memory route, uint256 out) = _position(false);
         (,,, uint256 updatedAt,) = IRound(0x8b85b50535551F8E8cDAF78dA235b5Cf1005907b).latestRoundData();
-        uint256 pinned = block.timestamp;
+        uint256 pinned = vm.getBlockTimestamp();
         vm.warp(updatedAt + 25 hours + 1);
         vm.prank(agent);
         vm.expectRevert(
