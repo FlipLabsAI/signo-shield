@@ -194,15 +194,14 @@ contract V1Confirmation4Test is V1ReviewBase {
         assertEq(_snapshot(vault, p.actionConfig, 1000).length, 32);
     }
 
-    function test_upperBandRefusesAQuoteOneUnitOutsideBeforeAnyPull() public {
+    /// Round 7 (Austin, 23 Sep): at a firing the floor keeps only its lower edge, so a
+    /// vault that grew past the band is no longer refused; the upper edge applies at signing.
+    function test_fixUpperMoveNoLongerRefusesAFiring() public {
         (MockVault vault, IShieldV1.MandateParams memory p) = _smallVault(10_001);
-        bytes32 id = _register(p);
+        _register(p);
         asset.mint(address(vault), 102);
         assertEq(vault.convertToAssets(10_001), 10_102);
-        vm.expectRevert(abi.encodeWithSelector(GenericExecutorV1.SanityBand.selector, 10_001, 10_102));
-        _fire(id, 1000, "");
-        assertEq(vault.balanceOf(principal), 10_001);
-        assertEq(core.getMandate(id).firings, 0);
+        _snapshot(vault, p.actionConfig, 1000);
     }
 
     /// Fuzz the actual snapshot against a cross-multiplied band predicate, not a copy of mulDiv.
@@ -221,7 +220,8 @@ contract V1Confirmation4Test is V1ReviewBase {
             asset.mint(address(vault), shift);
         }
         uint256 quote = vault.convertToAssets(sample);
-        bool inside = quote * 10_000 >= sample * 9900 && quote * 10_000 <= sample * 10_100;
+        // Round 7: at a firing only the lower edge applies.
+        bool inside = quote * 10_000 >= sample * 9900;
         if (!inside) {
             vm.expectRevert(abi.encodeWithSelector(GenericExecutorV1.SanityBand.selector, sample, quote));
         }

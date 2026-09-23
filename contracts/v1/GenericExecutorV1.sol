@@ -80,9 +80,9 @@ contract GenericExecutorV1 is IExecutorV1 {
         address recipient; // TRANSFER only
         bytes32 debtDescriptor; // REPAY: descriptor of the owner's debt read on `market`
         bytes32 collateralDescriptor; // REPAY: descriptor of the owner's collateral read on `market`
-        uint256 signedShares; // REDEEM: the sample the band is judged on (for example the whole position)
-        uint256 signedAssets; // REDEEM: convertToAssets(signedShares) at signing
-        uint16 sanityBandBps; // REDEEM: allowed deviation of the sample's value from signing
+        uint256 signedShares; // REDEEM, optional floor: the sample it is judged on (for example the whole position)
+        uint256 signedAssets; // REDEEM, optional floor: convertToAssets(signedShares) at signing
+        uint16 sanityBandBps; // REDEEM, optional floor: how far the sample's value may fall below signing; 0 = no floor
         ExprLib.PriceRound[] prices; // Oracle TRANSFORM: the signed fresh-round rules for [asset, tokenOut]
     }
 
@@ -252,18 +252,27 @@ contract GenericExecutorV1 is IExecutorV1 {
         if (c.venues.length != 1 || c.venues[0].target != asset || c.venues[0].spender != address(0)) {
             revert ConfigInvalid("redeem:surface");
         }
-        if (c.signedShares == 0 || c.signedAssets == 0 || c.sanityBandBps == 0 || c.sanityBandBps > BPS) {
+        // No oracle is consulted for a redemption, so none may be signed here.
+        if (c.oracle != address(0) || c.rateOrFloor != 0) revert ConfigInvalid("redeem:oracle");
+        // The floor is optional (Austin, 23 Sep, round 7): a withdrawal at a
+        // loss is often the point, and a vault whose share value can be moved
+        // inside a transaction is kept out by venue review, not by a floor.
+        // Without one, nothing about a sample may be signed.
+        if (c.sanityBandBps == 0) {
+            if (c.signedShares != 0 || c.signedAssets != 0) revert ConfigInvalid("redeem:sanity");
+            return;
+        }
+        if (c.signedShares == 0 || c.signedAssets == 0 || c.sanityBandBps > BPS) {
             revert ConfigInvalid("redeem:sanity");
         }
-        // A sample too small to resolve the band cannot enforce it: refuse the
+        // A sample too small to resolve the floor cannot enforce it: refuse the
         // mandate rather than sign a tolerance the contract cannot check.
         if (Math.mulDiv(c.signedAssets, c.sanityBandBps, BPS) < MIN_BAND_UNITS) {
             revert ConfigInvalid("redeem:precision");
         }
-        // The independent basis of a redemption is the signed conversion and
-        // its band; no oracle is consulted, so none may be signed here.
-        if (c.oracle != address(0) || c.rateOrFloor != 0) revert ConfigInvalid("redeem:oracle");
-        _checkSanity(c, asset);
+        // At signing the sample must match the vault now, within the band on
+        // both sides: a wrong sample is refused before it is signed.
+        _checkSanity(c, asset, true);
     }
 
     function _validateRepay(Config memory c, address asset) internal view {
@@ -322,7 +331,7 @@ contract GenericExecutorV1 is IExecutorV1 {
             // The vault's conversion of the exact amount, before the
             // redemption: the minimum is priced on what the owner had, at
             // full precision, not on a unit quote scaled up.
-            _checkSanity(c, ctx.asset);
+            _checkSanity(c, ctx.asset, false);
             return abi.encode(IERC4626(ctx.asset).convertToAssets(amount));
         }
         return "";
@@ -399,7 +408,7 @@ contract GenericExecutorV1 is IExecutorV1 {
         _runSandbox(ctx, c, f, amount, calls);
         // The band holds after the action too: a vault that reprices inside
         // the call does not get to set its own minimum.
-        _checkSanity(c, ctx.asset);
+        _checkSanity(c, ctx.asset, false);
         uint256 received = IERC20(c.tokenOut).balanceOf(ctx.principal) - f.outBefore;
         uint256 returned = IERC20(ctx.asset).balanceOf(ctx.principal) - f.inBefore;
         returned = returned > f.parked ? returned - f.parked : 0;
@@ -539,14 +548,20 @@ contract GenericExecutorV1 is IExecutorV1 {
         return ExprLib.readValue(r, 0, IDescriptors(address(registry)));
     }
 
-    /// @dev The signed sample, quoted now, lies inside the signed band around
-    ///      its signed value. Both bounds round inward (toward refusing); the
-    ///      sample's size was checked at admission (MIN_BAND_UNITS).
-    function _checkSanity(Config memory c, address vault) internal view {
+    /// @dev The optional floor. At a firing only the lower edge applies: the
+    ///      sample, quoted now, is worth at least its signed value less the
+    ///      band, so growth never blocks a withdrawal. At signing both edges
+    ///      apply, so a sample that does not match the vault is refused. Bounds
+    ///      round inward (toward refusing); the sample's size was checked at
+    ///      admission (MIN_BAND_UNITS). No band = no floor.
+    function _checkSanity(Config memory c, address vault, bool atSigning) internal view {
+        if (c.sanityBandBps == 0) return;
         uint256 current = IERC4626(vault).convertToAssets(c.signedShares);
         uint256 lo = Math.mulDiv(c.signedAssets, BPS - c.sanityBandBps, BPS, Math.Rounding.Ceil);
-        uint256 hi = Math.mulDiv(c.signedAssets, BPS + c.sanityBandBps, BPS);
-        if (current < lo || current > hi) revert SanityBand(c.signedAssets, current);
+        if (current < lo) revert SanityBand(c.signedAssets, current);
+        if (atSigning && current > Math.mulDiv(c.signedAssets, BPS + c.sanityBandBps, BPS)) {
+            revert SanityBand(c.signedAssets, current);
+        }
     }
 
     function _minOut(Config memory c, address tokenIn, uint256 spent, uint256 amount, Firing memory f)

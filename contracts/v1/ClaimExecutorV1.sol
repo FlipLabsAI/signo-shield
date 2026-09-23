@@ -152,7 +152,9 @@ contract ClaimExecutorV1 is IExecutorV1 {
             // forge-lint: disable-next-line(calls-loop)
             DisposableCloneV1(clone).step(_claimCall(c.claims[i], ctx.principal));
         }
-        // A protocol that pays the caller instead of the owner still pays the owner: the sandbox sweeps.
+        // A protocol that pays the caller instead of the owner still pays the
+        // owner: the sandbox sweeps every declared token here, and any other
+        // token later through its sendToOwner, which pays only the owner.
         DisposableCloneV1(clone).finish(c.rewardTokens, ctx.principal);
         for (uint256 j = 0; j < n; j++) {
             // forge-lint: disable-next-line(calls-loop)

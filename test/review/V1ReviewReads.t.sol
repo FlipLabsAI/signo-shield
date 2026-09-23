@@ -273,8 +273,8 @@ contract V1ReviewReadsTest is V1ReviewBase {
         d.selector = MockNasty.value.selector;
         id = registry.listDescriptor(d);
         ExprLib.Read memory r = ExprLib.Read(id, address(nasty), "", ExprLib.Subject.None, 0);
-        vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.ValueOutOfRange.selector, 0));
-        h.read(r, registry);
+        // Round 7: above the int256 range saturates to its top instead of reverting.
+        assertEq(h.read(r, registry), type(int256).max);
         nasty.setShort(true);
         vm.expectRevert();
         h.read(r, registry);

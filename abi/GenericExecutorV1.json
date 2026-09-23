@@ -791,17 +791,6 @@
   },
   {
     "type": "error",
-    "name": "ValueOutOfRange",
-    "inputs": [
-      {
-        "name": "nodeIndex",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "VenueBlocked",
     "inputs": [
       {

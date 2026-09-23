@@ -11,6 +11,7 @@ import {IShieldV1} from "contracts/v1/interfaces/IShieldV1.sol";
 import {IDescriptors} from "contracts/v1/interfaces/IDescriptors.sol";
 import {IExecutorV1} from "contracts/v1/interfaces/IExecutorV1.sol";
 import {ExpressionEvaluator} from "contracts/v1/ExpressionEvaluator.sol";
+import {DisposableCloneV1} from "contracts/v1/DisposableCloneV1.sol";
 import {GenericExecutorV1} from "contracts/v1/GenericExecutorV1.sol";
 import {MockToken} from "./mocks/MockExecutor.sol";
 import {MockDex, MockOracle, MockVault, MockMarket} from "./mocks/MockVenues.sol";
@@ -229,6 +230,36 @@ contract GenericExecutorV1Test is Test {
         assertEq(mid.balanceOf(principal), 7e18);
     }
 
+    /// Round 7: a token no mandate declared, left in a used sandbox (paid by a venue
+    /// after the firing, or never in the sweep set), reaches the owner and no one else.
+    function test_undeclaredTokenInUsedSandboxGoesOnlyToOwner() public {
+        vm.prank(principal);
+        bytes32 id = shield.registerMandate(_params(TRANSFORM, address(usdc), _cfg(), 0));
+        address clone = exec.nextClone(id);
+        vm.prank(agent);
+        shield.fire(id, 100e18, _route(_swapCall(100e18, clone)));
+        MockToken stray = new MockToken();
+        stray.mint(clone, 5e18);
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(stray);
+        tokens[1] = address(weth); // already empty: skipped, not a failure
+        address stranger = address(0xBEEF);
+        vm.prank(stranger);
+        DisposableCloneV1(clone).sendToOwner(tokens);
+        assertEq(stray.balanceOf(principal), 5e18);
+        assertEq(stray.balanceOf(clone), 0);
+        assertEq(stray.balanceOf(stranger), 0);
+    }
+
+    function test_sendToOwnerNeedsAFinishedFiring() public {
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+        address template = exec.cloneTemplate();
+        usdc.mint(template, 1e18);
+        vm.expectRevert(DisposableCloneV1.NotFinished.selector);
+        DisposableCloneV1(template).sendToOwner(tokens);
+    }
+
     // ----------------------------------------------------------------- transfer
 
     function test_transferMeasuresRecipient() public {
@@ -300,27 +331,80 @@ contract GenericExecutorV1Test is Test {
         shield.fire(id, shares / 4, r2);
     }
 
-    function test_redeemSanityBandStopsAVaultThatRepricedItself() public {
-        uint256 shares = _vaultShares(1_000e18);
-        IShieldV1.MandateParams memory rp = _params(REDEEM, address(vault), _redeemCfg(), 0);
-        vm.prank(principal);
-        bytes32 id = shield.registerMandate(rp);
-        // the vault's assets jump 20% (a donation): implied price per share leaves the 5% band
-        usdc.mint(address(vault), 200e18);
-        address clone = exec.nextClone(id);
-        bytes memory r = _route(
+    function _redeemRoute(uint256 shares, address clone) internal view returns (bytes memory) {
+        return _route(
             IExecutorV1.Call({
                 target: address(vault),
                 spender: address(0),
                 approveToken: address(0),
                 approveAmount: 0,
                 claimStep: false,
-                data: abi.encodeCall(IERC4626.redeem, (shares / 2, clone, clone))
+                data: abi.encodeCall(IERC4626.redeem, (shares, clone, clone))
             })
         );
+    }
+
+    /// Round 7: the floor keeps only its lower edge at a firing, so a vault that grew
+    /// (here a 20% donation) is withdrawn from, and the owner receives the grown value.
+    function test_redeemFloorLetsGrowthThrough() public {
+        uint256 shares = _vaultShares(1_000e18);
+        IShieldV1.MandateParams memory rp = _params(REDEEM, address(vault), _redeemCfg(), 0);
+        vm.prank(principal);
+        bytes32 id = shield.registerMandate(rp);
+        usdc.mint(address(vault), 200e18);
+        uint256 before = usdc.balanceOf(principal);
+        bytes memory r = _redeemRoute(shares / 2, exec.nextClone(id));
         vm.prank(agent);
-        vm.expectRevert();
         shield.fire(id, shares / 2, r);
+        assertApproxEqAbs(usdc.balanceOf(principal) - before, 600e18, 1);
+    }
+
+    /// The owner's floor refuses a withdrawal once the sample is worth more than the
+    /// band below its value at signing (here a 20% loss against a 5% band).
+    function test_redeemFloorStopsAWithdrawalBelowIt() public {
+        uint256 shares = _vaultShares(1_000e18);
+        IShieldV1.MandateParams memory rp = _params(REDEEM, address(vault), _redeemCfg(), 0);
+        vm.prank(principal);
+        bytes32 id = shield.registerMandate(rp);
+        uint256 signed = vault.convertToAssets(1_000e18); // the sample as signed: nothing moved since
+        vm.prank(address(vault));
+        usdc.transfer(address(0xDEAD), 200e18);
+        uint256 current = vault.convertToAssets(1_000e18);
+        bytes memory r = _redeemRoute(shares / 2, exec.nextClone(id));
+        vm.prank(agent);
+        vm.expectRevert(abi.encodeWithSelector(GenericExecutorV1.SanityBand.selector, signed, current));
+        shield.fire(id, shares / 2, r);
+    }
+
+    /// No floor (the default the app signs): a withdrawal at a loss goes through, paid at
+    /// the vault's own quote less the slippage, into the owner's wallet only.
+    function test_redeemWithoutFloorWithdrawsAtALoss() public {
+        uint256 shares = _vaultShares(1_000e18);
+        GenericExecutorV1.Config memory c = _redeemCfg();
+        c.signedShares = 0;
+        c.signedAssets = 0;
+        c.sanityBandBps = 0;
+        IShieldV1.MandateParams memory p = _params(REDEEM, address(vault), c, 0);
+        vm.prank(principal);
+        bytes32 id = shield.registerMandate(p);
+        vm.prank(address(vault));
+        usdc.transfer(address(0xDEAD), 200e18);
+        uint256 before = usdc.balanceOf(principal);
+        bytes memory r = _redeemRoute(shares / 2, exec.nextClone(id));
+        vm.prank(agent);
+        shield.fire(id, shares / 2, r);
+        assertApproxEqAbs(usdc.balanceOf(principal) - before, 400e18, 1);
+    }
+
+    /// Without a floor nothing about a sample may be signed: no decorative numbers.
+    function test_redeemWithoutFloorRefusesASignedSample() public {
+        _vaultShares(1_000e18);
+        GenericExecutorV1.Config memory c = _redeemCfg();
+        c.sanityBandBps = 0;
+        IShieldV1.MandateParams memory p = _params(REDEEM, address(vault), c, 0);
+        vm.prank(principal);
+        vm.expectRevert(abi.encodeWithSelector(GenericExecutorV1.ConfigInvalid.selector, "redeem:sanity"));
+        shield.registerMandate(p);
     }
 
     // -------------------------------------------------------------------- repay

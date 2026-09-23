@@ -252,9 +252,14 @@ library ExprLib {
         bytes memory out = _staticRead(r.target, d.gasStipend, abi.encodePacked(d.selector, r.args), need, i);
         if (d.freshness == IDescriptors.Freshness.ChainlinkRound) _checkRound(out, d.maxAge, i);
         uint256 raw = _word(out, d.word);
+        // An unsigned value above the int256 range counts as its top (round 7):
+        // Aave reports "no debt" as a health factor of type(uint256).max, which
+        // is above every limit, and refusing it would stop a mandate whose
+        // owner simply has no debt. Order is kept; arithmetic on the top value
+        // is checked and fails closed.
         // forge-lint: disable-next-line(unsafe-typecast)
-        if (!d.isSigned && raw > uint256(type(int256).max)) revert IEvaluatorV1.ValueOutOfRange(i);
-        // Signed reads are int256 bit patterns; unsigned ones were range-checked above.
+        if (!d.isSigned && raw > uint256(type(int256).max)) raw = uint256(type(int256).max);
+        // Signed reads are int256 bit patterns; unsigned ones are at most the top above.
         // forge-lint: disable-next-line(unsafe-typecast)
         value = int256(raw);
         if (d.mustBePositive && value <= 0) revert IEvaluatorV1.ReadNotPositive(i);

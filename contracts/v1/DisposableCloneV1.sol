@@ -13,11 +13,16 @@ import {IExecutorV1} from "./interfaces/IExecutorV1.sol";
 ///         the mandate's sweep set to the owner. A clone runs once; every
 ///         address it touches was checked by the executor against the
 ///         mandate's signed venues and the core's suspension and revocation
-///         lists before the call.
+///         lists before the call. After that, anyone may send any token the
+///         used clone still holds to that owner, and only to that owner: a
+///         reward nobody declared is never lost in a retired sandbox.
 contract DisposableCloneV1 {
     using SafeERC20 for IERC20;
 
     address public immutable executor;
+    /// @notice The owner this clone swept to; zero until the firing finishes.
+    ///         Packed with the two flags: one storage slot per firing.
+    address public owner;
     bool private _started;
     bool private _finished;
 
@@ -26,6 +31,10 @@ contract DisposableCloneV1 {
     error ApprovalExceedsBalance(uint256 asked, uint256 held);
     error NotEmpty(address token);
     error CallFailed(bytes reason);
+    error NotFinished();
+    error NoOwner();
+
+    event SentToOwner(address indexed token, address indexed owner, uint256 amount);
 
     constructor(address executor_) {
         if (executor_ == address(0)) revert NotExecutor();
@@ -58,17 +67,37 @@ contract DisposableCloneV1 {
     }
 
     /// @notice Sweep every token in `tokens` to `owner` and retire the clone.
-    function finish(address[] calldata tokens, address owner) external onlyExecutor {
+    function finish(address[] calldata tokens, address owner_) external onlyExecutor {
         if (_finished) revert AlreadyUsed();
+        if (owner_ == address(0)) revert NoOwner();
         _finished = true;
+        owner = owner_;
         for (uint256 i = 0; i < tokens.length; i++) {
             // forge-lint: disable-next-line(calls-loop)
             uint256 held = IERC20(tokens[i]).balanceOf(address(this));
             // forge-lint: disable-next-line(calls-loop)
-            if (held != 0) IERC20(tokens[i]).safeTransfer(owner, held);
+            if (held != 0) IERC20(tokens[i]).safeTransfer(owner_, held);
             // Proven empty, not assumed from a successful transfer.
             // forge-lint: disable-next-line(calls-loop)
             if (IERC20(tokens[i]).balanceOf(address(this)) > 0) revert NotEmpty(tokens[i]);
+        }
+    }
+
+    /// @notice Send the whole balance of each token to the owner this clone
+    ///         swept to. Anyone may call it, only once the firing is over, and
+    ///         it pays no one else: a token the mandate did not declare (a
+    ///         protocol that paid the caller more than was declared, a
+    ///         transfer after the firing) still reaches the owner.
+    function sendToOwner(address[] calldata tokens) external {
+        if (!_finished) revert NotFinished();
+        address to = owner;
+        for (uint256 i = 0; i < tokens.length; i++) {
+            // forge-lint: disable-next-line(calls-loop)
+            uint256 held = IERC20(tokens[i]).balanceOf(address(this));
+            if (held == 0) continue;
+            // forge-lint: disable-next-line(calls-loop)
+            IERC20(tokens[i]).safeTransfer(to, held);
+            emit SentToOwner(tokens[i], to, held);
         }
     }
 }

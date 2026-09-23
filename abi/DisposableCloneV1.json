@@ -33,9 +33,35 @@
         "internalType": "address[]"
       },
       {
-        "name": "owner",
+        "name": "owner_",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "owner",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "sendToOwner",
+    "inputs": [
+      {
+        "name": "tokens",
+        "type": "address[]",
+        "internalType": "address[]"
       }
     ],
     "outputs": [],
@@ -87,6 +113,31 @@
     "stateMutability": "nonpayable"
   },
   {
+    "type": "event",
+    "name": "SentToOwner",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "owner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
     "type": "error",
     "name": "AlreadyUsed",
     "inputs": []
@@ -120,6 +171,11 @@
   },
   {
     "type": "error",
+    "name": "NoOwner",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NotEmpty",
     "inputs": [
       {
@@ -132,6 +188,11 @@
   {
     "type": "error",
     "name": "NotExecutor",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotFinished",
     "inputs": []
   },
   {

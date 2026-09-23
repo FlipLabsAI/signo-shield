@@ -260,14 +260,23 @@ contract V1ClaimsConfirmationTest is V1ReviewBase {
         assertEq(venue.calls(), 0);
     }
 
-    function test_boundaryUndeclaredCallerPaidRewardStaysInRetiredSandbox() public {
+    /// Round 7 (Austin, 23 Sep: "have the sandbox forward all rewards"): an undeclared
+    /// caller-paid reward is no longer lost. The firing sweeps the declared tokens; anyone
+    /// may then send any other token the used sandbox holds to the owner, and only to them.
+    function test_fixUndeclaredCallerPaidRewardReachesTheOwner() public {
         venue.configure(100e18, 100e18, 7e18);
         bytes32 id = _register(_claimParams(_callerConfig()));
         address clone = claims.nextClone(id);
         _fire(id, 0, "");
         assertEq(output.balanceOf(clone), 7e18);
-        assertEq(output.balanceOf(principal), 0);
-        // This is why the venue rule must reject caller-only claims or enumerate every reward token.
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(output);
+        vm.prank(makeAddr("anyone"));
+        DisposableCloneV1(clone).sendToOwner(tokens);
+        assertEq(output.balanceOf(clone), 0);
+        assertEq(output.balanceOf(principal), 7e18);
+        assertEq(output.balanceOf(makeAddr("anyone")), 0);
+        assertEq(DisposableCloneV1(clone).owner(), principal);
     }
 
     function test_boundaryFixedOtherReceiverCanPassWithDifferentReadAndSecondClaim() public {

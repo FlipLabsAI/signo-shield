@@ -236,15 +236,19 @@ contract ExpressionEvaluatorTest is Test {
         ev.judgeTrigger(t, principal, new int256[](0), 0);
     }
 
-    function test_unsignedAboveIntMaxIsRefusedNeverNegative() public {
+    /// Round 7: an unsigned value above the int256 range (Aave's "no debt" health factor)
+    /// counts as the top of the range: never negative, above every limit.
+    function test_unsignedAboveIntMaxSaturatesNeverNegative() public view {
         ExprLib.Read[] memory r = new ExprLib.Read[](1);
         r[0] = _read(dNasty, address(nasty), "", ExprLib.Subject.None);
         ExprLib.Node[] memory n = new ExprLib.Node[](3);
         n[0] = _node(ExprLib.Kind.READ, 0, 0);
         n[1] = _node(ExprLib.Kind.CONST, 0, 0);
         n[2] = _node(ExprLib.Kind.LT, 0, 1); // would be true if max were cast to -1
-        vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.ValueOutOfRange.selector, 0));
-        ev.judgeTrigger(_enc(r, n), principal, new int256[](0), 0);
+        assertFalse(ev.judgeTrigger(_enc(r, n), principal, new int256[](0), 0));
+        n[1] = _node(ExprLib.Kind.CONST, 15e17, 0);
+        n[2] = _node(ExprLib.Kind.GT, 0, 1); // "health factor above 1.5" holds with no debt
+        assertTrue(ev.judgeTrigger(_enc(r, n), principal, new int256[](0), 0));
     }
 
     function test_shortReturnAndGasExhaustionRevert() public {

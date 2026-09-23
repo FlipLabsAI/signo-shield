@@ -206,6 +206,33 @@ contract AaveV3AdapterV1ForkTest is Test {
         shield.fire(id, 10e6, "");
     }
 
+    /// Round 7: a wallet with no Aave debt reads a health factor of type(uint256).max from
+    /// the real pool. That now counts as the top of the int256 range, so a health-factor
+    /// trigger registers (it used to revert ValueOutOfRange) and simply reads "not below".
+    function test_healthFactorTriggerRegistersForAWalletWithNoDebt() public {
+        address fresh = makeAddr("no-debt");
+        (,,,,, uint256 hf) = pool.getUserAccountData(fresh);
+        assertEq(hf, type(uint256).max);
+        ExprLib.Read[] memory r = new ExprLib.Read[](1);
+        r[0] = ExprLib.Read({
+            descriptor: dHf,
+            target: POOL,
+            args: abi.encode(fresh),
+            subject: ExprLib.Subject.Principal,
+            decimals: 18
+        });
+        ExprLib.Node[] memory n = new ExprLib.Node[](3);
+        n[0] = ExprLib.Node({kind: uint8(ExprLib.Kind.READ), a: 0, b: 0});
+        n[1] = ExprLib.Node({kind: uint8(ExprLib.Kind.CONST), a: 1.6e18, b: 0});
+        n[2] = ExprLib.Node({kind: uint8(ExprLib.Kind.LT), a: 0, b: 1});
+        IShieldV1.MandateParams memory p = _params(SUPPLY, XETH, 0.01e18, 0.02e18, abi.encode(r, n));
+        vm.prank(fresh);
+        bytes32 id = shield.registerMandate(p);
+        assertEq(shield.getMandate(id).principal, fresh);
+        // "Below 1.6" is false with no debt: the value is the top of the range, never negative.
+        assertFalse(ev.judgeTrigger(p.trigger, fresh, shield.getMandate(id).triggerSigned, 0.01e18));
+    }
+
     function test_supply_raisesTheOwnersATokenBalance() public {
         bytes32 id = _register(_params(SUPPLY, XETH, 0.01e18, 0.02e18, ""));
         uint256 aBefore = IERC20(A_XETH).balanceOf(principal);
