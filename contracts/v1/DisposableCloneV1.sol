@@ -71,7 +71,6 @@ contract DisposableCloneV1 {
         if (_finished) revert AlreadyUsed();
         if (owner_ == address(0)) revert NoOwner();
         _finished = true;
-        owner = owner_;
         for (uint256 i = 0; i < tokens.length; i++) {
             // forge-lint: disable-next-line(calls-loop)
             uint256 held = IERC20(tokens[i]).balanceOf(address(this));
@@ -81,6 +80,9 @@ contract DisposableCloneV1 {
             // forge-lint: disable-next-line(calls-loop)
             if (IERC20(tokens[i]).balanceOf(address(this)) > 0) revert NotEmpty(tokens[i]);
         }
+        // Recorded last: sendToOwner stays closed until this sweep is done
+        // (FLIP-280 round 7 low, fixed in round 8).
+        owner = owner_;
     }
 
     /// @notice Send the whole balance of each token to the owner this clone
@@ -89,8 +91,8 @@ contract DisposableCloneV1 {
     ///         protocol that paid the caller more than was declared, a
     ///         transfer after the firing) still reaches the owner.
     function sendToOwner(address[] calldata tokens) external {
-        if (!_finished) revert NotFinished();
         address to = owner;
+        if (to == address(0)) revert NotFinished();
         for (uint256 i = 0; i < tokens.length; i++) {
             // forge-lint: disable-next-line(calls-loop)
             uint256 held = IERC20(tokens[i]).balanceOf(address(this));

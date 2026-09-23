@@ -77,6 +77,11 @@
             "name": "copyBytes",
             "type": "uint16",
             "internalType": "uint16"
+          },
+          {
+            "name": "unboundedTop",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
       }
@@ -175,6 +180,11 @@
             "name": "copyBytes",
             "type": "uint16",
             "internalType": "uint16"
+          },
+          {
+            "name": "unboundedTop",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
       },

@@ -60,7 +60,8 @@ contract GenericExecutorV1ForkTest is Test {
                 freshness: IDescriptors.Freshness.None,
                 maxAge: 0,
                 gasStipend: 100_000,
-                copyBytes: 32
+                copyBytes: 32,
+                unboundedTop: false
             })
         );
         vm.prank(A_XETH);

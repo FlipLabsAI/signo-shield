@@ -98,21 +98,27 @@ contract V1Round7RecoveryTest is V1ReviewBase {
         assertEq(c.owner(), address(0));
     }
 
-    function test_observationRecoveryBlockedInsideStepButRunsDuringFinishBeforeCoreSettlement() public {
-        (bytes32 id, address clone, R7RecoveryVenue venue, R7SweepHook hook) = _fixture();
+    /// Round 8: recovery is closed until the firing's own sweep has ended, so a token
+    /// callback during finish can no longer reach it; the firing rolls back.
+    function test_fixRecoveryClosedInsideStepAndDuringFinish() public {
+        (bytes32 id, address clone,,) = _fixture();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IShieldV1.OutcomeRejected.selector,
+                id,
+                IShieldV1.MandateReason.OUTCOME_FAILED,
+                abi.encodeWithSelector(DisposableCloneV1.NotFinished.selector)
+            )
+        );
         _fire(id, 0, "");
-        assertFalse(venue.earlyRecovery());
-        assertEq(venue.earlyReason(), abi.encodeWithSelector(DisposableCloneV1.NotFinished.selector));
-        assertTrue(hook.recovered(), "callback during finish already has recovery access");
-        assertEq(hook.firingsDuringTransfer(), 0, "core has not settled yet");
-        assertEq(core.getMandate(id).firings, 1);
-        assertEq(output.balanceOf(principal), 7e18);
-        assertEq(output.balanceOf(clone), 0);
-        assertEq(DisposableCloneV1(clone).owner(), principal);
+        assertEq(clone.code.length, 0);
+        assertEq(core.getMandate(id).firings, 0);
+        assertEq(output.balanceOf(principal), 0);
     }
 
     function test_failedFiringRollsBackEarlyRecoveryAndOwnerRecord() public {
         (bytes32 id, address clone, R7RecoveryVenue venue, R7SweepHook hook) = _fixture();
+        hook.arm(address(0), address(output), IShieldV1(address(core)), id); // round 8: recovery is closed during finish
         venue.setPaid(90e18);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -151,6 +157,7 @@ contract V1Round7RecoveryTest is V1ReviewBase {
 
     function test_oldCloneRecoveryCannotConsumeNextFiringPrefundsOrChangeAccounting() public {
         (bytes32 id, address first,, R7SweepHook hook) = _fixture();
+        hook.arm(address(0), address(output), IShieldV1(address(core)), id); // round 8: recovery is closed during finish
         _fire(id, 0, "");
         address second = claims.nextClone(id);
         assertNotEq(first, second);
@@ -160,8 +167,11 @@ contract V1Round7RecoveryTest is V1ReviewBase {
         DisposableCloneV1(first).sendToOwner(_tokens(address(output)));
         assertEq(output.balanceOf(second), 13e18);
         assertEq(claims.nextClone(id), second);
-        hook.arm(second, address(output), IShieldV1(address(core)), id);
         _fire(id, 0, "");
+        // Both firings' undeclared bonus (7 each) and both prefunds (11, 13) reach the
+        // owner through recovery after each firing.
+        vm.prank(recipient);
+        DisposableCloneV1(second).sendToOwner(_tokens(address(output)));
         assertEq(output.balanceOf(principal), 38e18);
         assertEq(core.getMandate(id).firings, 2);
         assertEq(core.getMandate(id).cumulativeUsed, 0);

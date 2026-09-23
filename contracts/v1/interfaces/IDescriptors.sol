@@ -43,6 +43,11 @@ interface IDescriptors {
         uint32 maxAge;
         uint32 gasStipend;
         uint16 copyBytes;
+        // Unsigned only: the value's top of range means "unbounded" (Aave reports
+        // "no debt" as a health factor of type(uint256).max), so a value above the
+        // int256 range reads as the top of that range. Every other descriptor
+        // refuses such a value: two amounts must never read as equal (round 8).
+        bool unboundedTop;
     }
 
     event DescriptorListed(bytes32 indexed id, bool listed);

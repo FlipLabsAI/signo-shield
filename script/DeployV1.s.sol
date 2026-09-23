@@ -198,7 +198,8 @@ contract DeployV1 is Script {
             freshness: IDescriptors.Freshness.None,
             maxAge: 0,
             gasStipend: 100_000,
-            copyBytes: 64
+            copyBytes: 64,
+            unboundedTop: false
         });
     }
 
@@ -245,7 +246,8 @@ contract DeployV1 is Script {
             freshness: IDescriptors.Freshness.None,
             maxAge: 0,
             gasStipend: gas_,
-            copyBytes: copy
+            copyBytes: copy,
+            unboundedTop: false
         });
     }
 
@@ -267,7 +269,8 @@ contract DeployV1 is Script {
             freshness: IDescriptors.Freshness.ChainlinkRound,
             maxAge: maxAge,
             gasStipend: 160_000,
-            copyBytes: 160
+            copyBytes: 160,
+            unboundedTop: false
         });
     }
 
@@ -286,7 +289,8 @@ contract DeployV1 is Script {
             freshness: IDescriptors.Freshness.None,
             maxAge: 0,
             gasStipend: 500_000,
-            copyBytes: 192
+            copyBytes: 192,
+            unboundedTop: word == 5
         });
     }
 
@@ -305,7 +309,8 @@ contract DeployV1 is Script {
             freshness: IDescriptors.Freshness.None,
             maxAge: 0,
             gasStipend: 100_000,
-            copyBytes: 32
+            copyBytes: 32,
+            unboundedTop: false
         });
     }
 

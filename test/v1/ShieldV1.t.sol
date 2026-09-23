@@ -61,7 +61,8 @@ contract ShieldV1Test is Test {
                 freshness: IDescriptors.Freshness.None,
                 maxAge: 0,
                 gasStipend: 100_000,
-                copyBytes: 32
+                copyBytes: 32,
+                unboundedTop: false
             })
         );
         vm.stopPrank();
@@ -546,9 +547,40 @@ contract ShieldV1Test is Test {
                 freshness: IDescriptors.Freshness.None,
                 maxAge: 0,
                 gasStipend: 100_000,
-                copyBytes: 32
+                copyBytes: 32,
+                unboundedTop: false
             })
         );
+    }
+
+    /// Round 8: only an unsigned read's top can mean "unbounded"; a signed value
+    /// cannot be above the int256 range, so the flag there is refused as meaningless.
+    function test_unboundedTopOnlyOnUnsignedDescriptors() public {
+        IDescriptors.Descriptor memory d = IDescriptors.Descriptor({
+            kind: IDescriptors.DescriptorKind.Shape,
+            target: address(0),
+            selector: bytes4(keccak256("value(address)")),
+            argCount: 1,
+            subjectArg: 0,
+            subjectRule: IDescriptors.SubjectRule.PrincipalRequired,
+            word: 0,
+            isSigned: true,
+            mustBePositive: false,
+            decimals: 0,
+            freshness: IDescriptors.Freshness.None,
+            maxAge: 0,
+            gasStipend: 100_000,
+            copyBytes: 32,
+            unboundedTop: true
+        });
+        vm.prank(admin);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShieldRegistryV1.InvalidParams.selector, bytes32("unboundedTop"))
+        );
+        registry.listDescriptor(d);
+        d.isSigned = false;
+        vm.prank(admin);
+        registry.listDescriptor(d);
     }
 
     function test_rolesAdminCannotBeEnforcerAndListingGatesNewOnly() public {

@@ -20,6 +20,7 @@ contract ExpressionEvaluatorTest is Test {
     bytes32 internal dBalance; // Shape: balanceOf(address), PrincipalRequired
     bytes32 internal dFeed; // PerAddress: latestRoundData, ChainlinkRound, signed, positive
     bytes32 internal dNasty; // PerAddress: value(), unsigned
+    bytes32 internal dNastyTop; // the same read, its top value meaning "unbounded"
     bytes32 internal dExplicitOk; // Shape balanceOf without subject rule
 
     function setUp() public {
@@ -43,7 +44,8 @@ contract ExpressionEvaluatorTest is Test {
                 freshness: IDescriptors.Freshness.None,
                 maxAge: 0,
                 gasStipend: 100_000,
-                copyBytes: 32
+                copyBytes: 32,
+                unboundedTop: false
             })
         );
         dFeed = catalog.list(
@@ -61,7 +63,8 @@ contract ExpressionEvaluatorTest is Test {
                 freshness: IDescriptors.Freshness.ChainlinkRound,
                 maxAge: 3600,
                 gasStipend: 160_000,
-                copyBytes: 160
+                copyBytes: 160,
+                unboundedTop: false
             })
         );
         dNasty = catalog.list(
@@ -79,7 +82,27 @@ contract ExpressionEvaluatorTest is Test {
                 freshness: IDescriptors.Freshness.None,
                 maxAge: 0,
                 gasStipend: 100_000,
-                copyBytes: 32
+                copyBytes: 32,
+                unboundedTop: false
+            })
+        );
+        dNastyTop = catalog.list(
+            IDescriptors.Descriptor({
+                kind: IDescriptors.DescriptorKind.PerAddress,
+                target: address(nasty),
+                selector: MockNasty.value.selector,
+                argCount: 0,
+                subjectArg: -1,
+                subjectRule: IDescriptors.SubjectRule.None,
+                word: 0,
+                isSigned: false,
+                mustBePositive: false,
+                decimals: 18,
+                freshness: IDescriptors.Freshness.None,
+                maxAge: 0,
+                gasStipend: 100_000,
+                copyBytes: 32,
+                unboundedTop: true
             })
         );
         feed.set(10, 2743e8, block.timestamp, 10);
@@ -236,15 +259,19 @@ contract ExpressionEvaluatorTest is Test {
         ev.judgeTrigger(t, principal, new int256[](0), 0);
     }
 
-    /// Round 7: an unsigned value above the int256 range (Aave's "no debt" health factor)
-    /// counts as the top of the range: never negative, above every limit.
-    function test_unsignedAboveIntMaxSaturatesNeverNegative() public view {
+    /// Round 8: an unsigned value above the int256 range is refused, never cast to a
+    /// negative, unless the descriptor says its top means "unbounded" (Aave's no-debt
+    /// health factor): then it reads as the top, above every limit.
+    function test_unsignedAboveIntMaxIsRefusedUnlessTheTopMeansUnbounded() public {
         ExprLib.Read[] memory r = new ExprLib.Read[](1);
         r[0] = _read(dNasty, address(nasty), "", ExprLib.Subject.None);
         ExprLib.Node[] memory n = new ExprLib.Node[](3);
         n[0] = _node(ExprLib.Kind.READ, 0, 0);
         n[1] = _node(ExprLib.Kind.CONST, 0, 0);
         n[2] = _node(ExprLib.Kind.LT, 0, 1); // would be true if max were cast to -1
+        vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.ValueOutOfRange.selector, 0));
+        ev.judgeTrigger(_enc(r, n), principal, new int256[](0), 0);
+        r[0] = _read(dNastyTop, address(nasty), "", ExprLib.Subject.None);
         assertFalse(ev.judgeTrigger(_enc(r, n), principal, new int256[](0), 0));
         n[1] = _node(ExprLib.Kind.CONST, 15e17, 0);
         n[2] = _node(ExprLib.Kind.GT, 0, 1); // "health factor above 1.5" holds with no debt

@@ -285,6 +285,7 @@ contract ShieldRegistryV1 is IShieldRegistryV1, IDescriptors, Ownable2Step {
             revert InvalidParams("freshness");
         }
         if (d.gasStipend == 0) revert InvalidParams("gasStipend");
+        if (d.unboundedTop && d.isSigned) revert InvalidParams("unboundedTop");
         if (_descriptors[id].gasStipend == 0) _descriptors[id] = d;
         _descriptorListed[id] = true;
         emit DescriptorListed(id, true);

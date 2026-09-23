@@ -70,17 +70,17 @@ contract V1Round7ReadsTest is V1ReviewBase {
         );
     }
 
-    function test_boundarySaturationHidesCollateralHalvingFromMandatoryRepayAndOwnerTree() public {
+    /// Round 8: an amount above the int256 range is refused, so a halving above it can no
+    /// longer read as "unchanged" (the reviewer's round 7 high, conditional).
+    function test_fixHugeCollateralIsRefusedNotSaturated() public {
         market.setDebt(principal, 1000e18);
         market.setCollateral(principal, type(uint256).max);
         market.setSteal(true);
         IShieldV1.MandateParams memory p = _genericParams(generic.ACTION_REPAY(), _repayConfig());
         p.outcome = _comparison(ExprLib.Kind.GE);
-        bytes32 id = _register(p);
-        assertEq(_fire(id, 100e18, _route(_repayCall(100e18))), 100e18);
-        assertEq(market.collateralOf(principal), TOP, "actual raw collateral halved");
-        assertEq(market.debtOf(principal), 900e18);
-        assertEq(core.getMandate(id).firings, 1, "mandatory and owner preservation checks accepted");
+        vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.ValueOutOfRange.selector, 0));
+        vm.prank(principal);
+        core.registerMandate(p);
     }
 
     function test_controlRepresentableCollateralLossStillRollsBack() public {
@@ -101,7 +101,7 @@ contract V1Round7ReadsTest is V1ReviewBase {
         assertEq(core.getMandate(id).firings, 0);
     }
 
-    function test_boundaryHighPrecisionCollateralActuallyLeavesThePosition() public {
+    function test_fixHighPrecisionCollateralAboveTheRangeIsRefused() public {
         MockERC20 collateral = new MockERC20("High precision collateral", "HP", 77);
         R7CollateralMarket m = new R7CollateralMarket(IERC20(address(asset)), IERC20(address(collateral)));
         collateral.mint(principal, type(uint256).max);
@@ -124,65 +124,52 @@ contract V1Round7ReadsTest is V1ReviewBase {
                 abi.encodeCall(R7CollateralMarket.repay, (principal, 100e18))
             )
         );
-        assertEq(_fire(id, 100e18, route), 100e18);
-        assertEq(collateral.balanceOf(address(0xBAD)), TOP + 1);
-        assertEq(collateral.balanceOf(address(m)), TOP);
-        assertEq(m.collateralOf(principal), TOP);
-        assertEq(m.balanceOf(principal), 900e18);
+        // Refused when the collateral is read, before anything moves.
+        vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.ValueOutOfRange.selector, 0));
+        _fire(id, 100e18, route);
+        assertEq(m.balanceOf(principal), 1000e18);
     }
 
-    function test_saturatedDebtRefusesAnOtherwiseValidRepayment() public {
+    function test_fixHugeDebtIsRefusedBeforeAnythingMoves() public {
         market.setDebt(principal, type(uint256).max);
         market.setCollateral(principal, 1000e18);
         bytes32 id = _repayMandate();
         bytes memory route = _route(_repayCall(100e18));
-        _expectOutcome(
-            id,
-            abi.encodeWithSelector(
-                GenericExecutorV1.DebtNotReduced.selector, type(int256).max, type(int256).max, 99.5e18
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.ValueOutOfRange.selector, 0));
         _fire(id, 100e18, route);
         assertEq(market.debtOf(principal), type(uint256).max);
         assertEq(asset.balanceOf(principal), 1_000_000e18);
     }
 
-    function test_debtCrossingOutOfSaturationUnderstatesButNeverInventsRepayment() public {
+    function test_fixDebtAboveTheRangeIsRefused() public {
         market.setDebt(principal, TOP + 50e18);
         market.setCollateral(principal, 1000e18);
         bytes32 id = _repayMandate();
         bytes memory route = _route(_repayCall(100e18));
-        _expectOutcome(
-            id,
-            abi.encodeWithSelector(
-                GenericExecutorV1.DebtNotReduced.selector, type(int256).max, int256(TOP - 50e18), 99.5e18
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.ValueOutOfRange.selector, 0));
         _fire(id, 100e18, route);
     }
 
-    function testFuzz_distinctHighReadsBecomeEqual(uint128 delta) public {
+    function testFuzz_fixDistinctHighReadsAreRefused(uint128 delta) public {
         uint256 high = TOP + 1 + uint256(delta);
         market.setCollateral(principal, high);
         bytes memory tree = _comparison(ExprLib.Kind.EQ);
-        int256[] memory before_ = evaluator.snapshot(tree, principal);
-        market.setCollateral(principal, TOP);
-        assertTrue(evaluator.judgeOutcome(tree, principal, new int256[](0), before_, 0));
-        assertGt(high, market.collateralOf(principal));
+        vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.ValueOutOfRange.selector, 0));
+        evaluator.snapshot(tree, principal);
     }
 
-    function test_strictImprovementAboveTopBecomesFalse() public {
+    function test_fixAnOutcomeReadAboveTheRangeIsRefused() public {
         market.setCollateral(principal, TOP);
         bytes memory tree = _comparison(ExprLib.Kind.GT);
         int256[] memory before_ = evaluator.snapshot(tree, principal);
         market.setCollateral(principal, type(uint256).max);
-        assertFalse(evaluator.judgeOutcome(tree, principal, new int256[](0), before_, 0));
+        vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.ValueOutOfRange.selector, 0));
+        evaluator.judgeOutcome(tree, principal, new int256[](0), before_, 0);
     }
 
-    function _mathTree(ExprLib.Kind op, uint256 rhs) internal view returns (bytes memory) {
+    function _mathTree(ExprLib.Kind op, uint256 rhs, bytes32 id) internal view returns (bytes memory) {
         ExprLib.Read[] memory r = new ExprLib.Read[](1);
-        r[0] =
-            ExprLib.Read(collateralId, address(market), abi.encode(principal), ExprLib.Subject.Principal, 18);
+        r[0] = ExprLib.Read(id, address(market), abi.encode(principal), ExprLib.Subject.Principal, 18);
         ExprLib.Node[] memory n = new ExprLib.Node[](5);
         n[0] = ExprLib.Node(uint8(ExprLib.Kind.READ), 0, 0);
         n[1] = ExprLib.Node(uint8(ExprLib.Kind.CONST), rhs, 0);
@@ -192,21 +179,32 @@ contract V1Round7ReadsTest is V1ReviewBase {
         return abi.encode(r, n);
     }
 
+    /// The top only exists for a descriptor that says it means "unbounded"; arithmetic on
+    /// it stays checked and fails closed.
     function test_topArithmeticOverflowAndDivisionByZeroStillFailClosed() public {
         market.setCollateral(principal, type(uint256).max);
-        bytes memory add = _mathTree(ExprLib.Kind.ADD, 1);
-        bytes memory mul = _mathTree(ExprLib.Kind.MUL, 2);
-        bytes memory div = _mathTree(ExprLib.Kind.DIV, 0);
+        (IDescriptors.Descriptor memory d,,) = registry.descriptorOf(collateralId);
+        d.unboundedTop = true;
+        bytes32 topId = registry.listDescriptor(d);
+        vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.ValueOutOfRange.selector, 0));
+        evaluator.judgeTrigger(_mathTree(ExprLib.Kind.ADD, 1, collateralId), principal, new int256[](0), 0);
+        bytes memory add = _mathTree(ExprLib.Kind.ADD, 1, topId);
+        bytes memory mul = _mathTree(ExprLib.Kind.MUL, 2, topId);
+        bytes memory div = _mathTree(ExprLib.Kind.DIV, 0, topId);
         vm.expectRevert(abi.encodeWithSignature("Panic(uint256)", 0x11));
         evaluator.judgeTrigger(add, principal, new int256[](0), 0);
         vm.expectRevert(abi.encodeWithSignature("Panic(uint256)", 0x11));
         evaluator.judgeTrigger(mul, principal, new int256[](0), 0);
         vm.expectRevert(abi.encodeWithSignature("Panic(uint256)", 0x12));
         evaluator.judgeTrigger(div, principal, new int256[](0), 0);
-        assertTrue(evaluator.judgeTrigger(_mathTree(ExprLib.Kind.SUB, 1), principal, new int256[](0), 0));
+        assertTrue(
+            evaluator.judgeTrigger(_mathTree(ExprLib.Kind.SUB, 1, topId), principal, new int256[](0), 0)
+        );
     }
 
-    function test_claimableSaturationWeakensTheMandatoryRawRewardFloor() public {
+    /// Round 8: an owed amount above the range is refused, so the reward floor can no
+    /// longer be weakened by reading it as the top.
+    function test_fixClaimableAboveTheRangeIsRefused() public {
         ClaimsConfirmationVenue venue = new ClaimsConfirmationVenue(reward, output);
         venue.configure(type(uint256).max, TOP, 0);
         ClaimExecutorV1.Config memory c = _claimConfig();
@@ -220,11 +218,10 @@ contract V1Round7ReadsTest is V1ReviewBase {
         ctx.principal = principal;
         ctx.action = claims.ACTION_CLAIM_COLLECT();
         ctx.actionConfig = abi.encode(uint8(1), c);
-        uint256[] memory read = abi.decode(claims.snapshot(ctx, 0), (uint256[]));
-        assertEq(read[0], TOP, "not the actual uint256 entitlement");
-        assertGt(venue.reported(), read[0]);
+        vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.ValueOutOfRange.selector, 0));
+        claims.snapshot(ctx, 0);
+        vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.ValueOutOfRange.selector, 0));
         _fire(id, 0, "");
-        assertEq(reward.balanceOf(principal), TOP, "about half the raw entitlement accepted");
-        assertEq(core.getMandate(id).firings, 1);
+        assertEq(reward.balanceOf(principal), 0);
     }
 }

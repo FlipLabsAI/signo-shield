@@ -36,7 +36,8 @@ contract DeployV1ForkTest is Test {
             freshness: IDescriptors.Freshness.ChainlinkRound,
             maxAge: 3600,
             gasStipend: 160_000,
-            copyBytes: 160
+            copyBytes: 160,
+            unboundedTop: false
         });
         bytes32 id = d.registry.descriptorId(feed);
         (IDescriptors.Descriptor memory got, bool listed, bool revoked) = d.registry.descriptorOf(id);

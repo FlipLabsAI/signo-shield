@@ -79,7 +79,8 @@ contract V1Confirmation4ForkTest is Test {
                 freshness: IDescriptors.Freshness.None,
                 maxAge: 0,
                 gasStipend: 500_000,
-                copyBytes: 192
+                copyBytes: 192,
+                unboundedTop: true
             })
         );
         vm.prank(A_XETH);
