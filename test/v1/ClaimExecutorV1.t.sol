@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {Test} from "forge-std/Test.sol";
+import {ExprLib} from "contracts/v1/libraries/ExprLib.sol";
 import {ShieldV1} from "contracts/v1/ShieldV1.sol";
 import {ShieldRegistryV1} from "contracts/v1/ShieldRegistryV1.sol";
 import {IShieldV1} from "contracts/v1/interfaces/IShieldV1.sol";
@@ -57,6 +58,12 @@ contract ClaimExecutorV1Test is Test {
         c.oracle = address(oracle);
         c.maxSlippageBps = 50;
         c.dust = 0;
+        if (compose) {
+            // The signed price rules: no round is listed for either token here (positivity only).
+            c.prices = new ExprLib.PriceRound[](2);
+            c.prices[0] = ExprLib.PriceRound(address(weth), bytes32(0), address(0));
+            c.prices[1] = ExprLib.PriceRound(address(reward), bytes32(0), address(0));
+        }
     }
 
     function _params(bytes32 action, ClaimExecutorV1.Config memory c)

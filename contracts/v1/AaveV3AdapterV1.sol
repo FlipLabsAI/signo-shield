@@ -54,6 +54,7 @@ contract AaveV3AdapterV1 is IExecutorV1 {
         bool slippageOverride;
         address router;
         address spender;
+        ExprLib.PriceRound[] prices; // the signed fresh-round rules for [collateral, debtAsset]
     }
 
     event Supplied(
@@ -134,6 +135,9 @@ contract AaveV3AdapterV1 is IExecutorV1 {
             }
             if (c.spender.code.length == 0 || _isReserved(c.spender, c, asset, variableDebt)) {
                 revert ConfigInvalid("spender");
+            }
+            if (!ExprLib.priceRoundsMatch(c.prices, ExprLib.pair(c.collateral, c.debtAsset), registry)) {
+                revert ConfigInvalid("price:round");
             }
         } else {
             revert UnsupportedAction(action);
@@ -307,9 +311,9 @@ contract AaveV3AdapterV1 is IExecutorV1 {
         IAaveOracle oracle = IAaveOracle(addressesProvider.getPriceOracle());
         // The resolved oracle is a dependency like the pool and the router.
         if (registry.isVenueBlocked(address(oracle))) revert VenueBlocked(address(oracle));
-        // A positive price, and a fresh underlying round where the registry lists one.
-        ExprLib.requireFreshPrice(c.collateral, registry);
-        ExprLib.requireFreshPrice(c.debtAsset, registry);
+        // A positive price, and the fresh underlying round the owner signed (admitted equal to the registry's rule).
+        ExprLib.requireFreshPrice(c.prices[0], registry);
+        ExprLib.requireFreshPrice(c.prices[1], registry);
         uint256 collateralPrice = oracle.getAssetPrice(c.collateral);
         uint256 debtPrice = oracle.getAssetPrice(c.debtAsset);
         if (collateralPrice == 0 || debtPrice == 0) revert OutcomeFailed("oracle price");

@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import "./V1ReviewBase.sol";
 import {MockERC20} from "test/mocks/MockERC20.sol";
 import {MockVault} from "test/v1/mocks/MockVenues.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 /// Honest accounting: debt is an 8-decimal asset priced at $100, accountData is 8-decimal USD.
 contract FollowupValueMarket {
@@ -103,7 +104,7 @@ contract V1FixFollowupTest is V1ReviewBase {
         assertEq(reward.allowance(clone, address(second)), 0);
     }
 
-    function _vaultParams(address vault, address underlying, uint256 unitQuote)
+    function _vaultParams(address vault, address underlying, uint256 sampleShares)
         internal
         view
         returns (IShieldV1.MandateParams memory p)
@@ -113,7 +114,8 @@ contract V1FixFollowupTest is V1ReviewBase {
         c.venues[0] = GenericExecutorV1.Venue(vault, address(0));
         c.sweepSet = new address[](0);
         c.tokenOut = underlying;
-        c.signedAssetsPerShare = unitQuote;
+        c.signedShares = sampleShares;
+        c.signedAssets = IERC4626(vault).convertToAssets(sampleShares);
         c.sanityBandBps = 100;
         c.maxSlippageBps = 50;
         p = _genericParams(generic.ACTION_REDEEM(), c);
@@ -139,7 +141,7 @@ contract V1FixFollowupTest is V1ReviewBase {
         uint256 preCallQuote = vault.convertToAssets(shares);
         assertEq(preCallQuote, 150_000e6);
         assertEq(vault.convertToAssets(1e18), 1, "single-unit quote truncates 1.5 to 1");
-        IShieldV1.MandateParams memory p = _vaultParams(address(vault), address(usd), 1);
+        IShieldV1.MandateParams memory p = _vaultParams(address(vault), address(usd), shares);
         p.maxTransactionValue = shares;
         p.maxCumulativeValue = shares;
         vm.prank(principal);

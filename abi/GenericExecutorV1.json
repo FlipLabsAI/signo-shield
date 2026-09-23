@@ -181,6 +181,19 @@
   },
   {
     "type": "function",
+    "name": "MIN_BAND_UNITS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "ROUNDING_TOLERANCE_BPS",
     "inputs": [],
     "outputs": [

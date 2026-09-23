@@ -5,6 +5,8 @@ pragma solidity 0.8.28;
 /// sandbox. The calldata is produced by tools/okx-fixture.py, quoted for the
 /// sandbox address the test's deploy order yields (printed by
 /// `test_printSandboxAddress`), at the block pinned below.
+import {IShieldRegistryV1} from "contracts/v1/interfaces/IShieldRegistryV1.sol";
+import {PinnedPrices} from "test/v1/mocks/PinnedPrices.sol";
 import {Test, console2} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ShieldV1} from "contracts/v1/ShieldV1.sol";
@@ -61,6 +63,7 @@ contract GenericExecutorV1OkxForkTest is Test {
         c.rateKind = uint8(GenericExecutorV1.RateKind.Oracle);
         c.oracle = ORACLE;
         c.maxSlippageBps = 100;
+        c.prices = PinnedPrices.pin(IShieldRegistryV1(address(registry)), XETH, USDT0);
         IShieldV1.MandateParams memory p;
         p.agent = agent;
         p.executor = address(exec);

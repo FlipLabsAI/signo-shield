@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {Test} from "forge-std/Test.sol";
+import {ExprLib} from "contracts/v1/libraries/ExprLib.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ShieldV1} from "contracts/v1/ShieldV1.sol";
@@ -99,6 +100,18 @@ contract GenericExecutorV1Test is Test {
         view
         returns (IShieldV1.MandateParams memory p)
     {
+        // An Oracle transform signs the registry's price rules. This suite binds no round, so
+        // the rules are the explicit no-round mode. Built without external calls, so a
+        // `vm.prank` or `vm.expectRevert` placed before `registerMandate(_params(...))` still
+        // reaches the registration.
+        ExprLib.PriceRound[] memory given = c.prices;
+        if (
+            action == TRANSFORM && c.rateKind == uint8(GenericExecutorV1.RateKind.Oracle) && given.length == 0
+        ) {
+            c.prices = new ExprLib.PriceRound[](2);
+            c.prices[0] = ExprLib.PriceRound(asset, bytes32(0), address(0));
+            c.prices[1] = ExprLib.PriceRound(c.tokenOut, bytes32(0), address(0));
+        }
         p = IShieldV1.MandateParams({
             agent: agent,
             executor: address(exec),
@@ -115,6 +128,7 @@ contract GenericExecutorV1Test is Test {
             trigger: "",
             outcome: ""
         });
+        c.prices = given;
     }
 
     function _swapCall(uint256 amountIn, address to) internal view returns (IExecutorV1.Call memory) {
@@ -244,7 +258,8 @@ contract GenericExecutorV1Test is Test {
         c.sweepSet = new address[](0);
         c.tokenOut = address(usdc);
         c.maxSlippageBps = 50;
-        c.signedAssetsPerShare = vault.convertToAssets(1e18);
+        c.signedShares = 1_000e18; // the sample: the size of the position these tests redeem
+        c.signedAssets = vault.convertToAssets(c.signedShares);
         c.sanityBandBps = 500;
     }
 

@@ -6,6 +6,8 @@ pragma solidity 0.8.28;
 /// descriptor catalog. Same fixture as the v0.1 fork test (block 70,752,723,
 /// xETH collateral, USD-T0 debt, health factor about 1.5).
 /// RPC: `XLAYER_RPC_URL`, defaulting to the public endpoint.
+import {IShieldRegistryV1} from "contracts/v1/interfaces/IShieldRegistryV1.sol";
+import {PinnedPrices} from "test/v1/mocks/PinnedPrices.sol";
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IAaveOracle, IPool} from "contracts/adapters/aave-v3/interfaces/IAaveV3.sol";
@@ -160,7 +162,8 @@ contract AaveV3AdapterV1ForkTest is Test {
                 maxSlippageBps: 100,
                 slippageOverride: false,
                 router: address(router),
-                spender: address(router)
+                spender: address(router),
+                prices: PinnedPrices.pin(IShieldRegistryV1(address(registry)), XETH, USDT0)
             })
         );
     }
@@ -281,7 +284,8 @@ contract AaveV3AdapterV1ForkTest is Test {
                 maxSlippageBps: 300,
                 slippageOverride: false,
                 router: address(router),
-                spender: address(router)
+                spender: address(router),
+                prices: PinnedPrices.pin(IShieldRegistryV1(address(registry)), XETH, USDT0)
             })
         );
         vm.prank(principal);

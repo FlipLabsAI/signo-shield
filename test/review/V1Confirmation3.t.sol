@@ -9,6 +9,9 @@ import {MockVault} from "test/v1/mocks/MockVenues.sol";
 /// Independent confirmation of 9eae70e. Counterexamples assert the current defect;
 /// controls assert expected refusal or success; scope observations are not findings.
 /// No production contracts are replaced.
+/// Fix round 4: each `test_gap...` is renamed `test_fix...` and now expects the refusal
+/// (C1: the mandate keeps the price rule it was admitted with; C2: the band is judged
+/// on a signed sample). Setup and counterexample inputs are unchanged.
 contract V1Confirmation3Test is V1ReviewBase {
     function _round(MockFeed feed, uint32 age) internal pure returns (IDescriptors.Descriptor memory d) {
         d.kind = IDescriptors.DescriptorKind.PerAddress;
@@ -76,7 +79,7 @@ contract V1Confirmation3Test is V1ReviewBase {
         _assertNoFiring(id);
     }
 
-    function test_gapAdminCanClearFreshnessOnAnUnamendedLiveMandate() public {
+    function test_fixAdminClearingFreshnessDoesNotReachALiveMandate() public {
         (MockFeed feed,) = _bind(address(asset), 3600);
         bytes32 id = _swapMandate();
         feed.set(7, 1e8, vm.getBlockTimestamp() - 3601, 7);
@@ -84,12 +87,13 @@ contract V1Confirmation3Test is V1ReviewBase {
         _swapFire(id);
         _assertNoFiring(id);
         registry.setPriceRound(address(asset), bytes32(0), address(0));
-        assertEq(_swapFire(id), 100e18);
+        _expectExecutorRevert(id, abi.encodeWithSelector(IEvaluatorV1.ReadStale.selector, 0));
+        _swapFire(id);
+        _assertNoFiring(id);
         assertEq(core.getMandate(id).revision, 1, "owner never amended the mandate");
-        assertEq(output.balanceOf(principal), 100e18);
     }
 
-    function test_gapAdminCanReplaceFreshnessAgeOnAnUnamendedLiveMandate() public {
+    function test_fixAdminRelaxingFreshnessAgeDoesNotReachALiveMandate() public {
         (MockFeed feed,) = _bind(address(asset), 3600);
         bytes32 id = _swapMandate();
         feed.set(7, 1e8, vm.getBlockTimestamp() - 7200, 7);
@@ -97,11 +101,13 @@ contract V1Confirmation3Test is V1ReviewBase {
         _swapFire(id);
         bytes32 relaxed = registry.listDescriptor(_round(feed, 86_400));
         registry.setPriceRound(address(asset), relaxed, address(feed));
-        assertEq(_swapFire(id), 100e18);
+        _expectExecutorRevert(id, abi.encodeWithSelector(IEvaluatorV1.ReadStale.selector, 0));
+        _swapFire(id);
+        _assertNoFiring(id);
         assertEq(core.getMandate(id).revision, 1);
     }
 
-    function test_gapClearingBindingBypassesRevokedMandatoryDescriptor() public {
+    function test_fixClearingBindingKeepsTheRevokedDescriptorStop() public {
         (, bytes32 descriptor) = _bind(address(asset), 3600);
         bytes32 id = _swapMandate();
         vm.prank(enforcer);
@@ -111,13 +117,17 @@ contract V1Confirmation3Test is V1ReviewBase {
         );
         _swapFire(id);
         registry.setPriceRound(address(asset), bytes32(0), address(0));
-        assertEq(_swapFire(id), 100e18);
+        _expectExecutorRevert(
+            id, abi.encodeWithSelector(IEvaluatorV1.TreeInvalid.selector, "descriptorRevoked")
+        );
+        _swapFire(id);
+        _assertNoFiring(id);
         (,, bool revoked) = registry.descriptorOf(descriptor);
-        assertTrue(revoked, "revocation flag remains; the live mandate stopped consulting it");
+        assertTrue(revoked, "revocation flag remains and the live mandate still consults it");
         assertEq(core.getMandate(id).revision, 1);
     }
 
-    function test_gapClearingBindingBypassesSuspendedMandatoryFeedWithoutDelay() public {
+    function test_fixClearingBindingKeepsTheSuspendedFeedStop() public {
         (MockFeed feed,) = _bind(address(asset), 3600);
         bytes32 id = _swapMandate();
         vm.prank(enforcer);
@@ -125,15 +135,19 @@ contract V1Confirmation3Test is V1ReviewBase {
         _expectExecutorRevert(id, abi.encodeWithSelector(IEvaluatorV1.TreeInvalid.selector, "targetBlocked"));
         _swapFire(id);
         registry.setPriceRound(address(asset), bytes32(0), address(0));
-        assertEq(_swapFire(id), 100e18);
+        _expectExecutorRevert(id, abi.encodeWithSelector(IEvaluatorV1.TreeInvalid.selector, "targetBlocked"));
+        _swapFire(id);
+        _assertNoFiring(id);
         assertTrue(registry.isSuspended(address(feed)));
     }
 
-    function test_gapDelistedMandatoryPriceDescriptorStillAdmitsNewMandates() public {
+    function test_fixDelistedMandatoryPriceDescriptorRefusesNewMandates() public {
         (, bytes32 descriptor) = _bind(address(asset), 3600);
         registry.delistDescriptor(descriptor);
-        bytes32 id = _swapMandate();
-        assertEq(_swapFire(id), 100e18);
+        IShieldV1.MandateParams memory p = _genericParams(generic.ACTION_TRANSFORM(), _genericConfig());
+        vm.prank(principal);
+        vm.expectRevert(abi.encodeWithSelector(GenericExecutorV1.ConfigInvalid.selector, "price:round"));
+        core.registerMandate(p);
         (, bool listed,) = registry.descriptorOf(descriptor);
         assertFalse(listed);
     }
@@ -180,7 +194,7 @@ contract V1Confirmation3Test is V1ReviewBase {
         core.registerMandate(p);
     }
 
-    function _vaultMandate(MockVault vault, address underlying, uint256 quote, uint256 amount)
+    function _vaultMandate(MockVault vault, address underlying, uint256 sampleShares, uint256 amount)
         internal
         returns (bytes32)
     {
@@ -189,7 +203,8 @@ contract V1Confirmation3Test is V1ReviewBase {
         c.venues[0] = GenericExecutorV1.Venue(address(vault), address(0));
         c.sweepSet = new address[](0);
         c.tokenOut = underlying;
-        c.signedAssetsPerShare = quote;
+        c.signedShares = sampleShares;
+        c.signedAssets = vault.convertToAssets(sampleShares);
         c.sanityBandBps = 100;
         c.maxSlippageBps = 50;
         IShieldV1.MandateParams memory p = _genericParams(generic.ACTION_REDEEM(), c);
@@ -231,27 +246,61 @@ contract V1Confirmation3Test is V1ReviewBase {
         usd.transfer(address(0xD00D), deposit - 1_900_000_000_000);
     }
 
-    function test_gapRedeemRoundedSanityBandAllowsFortySevenPercentDropAfterSigning() public {
+    function test_fixRedeemSampleBandRefusesFortySevenPercentDropAfterSigning() public {
         (MockERC20 usd, FollowupOffsetVault vault) = _impairedVault();
         uint256 shares = 100_000_000_000e18;
         uint256 valueAtSigning = vault.convertToAssets(shares);
         assertEq(valueAtSigning, 190_000e6);
         assertEq(vault.convertToAssets(1e18), 1);
-        bytes32 id = _vaultMandate(vault, address(usd), 1, shares);
+        bytes32 id = _vaultMandate(vault, address(usd), shares, shares);
         // Loss AFTER signing: a 47.36% conversion move must breach the signed 1% band.
         vm.prank(address(vault));
         usd.transfer(address(0xD00D), 900_000_000_000);
         assertEq(vault.convertToAssets(1e18), 1, "unit quote hides the move");
-        assertEq(_redeem(id, vault, shares, shares), shares);
-        assertEq(usd.balanceOf(principal), 100_000e6);
-        assertLt(usd.balanceOf(principal), valueAtSigning * 9900 / 10_000);
+        // The route is built first: its `nextClone` read must not consume the expectRevert.
+        bytes memory route = _route(
+            IExecutorV1.Call(
+                address(vault),
+                address(0),
+                address(0),
+                0,
+                false,
+                abi.encodeWithSignature(
+                    "redeem(uint256,address,address)", shares, principal, generic.nextClone(id)
+                )
+            )
+        );
+        vm.expectRevert(abi.encodeWithSelector(GenericExecutorV1.SanityBand.selector, 190_000e6, 100_000e6));
+        _fire(id, shares, route);
+        assertEq(usd.balanceOf(principal), 0);
+        assertEq(core.getMandate(id).firings, 0);
+    }
+
+    /// The same impaired vault, signed on a one-share sample: the band would span less than
+    /// one unit of the underlying, so the contract refuses to admit it.
+    function test_fixRedeemSampleTooSmallForTheBandIsRefused() public {
+        (MockERC20 usd, FollowupOffsetVault vault) = _impairedVault();
+        GenericExecutorV1.Config memory c;
+        c.venues = new GenericExecutorV1.Venue[](1);
+        c.venues[0] = GenericExecutorV1.Venue(address(vault), address(0));
+        c.sweepSet = new address[](0);
+        c.tokenOut = address(usd);
+        c.signedShares = 1e18;
+        c.signedAssets = vault.convertToAssets(1e18);
+        c.sanityBandBps = 100;
+        c.maxSlippageBps = 50;
+        IShieldV1.MandateParams memory p = _genericParams(generic.ACTION_REDEEM(), c);
+        p.asset = address(vault);
+        vm.prank(principal);
+        vm.expectRevert(abi.encodeWithSelector(GenericExecutorV1.ConfigInvalid.selector, "redeem:precision"));
+        core.registerMandate(p);
     }
 
     function test_controlPartialRedeemUsesPreCallExactAmountQuote() public {
         (MockERC20 usd, FollowupOffsetVault vault) = _impairedVault();
         uint256 pulled = 100_000_000_000e18;
         uint256 consumed = pulled * 4 / 10;
-        bytes32 id = _vaultMandate(vault, address(usd), 1, pulled);
+        bytes32 id = _vaultMandate(vault, address(usd), pulled, pulled);
         assertEq(_redeem(id, vault, pulled, consumed), consumed);
         assertEq(usd.balanceOf(principal), 76_000e6);
         assertEq(core.getMandate(id).cumulativeUsed, consumed);
@@ -261,7 +310,7 @@ contract V1Confirmation3Test is V1ReviewBase {
     function test_controlPartialRedeemRefusesThirtyPercentExitFee() public {
         (MockERC20 usd, FollowupOffsetVault vault) = _impairedVault();
         uint256 pulled = 100_000_000_000e18;
-        bytes32 id = _vaultMandate(vault, address(usd), 1, pulled);
+        bytes32 id = _vaultMandate(vault, address(usd), pulled, pulled);
         vault.setExitFee(3000);
         IExecutorV1.Call memory call_ = IExecutorV1.Call(
             address(vault),
@@ -288,7 +337,7 @@ contract V1Confirmation3Test is V1ReviewBase {
         vault.deposit(100e18, principal);
         vm.stopPrank();
         (MockFeed feed, bytes32 descriptor) = _bind(address(asset), 3600);
-        bytes32 id = _vaultMandate(vault, address(asset), 1e18, 100e18);
+        bytes32 id = _vaultMandate(vault, address(asset), 100e18, 100e18);
         feed.set(7, -1, vm.getBlockTimestamp() - 3601, 7);
         vm.prank(enforcer);
         registry.revokeDescriptor(descriptor);

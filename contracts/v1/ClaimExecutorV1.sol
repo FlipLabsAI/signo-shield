@@ -48,6 +48,7 @@ contract ClaimExecutorV1 is IExecutorV1 {
         uint16 maxSlippageBps;
         bool slippageOverride;
         uint256 dust; // COLLECT: tolerance below which a reward token is considered unpaid, in that token's units
+        ExprLib.PriceRound[] prices; // COMPOSE: the signed fresh-round rules for [tokenOut, rewardTokens...]
     }
 
     address public immutable shield;
@@ -120,6 +121,7 @@ contract ClaimExecutorV1 is IExecutorV1 {
         if (c.maxSlippageBps > ceiling) revert ConfigInvalid("maxSlippageBps");
         if (action == ACTION_CLAIM_COLLECT) {
             // nothing else needed: the protocol pays the owner, the owner's balances are measured
+            if (c.prices.length != 0) revert ConfigInvalid("price:round");
         } else if (action == ACTION_CLAIM_COMPOSE) {
             if (_isOurs(c.tokenOut) || !_answersBalanceOf(c.tokenOut)) revert ConfigInvalid("tokenOut");
             if (c.oracle.code.length == 0 || c.maxSlippageBps == 0) revert ConfigInvalid("oracle");
@@ -130,6 +132,12 @@ contract ClaimExecutorV1 is IExecutorV1 {
                     revert ConfigInvalid("oracle:reward");
                 }
             }
+            address[] memory priced = new address[](c.rewardTokens.length + 1);
+            priced[0] = c.tokenOut;
+            for (uint256 i = 0; i < c.rewardTokens.length; i++) {
+                priced[i + 1] = c.rewardTokens[i];
+            }
+            if (!ExprLib.priceRoundsMatch(c.prices, priced, registry)) revert ConfigInvalid("price:round");
         } else {
             revert UnsupportedAction(action);
         }
@@ -273,7 +281,7 @@ contract ClaimExecutorV1 is IExecutorV1 {
     /// @dev Sum of claimed amounts at fair value, in tokenOut units, less the tolerance.
     function _minOut(Config memory c, uint256[] memory claimed) internal view returns (uint256 minOut) {
         if (registry.isVenueBlocked(c.oracle)) revert VenueBlocked(c.oracle);
-        ExprLib.requireFreshPrice(c.tokenOut, registry);
+        ExprLib.requireFreshPrice(c.prices[0], registry);
         uint256 priceOut = IPriceOracle(c.oracle).getAssetPrice(c.tokenOut);
         if (priceOut == 0) revert ConfigInvalid("oracle:out");
         uint256 decOut = 10 ** IERC20Metadata(c.tokenOut).decimals();
@@ -282,7 +290,7 @@ contract ClaimExecutorV1 is IExecutorV1 {
             if (claimed[j] == 0) continue;
             // A claimed token with no price is not worth zero; it is unpriceable, and the firing fails.
             // forge-lint: disable-next-line(calls-loop)
-            ExprLib.requireFreshPrice(c.rewardTokens[j], registry);
+            ExprLib.requireFreshPrice(c.prices[j + 1], registry);
             // forge-lint: disable-next-line(calls-loop)
             uint256 p = IPriceOracle(c.oracle).getAssetPrice(c.rewardTokens[j]);
             if (p == 0) revert ConfigInvalid("oracle:reward");

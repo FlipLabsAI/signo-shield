@@ -72,6 +72,15 @@ library ExprLib {
     }
 
     /// @dev Per-evaluation inputs the core supplies.
+    /// @dev A mandatory price rule, signed into an action config: the fresh
+    ///      round `token`'s price must pass (`descriptor` read on `feed`), or a
+    ///      zero descriptor for the explicit no-round mode (positivity only).
+    struct PriceRound {
+        address token;
+        bytes32 descriptor;
+        address feed;
+    }
+
     struct Env {
         address principal;
         int256[] signedValues;
@@ -297,16 +306,47 @@ library ExprLib {
         if (int256(_word(out, 1)) <= 0) revert IEvaluatorV1.ReadNotPositive(i);
     }
 
-    /// @dev The fresh round a mandatory price of `token` must pass, when the
-    ///      registry lists one (read catalog rule). Reverts stale, non-positive
-    ///      or blocked; a token with no listed round passes on positivity alone.
-    function requireFreshPrice(address token, IShieldRegistryV1 registry) internal view {
-        // forge-lint: disable-next-line(calls-loop)
-        (bytes32 id, address feed) = registry.priceRound(token);
-        if (id == bytes32(0)) return;
-        Read memory r = Read({descriptor: id, target: feed, args: "", subject: Subject.None, decimals: 0});
+    /// @dev Admission of the signed price rules: one per priced token, in the
+    ///      caller's order, each equal to the registry's rule for that token
+    ///      NOW, and a nonzero one listed and not revoked. The registry picks
+    ///      the rule for new mandates only; a live mandate keeps the rule it
+    ///      was admitted with until its owner amends (FLIP-280 C1).
+    function priceRoundsMatch(PriceRound[] memory pinned, address[] memory tokens, IShieldRegistryV1 registry)
+        internal
+        view
+        returns (bool)
+    {
+        if (pinned.length != tokens.length) return false;
+        for (uint256 i = 0; i < tokens.length; i++) {
+            // forge-lint: disable-next-line(calls-loop)
+            (bytes32 id, address feed) = registry.priceRound(tokens[i]);
+            PriceRound memory p = pinned[i];
+            if (p.token != tokens[i] || p.descriptor != id || p.feed != feed) return false;
+            if (id == bytes32(0)) continue;
+            // forge-lint: disable-next-line(calls-loop,unused-return)
+            (, bool listed, bool revoked) = IDescriptors(address(registry)).descriptorOf(id);
+            if (!listed || revoked) return false;
+        }
+        return true;
+    }
+
+    /// @dev The fresh round a mandatory price must pass, from the rule the
+    ///      owner signed. Read live through the catalog, so a revoked
+    ///      descriptor, a suspended or revoked feed, a stale round and a
+    ///      non-positive answer all stop the firing. A zero descriptor is the
+    ///      signed no-round mode (positivity only, checked by the caller).
+    function requireFreshPrice(PriceRound memory p, IShieldRegistryV1 registry) internal view {
+        if (p.descriptor == bytes32(0)) return;
+        Read memory r =
+            Read({descriptor: p.descriptor, target: p.feed, args: "", subject: Subject.None, decimals: 0});
         // forge-lint: disable-next-line(unused-return)
         readValue(r, 0, IDescriptors(address(registry)));
+    }
+
+    function pair(address a, address b) internal pure returns (address[] memory tokens) {
+        tokens = new address[](2);
+        tokens[0] = a;
+        tokens[1] = b;
     }
 
     // ------------------------------------------------------------ evaluation

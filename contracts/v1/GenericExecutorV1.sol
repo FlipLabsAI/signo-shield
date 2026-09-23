@@ -38,6 +38,10 @@ contract GenericExecutorV1 is IExecutorV1 {
     uint16 public constant MAX_SLIPPAGE_BPS = 100;
     uint16 public constant MAX_SLIPPAGE_OVERRIDE_BPS = 1_000;
     uint256 public constant ROUNDING_TOLERANCE_BPS = 1;
+    /// @dev REDEEM: the signed band must span at least this many units of the
+    ///      underlying at the signed sample, so the vault's one-unit rounding
+    ///      is at most 1% of the band and cannot hide a move it should refuse.
+    uint256 public constant MIN_BAND_UNITS = 100;
     uint256 public constant MAX_FIXED_RATE = uint256(type(uint128).max) * WAD;
     uint256 public constant MAX_CALLS = 16;
     uint256 public constant MAX_VENUES = 16;
@@ -66,14 +70,16 @@ contract GenericExecutorV1 is IExecutorV1 {
         address collateralTarget; // REPAY: the contract the collateral read targets (for Aave, the collateral aToken)
         uint8 rateKind; // TRANSFORM: RateKind
         uint256 rateOrFloor;
-        address oracle; // TRANSFORM with Oracle rate; REDEEM sanity
+        address oracle; // TRANSFORM with Oracle rate
         uint16 maxSlippageBps;
         bool slippageOverride;
         address recipient; // TRANSFER only
         bytes32 debtDescriptor; // REPAY: descriptor of the owner's debt read on `market`
         bytes32 collateralDescriptor; // REPAY: descriptor of the owner's collateral read on `market`
-        uint256 signedAssetsPerShare; // REDEEM: convertToAssets(1 share unit) at signing
-        uint16 sanityBandBps; // REDEEM: allowed deviation of the implied share price from signing
+        uint256 signedShares; // REDEEM: the sample the band is judged on (for example the whole position)
+        uint256 signedAssets; // REDEEM: convertToAssets(signedShares) at signing
+        uint16 sanityBandBps; // REDEEM: allowed deviation of the sample's value from signing
+        ExprLib.PriceRound[] prices; // Oracle TRANSFORM: the signed fresh-round rules for [asset, tokenOut]
     }
 
     struct Firing {
@@ -83,7 +89,7 @@ contract GenericExecutorV1 is IExecutorV1 {
         uint256 outBefore;
         uint256 priceIn;
         uint256 priceOut;
-        uint256 sharesPerUnit;
+        uint256 sharesQuote;
         int256 debtBefore;
         int256 collBefore;
     }
@@ -169,6 +175,10 @@ contract GenericExecutorV1 is IExecutorV1 {
             if (!_answersBalanceOf(c.sweepSet[i])) revert ConfigInvalid("sweep:token");
         }
         _validateSlippage(c);
+        // A price rule is signed exactly where a price is read: never a
+        // decorative one the owner could mistake for a check.
+        bool priced = action == ACTION_TRANSFORM && RateKind(c.rateKind) == RateKind.Oracle;
+        if (!priced && c.prices.length != 0) revert ConfigInvalid("price:round");
         if (action == ACTION_TRANSFORM) {
             _validateTransform(c, asset);
         } else if (action == ACTION_TRANSFER) {
@@ -204,6 +214,9 @@ contract GenericExecutorV1 is IExecutorV1 {
             if (c.oracle.code.length == 0 || c.maxSlippageBps == 0) revert ConfigInvalid("oracle");
             if (IPriceOracle(c.oracle).getAssetPrice(asset) == 0) revert ConfigInvalid("oracle:in");
             if (IPriceOracle(c.oracle).getAssetPrice(c.tokenOut) == 0) revert ConfigInvalid("oracle:out");
+            if (!ExprLib.priceRoundsMatch(c.prices, ExprLib.pair(asset, c.tokenOut), registry)) {
+                revert ConfigInvalid("price:round");
+            }
             // forge-lint: disable-next-line(unused-return)
             IERC20Metadata(asset).decimals();
             // forge-lint: disable-next-line(unused-return)
@@ -230,8 +243,13 @@ contract GenericExecutorV1 is IExecutorV1 {
         if (c.venues.length != 1 || c.venues[0].target != asset || c.venues[0].spender != address(0)) {
             revert ConfigInvalid("redeem:surface");
         }
-        if (c.signedAssetsPerShare == 0 || c.sanityBandBps == 0 || c.sanityBandBps > BPS) {
+        if (c.signedShares == 0 || c.signedAssets == 0 || c.sanityBandBps == 0 || c.sanityBandBps > BPS) {
             revert ConfigInvalid("redeem:sanity");
+        }
+        // A sample too small to resolve the band cannot enforce it: refuse the
+        // mandate rather than sign a tolerance the contract cannot check.
+        if (Math.mulDiv(c.signedAssets, c.sanityBandBps, BPS) < MIN_BAND_UNITS) {
+            revert ConfigInvalid("redeem:precision");
         }
         // The independent basis of a redemption is the signed conversion and
         // its band; no oracle is consulted, so none may be signed here.
@@ -326,8 +344,10 @@ contract GenericExecutorV1 is IExecutorV1 {
         f.inBefore = IERC20(ctx.asset).balanceOf(ctx.principal);
         f.outBefore = IERC20(c.tokenOut).balanceOf(ctx.principal);
         if (RateKind(c.rateKind) == RateKind.Oracle) (f.priceIn, f.priceOut) = _prices(c, ctx.asset);
+        // The vault's conversion of the exact amount, before the deposit: the
+        // minimum is priced at full precision, never a unit quote scaled up.
         if (RateKind(c.rateKind) == RateKind.Erc4626) {
-            f.sharesPerUnit = _sharesPerUnit(c.tokenOut, ctx.asset);
+            f.sharesQuote = IERC4626(c.tokenOut).convertToShares(amount);
         }
         _runSandbox(ctx, c, f, amount, calls);
         uint256 received = IERC20(c.tokenOut).balanceOf(ctx.principal) - f.outBefore;
@@ -335,7 +355,7 @@ contract GenericExecutorV1 is IExecutorV1 {
         returned = returned > f.parked ? returned - f.parked : 0;
         spent = returned >= amount ? 0 : amount - returned;
         if (spent == 0) revert NothingSold();
-        uint256 minOut = _minOut(c, ctx.asset, spent, f);
+        uint256 minOut = _minOut(c, ctx.asset, spent, amount, f);
         if (minOut == 0) minOut = 1;
         if (received < minOut) revert OutputBelowMinimum(received, minOut);
         // forge-lint: disable-next-line(reentrancy-events)
@@ -510,18 +530,17 @@ contract GenericExecutorV1 is IExecutorV1 {
         return ExprLib.readValue(r, 0, IDescriptors(address(registry)));
     }
 
-    function _assetsPerShareUnit(address vault) internal view returns (uint256) {
-        return IERC4626(vault).convertToAssets(10 ** IERC20Metadata(vault).decimals());
-    }
-
+    /// @dev The signed sample, quoted now, lies inside the signed band around
+    ///      its signed value. Both bounds round inward (toward refusing); the
+    ///      sample's size was checked at admission (MIN_BAND_UNITS).
     function _checkSanity(Config memory c, address vault) internal view {
-        uint256 current = _assetsPerShareUnit(vault);
-        uint256 lo = Math.mulDiv(c.signedAssetsPerShare, BPS - c.sanityBandBps, BPS);
-        uint256 hi = Math.mulDiv(c.signedAssetsPerShare, BPS + c.sanityBandBps, BPS);
-        if (current < lo || current > hi) revert SanityBand(c.signedAssetsPerShare, current);
+        uint256 current = IERC4626(vault).convertToAssets(c.signedShares);
+        uint256 lo = Math.mulDiv(c.signedAssets, BPS - c.sanityBandBps, BPS, Math.Rounding.Ceil);
+        uint256 hi = Math.mulDiv(c.signedAssets, BPS + c.sanityBandBps, BPS);
+        if (current < lo || current > hi) revert SanityBand(c.signedAssets, current);
     }
 
-    function _minOut(Config memory c, address tokenIn, uint256 spent, Firing memory f)
+    function _minOut(Config memory c, address tokenIn, uint256 spent, uint256 amount, Firing memory f)
         internal
         view
         returns (uint256)
@@ -530,7 +549,9 @@ contract GenericExecutorV1 is IExecutorV1 {
         if (k == RateKind.Fixed) return _lessRounding(Math.mulDiv(spent, c.rateOrFloor, WAD));
         if (k == RateKind.Floor) return c.rateOrFloor;
         if (k == RateKind.Erc4626) {
-            uint256 exact = Math.mulDiv(spent, f.sharesPerUnit, 10 ** IERC20Metadata(tokenIn).decimals());
+            // What was deposited at the pre-call conversion; a partial one is
+            // the exact quote scaled down.
+            uint256 exact = spent == amount ? f.sharesQuote : Math.mulDiv(f.sharesQuote, spent, amount);
             return _lessRounding(Math.mulDiv(exact, BPS - c.maxSlippageBps, BPS));
         }
         uint256 fair = Math.mulDiv(
@@ -564,9 +585,9 @@ contract GenericExecutorV1 is IExecutorV1 {
     {
         // The oracle is a dependency like any venue: a suspended or revoked one stops the firing.
         if (registry.isVenueBlocked(c.oracle)) revert VenueBlocked(c.oracle);
-        // A positive price, and a fresh underlying round where the registry lists one.
-        ExprLib.requireFreshPrice(tokenIn, registry);
-        ExprLib.requireFreshPrice(c.tokenOut, registry);
+        // A positive price, and the fresh underlying round the owner signed (admitted equal to the registry's rule).
+        ExprLib.requireFreshPrice(c.prices[0], registry);
+        ExprLib.requireFreshPrice(c.prices[1], registry);
         priceIn = IPriceOracle(c.oracle).getAssetPrice(tokenIn);
         priceOut = IPriceOracle(c.oracle).getAssetPrice(c.tokenOut);
         if (priceIn == 0 || priceOut == 0) revert ConfigInvalid("oracle");

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {IShieldRegistryV1} from "contracts/v1/interfaces/IShieldRegistryV1.sol";
+import {PinnedPrices} from "test/v1/mocks/PinnedPrices.sol";
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {DeployV1} from "script/DeployV1.s.sol";
@@ -91,6 +93,7 @@ contract V1Confirmation3ForkTest is Test {
         c.oracle = ORACLE;
         c.rateKind = uint8(GenericExecutorV1.RateKind.Oracle);
         c.maxSlippageBps = 50;
+        c.prices = PinnedPrices.pin(IShieldRegistryV1(address(d.registry)), tokenIn, USDT0);
         IShieldV1.MandateParams memory p;
         p.agent = agent;
         p.executor = address(d.generic);
@@ -143,7 +146,9 @@ contract V1Confirmation3ForkTest is Test {
         assertEq(IERC20(XETH).balanceOf(principal), 0.001e18);
     }
 
-    function test_gapStockDeploymentAdminClearsStaleLivePriceGates() public {
+    /// Fix round 4 (was test_gap...): the admin clearing both bindings no longer reaches the
+    /// live mandate; it keeps the stale-price refusal it was admitted with.
+    function test_fixStockDeploymentAdminClearingDoesNotReachLivePriceGates() public {
         (bytes32 id, bytes memory route, uint256 out) = _position(true);
         vm.warp(block.timestamp + 25 hours);
         vm.prank(agent);
@@ -160,8 +165,18 @@ contract V1Confirmation3ForkTest is Test {
         d.registry.setPriceRound(USDC, bytes32(0), address(0));
         d.registry.setPriceRound(USDT0, bytes32(0), address(0));
         vm.prank(agent);
-        assertEq(d.shield.fire(id, 1e6, route), 1e6);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IShieldV1.OutcomeRejected.selector,
+                id,
+                IShieldV1.MandateReason.OUTCOME_FAILED,
+                abi.encodeWithSelector(IEvaluatorV1.ReadStale.selector, 0)
+            )
+        );
+        d.shield.fire(id, 1e6, route);
+        assertEq(d.shield.getMandate(id).firings, 0);
         assertEq(d.shield.getMandate(id).revision, 1);
-        assertEq(IERC20(USDT0).balanceOf(principal), out);
+        assertEq(IERC20(USDT0).balanceOf(principal), 0);
+        out;
     }
 }

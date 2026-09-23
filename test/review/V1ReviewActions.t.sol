@@ -257,7 +257,8 @@ contract V1ReviewActionsTest is V1ReviewBase {
         c.venues[0] = GenericExecutorV1.Venue(address(vault), address(0));
         c.sweepSet = new address[](0);
         c.tokenOut = address(asset);
-        c.signedAssetsPerShare = 1e18;
+        c.signedShares = 100e18;
+        c.signedAssets = 100e18; // the repricing vault converts 1:1 until it redeems
         c.sanityBandBps = 100;
         c.maxSlippageBps = 50;
         IShieldV1.MandateParams memory p = _genericParams(generic.ACTION_REDEEM(), c);

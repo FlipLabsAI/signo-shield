@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {PinnedPrices} from "test/v1/mocks/PinnedPrices.sol";
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -150,13 +151,26 @@ abstract contract V1ReviewBase is Test {
         c.maxSlippageBps = 50;
     }
 
+    /// @dev The price rules an app signs: the registry's rule for each token at signing time.
+    function _pinned(address[] memory tokens) internal view returns (ExprLib.PriceRound[] memory rounds) {
+        return PinnedPrices.pin(IShieldRegistryV1(address(registry)), tokens);
+    }
+
+    /// @dev Encodes `c` as signed; an Oracle transform with no explicit rules gets the
+    ///      registry's rules pinned now, as the app does. `c` itself is left unchanged.
     function _genericParams(bytes32 action, GenericExecutorV1.Config memory c)
         internal
         view
         returns (IShieldV1.MandateParams memory p)
     {
         p = _params(address(generic), action);
+        ExprLib.PriceRound[] memory given = c.prices;
+        if (
+            action == generic.ACTION_TRANSFORM() && c.rateKind == uint8(GenericExecutorV1.RateKind.Oracle)
+                && given.length == 0
+        ) c.prices = _pinned(ExprLib.pair(p.asset, c.tokenOut));
         p.actionConfig = abi.encode(uint8(1), c);
+        c.prices = given;
         p.outcome = _trueTree();
     }
 
@@ -202,7 +216,17 @@ abstract contract V1ReviewBase is Test {
         p.funding = 1;
         p.maxTransactionValue = 0;
         p.maxCumulativeValue = 0;
+        ExprLib.PriceRound[] memory given = c.prices;
+        if (compose && given.length == 0) {
+            address[] memory priced = new address[](c.rewardTokens.length + 1);
+            priced[0] = c.tokenOut;
+            for (uint256 i = 0; i < c.rewardTokens.length; i++) {
+                priced[i + 1] = c.rewardTokens[i];
+            }
+            c.prices = _pinned(priced);
+        }
         p.actionConfig = abi.encode(uint8(1), c);
+        c.prices = given;
         p.outcome = _trueTree();
     }
 
