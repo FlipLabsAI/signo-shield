@@ -306,6 +306,7 @@ contract V1ReviewActionsTest is V1ReviewBase {
     function test_controlTransferMeasuresExactRecipientBalance() public {
         GenericExecutorV1.Config memory c = _genericConfig();
         c.recipient = recipient;
+        c.venues = new GenericExecutorV1.Venue[](0); // round 8: a transfer signs no venue
         bytes32 id = _register(_genericParams(generic.ACTION_TRANSFER(), c));
         _fire(id, 100e18, "");
         assertEq(asset.balanceOf(recipient), 100e18);

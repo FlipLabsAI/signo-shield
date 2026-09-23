@@ -151,6 +151,7 @@ contract V1Round4Test is V1ReviewBase {
         _expectConfig("price:round");
         core.registerMandate(p);
         c.recipient = recipient;
+        c.venues = new GenericExecutorV1.Venue[](0); // round 8: a transfer signs no venue
         p = _genericParams(generic.ACTION_TRANSFER(), c);
         vm.prank(principal);
         _expectConfig("price:round");

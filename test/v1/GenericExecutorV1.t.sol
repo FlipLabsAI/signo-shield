@@ -264,6 +264,7 @@ contract GenericExecutorV1Test is Test {
 
     function test_transferMeasuresRecipient() public {
         GenericExecutorV1.Config memory c = _cfg();
+        c.venues = new GenericExecutorV1.Venue[](0); // a transfer calls no venue
         c.recipient = address(0xBEEF);
         vm.prank(principal);
         bytes32 id = shield.registerMandate(_params(TRANSFER, address(usdc), c, 0));
@@ -271,6 +272,17 @@ contract GenericExecutorV1Test is Test {
         uint256 spent = shield.fire(id, 25e18, "");
         assertEq(spent, 25e18);
         assertEq(usdc.balanceOf(address(0xBEEF)), 25e18);
+    }
+
+    /// Round 8: a transfer signs no venue. Before, it had to sign one (with code) that it
+    /// never calls, so a transfer to a wallet could not be registered without a decoy.
+    function test_transferRefusesAVenue() public {
+        GenericExecutorV1.Config memory c = _cfg();
+        c.recipient = address(0xBEEF);
+        IShieldV1.MandateParams memory p = _params(TRANSFER, address(usdc), c, 0);
+        vm.prank(principal);
+        vm.expectRevert(abi.encodeWithSelector(GenericExecutorV1.ConfigInvalid.selector, "venues"));
+        shield.registerMandate(p);
     }
 
     // ------------------------------------------------------------------- redeem

@@ -162,7 +162,13 @@ contract GenericExecutorV1 is IExecutorV1 {
     function validateConfig(bytes32 action, address asset, bytes calldata actionConfig) external view {
         Config memory c = _decode(actionConfig);
         if (!_answersBalanceOf(asset)) revert ConfigInvalid("asset");
-        if (c.venues.length == 0 || c.venues.length > MAX_VENUES) revert ConfigInvalid("venues");
+        // A transfer calls no venue, so it signs none (a decorative venue would
+        // read as a check); every other action names at least one.
+        if (action == ACTION_TRANSFER
+                ? c.venues.length != 0
+                : c.venues.length == 0 || c.venues.length > MAX_VENUES) {
+            revert ConfigInvalid("venues");
+        }
         if (c.sweepSet.length > MAX_SWEEP) revert ConfigInvalid("sweepSet");
         bool surfaceIsToken = action == ACTION_REDEEM
             || (action == ACTION_TRANSFORM && RateKind(c.rateKind) == RateKind.Erc4626);
