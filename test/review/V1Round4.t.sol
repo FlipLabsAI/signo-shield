@@ -235,3 +235,73 @@ contract V1Round4Test is V1ReviewBase {
         assertEq(vault.balanceOf(principal), 150_150);
     }
 }
+
+/// Fix round 5 (O1): the one-unit admission filter is replaced by a per-firing precision floor
+/// on the exact quote, so an expensive-share vault is admitted but a deposit too small to price
+/// within 1% is refused.
+contract V1Round5Test is V1ReviewBase {
+    function _vault() internal returns (MockERC20 usd, EntryFeeVault vault) {
+        usd = new MockERC20("USD", "USD", 6);
+        vault = new EntryFeeVault(IERC20(address(usd)));
+        usd.mint(address(this), 1e6 + 666_000e6);
+        usd.approve(address(vault), 1e6);
+        vault.deposit(1e6, address(this));
+        usd.transfer(address(vault), 666_000e6); // one USD now quotes 1.50 shares
+        usd.mint(principal, 1_000e6);
+        vm.prank(principal);
+        usd.approve(address(core), type(uint256).max);
+    }
+
+    function _mandate(MockERC20 usd, EntryFeeVault vault) internal returns (bytes32) {
+        GenericExecutorV1.Config memory c;
+        c.venues = new GenericExecutorV1.Venue[](1);
+        c.venues[0] = GenericExecutorV1.Venue(address(vault), address(vault));
+        c.sweepSet = new address[](0);
+        c.tokenOut = address(vault);
+        c.rateKind = uint8(GenericExecutorV1.RateKind.Erc4626);
+        c.maxSlippageBps = 50;
+        IShieldV1.MandateParams memory p = _genericParams(generic.ACTION_TRANSFORM(), c);
+        p.asset = address(usd);
+        p.maxTransactionValue = 1_000e6;
+        p.maxCumulativeValue = 1_000e6;
+        return _register(p);
+    }
+
+    function _route(MockERC20 usd, EntryFeeVault vault, uint256 amount) internal view returns (bytes memory) {
+        return _route(
+            IExecutorV1.Call(
+                address(vault),
+                address(vault),
+                address(usd),
+                amount,
+                false,
+                abi.encodeCall(vault.deposit, (amount, principal))
+            )
+        );
+    }
+
+    function test_fixDepositTooSmallToPriceWithinOnePercentIsRefused() public {
+        (MockERC20 usd, EntryFeeVault vault) = _vault();
+        bytes32 id = _mandate(usd, vault);
+        assertEq(vault.convertToShares(50e6), 75, "50 USD quotes 75 shares, under the 100-unit floor");
+        bytes memory route = _route(usd, vault, 50e6);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IShieldV1.OutcomeRejected.selector,
+                id,
+                IShieldV1.MandateReason.OUTCOME_FAILED,
+                abi.encodeWithSelector(GenericExecutorV1.QuoteTooSmall.selector, 75)
+            )
+        );
+        _fire(id, 50e6, route);
+        assertEq(vault.balanceOf(principal), 0);
+    }
+
+    function test_controlDepositAtTheFloorPasses() public {
+        (MockERC20 usd, EntryFeeVault vault) = _vault();
+        bytes32 id = _mandate(usd, vault);
+        assertEq(vault.convertToShares(100e6), 150);
+        assertEq(_fire(id, 100e6, _route(usd, vault, 100e6)), 100e6);
+        assertEq(vault.balanceOf(principal), 150);
+    }
+}

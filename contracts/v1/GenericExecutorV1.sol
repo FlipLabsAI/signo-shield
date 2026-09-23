@@ -42,6 +42,10 @@ contract GenericExecutorV1 is IExecutorV1 {
     ///      underlying at the signed sample, so the vault's one-unit rounding
     ///      is at most 1% of the band and cannot hide a move it should refuse.
     uint256 public constant MIN_BAND_UNITS = 100;
+    /// @dev ERC-4626 deposit: the exact share quote for what was spent must be at
+    ///      least this many raw share units, so the vault's one-unit rounding is at
+    ///      most 1% of the minimum and cannot hide a loss the slippage should refuse.
+    uint256 public constant MIN_QUOTE_UNITS = 100;
     uint256 public constant MAX_FIXED_RATE = uint256(type(uint128).max) * WAD;
     uint256 public constant MAX_CALLS = 16;
     uint256 public constant MAX_VENUES = 16;
@@ -122,6 +126,7 @@ contract GenericExecutorV1 is IExecutorV1 {
     error CollateralFell(int256 before, int256 after_);
     error SanityBand(uint256 signedRate, uint256 currentRate);
     error BeforeMissing();
+    error QuoteTooSmall(uint256 shares);
 
     modifier onlyShield() {
         if (msg.sender != shield) revert NotShield();
@@ -229,7 +234,11 @@ contract GenericExecutorV1 is IExecutorV1 {
                 revert ConfigInvalid("vault:surface");
             }
             if (c.oracle != address(0) || c.rateOrFloor != 0) revert ConfigInvalid("vault:rate");
-            if (_sharesPerUnit(c.tokenOut, asset) == 0) revert ConfigInvalid("vault:rate");
+            // The vault must answer a share quote. A zero quote for ONE whole
+            // token is not refused here: a vault whose share is worth more than
+            // a token quotes 0 there yet prices a real deposit exactly, and the
+            // firing judges precision on the exact amount (FLIP-280 O1).
+            if (!_quotesShares(c.tokenOut, asset)) revert ConfigInvalid("vault:rate");
         } else {
             if (c.rateOrFloor == 0) revert ConfigInvalid("floor");
         }
@@ -552,6 +561,7 @@ contract GenericExecutorV1 is IExecutorV1 {
             // What was deposited at the pre-call conversion; a partial one is
             // the exact quote scaled down.
             uint256 exact = spent == amount ? f.sharesQuote : Math.mulDiv(f.sharesQuote, spent, amount);
+            if (exact < MIN_QUOTE_UNITS) revert QuoteTooSmall(exact);
             return _lessRounding(Math.mulDiv(exact, BPS - c.maxSlippageBps, BPS));
         }
         uint256 fair = Math.mulDiv(
@@ -567,8 +577,12 @@ contract GenericExecutorV1 is IExecutorV1 {
         return exact > tolerance ? exact - tolerance : 0;
     }
 
-    function _sharesPerUnit(address vault, address tokenIn) internal view returns (uint256) {
-        return IERC4626(vault).convertToShares(10 ** IERC20Metadata(tokenIn).decimals());
+    /// @dev The vault answers `convertToShares` for one whole input token (any value, zero included).
+    function _quotesShares(address vault, address tokenIn) internal view returns (bool) {
+        (bool ok, bytes memory ret) = vault.staticcall(
+            abi.encodeCall(IERC4626.convertToShares, (10 ** IERC20Metadata(tokenIn).decimals()))
+        );
+        return ok && ret.length >= 32;
     }
 
     function _vaultAsset(address vault) internal view returns (address) {

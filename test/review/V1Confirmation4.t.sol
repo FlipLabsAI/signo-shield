@@ -367,12 +367,18 @@ contract V1Confirmation4Test is V1ReviewBase {
     }
 
     /// Availability observation: the admission-time one-unit gate predates this patch.
-    function test_observationZeroUnitQuoteStillRejectsAnOtherwiseResolvableDeposit() public {
-        (, EntryFeeVault vault, IShieldV1.MandateParams memory p) = _depositSetup(2_000_000e6);
+    /// Fix round 5 (was test_observation...): the one-unit admission filter is gone; the
+    /// vault is admitted and the deposit is priced on the exact amount at firing.
+    function test_fixZeroUnitQuoteVaultIsAdmittedAndPricesTheDepositExactly() public {
+        (MockERC20 usd, EntryFeeVault vault, IShieldV1.MandateParams memory p) = _depositSetup(2_000_000e6);
         assertEq(vault.convertToShares(1e6), 0);
-        assertGt(vault.convertToShares(100_000e6), 49_000);
+        uint256 quote = vault.convertToShares(100_000e6);
+        assertGt(quote, 49_000);
         vm.prank(principal);
-        vm.expectRevert(abi.encodeWithSelector(GenericExecutorV1.ConfigInvalid.selector, "vault:rate"));
-        core.registerMandate(p);
+        bytes32 id = core.registerMandate(p);
+        bytes memory route = _depositRoute(usd, vault, 100_000e6);
+        vm.prank(agent);
+        assertEq(core.fire(id, 100_000e6, route), 100_000e6);
+        assertEq(vault.balanceOf(principal), quote);
     }
 }
