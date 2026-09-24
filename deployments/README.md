@@ -29,7 +29,8 @@ across testnets and a chain id is not.
 To record a deployment:
 
 ```bash
-forge script script/Deploy.s.sol:Deploy --rpc-url "$RPC_URL" --broadcast
+forge script script/DeployV1.s.sol:DeployV1 --rpc-url "$RPC_URL" --broadcast   # Shield v1
+forge script script/Deploy.s.sol:Deploy --rpc-url "$RPC_URL" --broadcast       # v0.1
 python3 tools/export-artifacts.py --deployments
 ```
 

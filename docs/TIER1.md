@@ -1,10 +1,12 @@
-# Tier 1: generic bounded execution
+# Tier 1: generic bounded execution (v0.1)
+
+> This page describes the v0.1 generic executor. Its v1 successor,
+> `GenericExecutorV1`, is described in [ARCHITECTURE-V1.md](ARCHITECTURE-V1.md).
 
 The generic executor (`contracts/executors/GenericExecutor.sol`) is the one
 adapter that knows no protocol. It sits in the same `adapter` slot a mandate
-pins; `SignoShield` does not change. The full evaluation of what it covers,
-what stays a protocol adapter and what is refused lives on the team's
-FLIP-217 record; this page is the contract.
+pins; `SignoShield` does not change. This page is the contract: what it covers, what stays a protocol adapter,
+and what is refused.
 
 ## What the owner pins
 
@@ -104,7 +106,7 @@ the two measured would be drained while the firing passes; the two measured
 are safe, a pull of more than the amount reverts the firing), and a
 recipient for `generic.transfer` that is the owner or a contract that
 cannot hold tokens (a round trip that still pays the fee, or a stranding).
-OKX's router and Aave's pool pull from `msg.sender` only.
+The aggregator's router and Aave's pool pull from `msg.sender` only.
 
 ## What a review has to try
 
