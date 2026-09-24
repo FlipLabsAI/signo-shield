@@ -19,6 +19,31 @@ import {GenericExecutorV1} from "contracts/v1/GenericExecutorV1.sol";
 import {MockFeeToken, MockToken} from "./mocks/MockExecutor.sol";
 import {MockDex, MockOracle, MockVault, MockMarket} from "./mocks/MockVenues.sol";
 
+/// @dev A token whose decimals can change after admission (round 15 tests).
+contract MockDecimalsToken is MockToken {
+    uint8 public dec;
+
+    constructor(uint8 d) {
+        dec = d;
+    }
+
+    function setDecimals(uint8 d) external {
+        dec = d;
+    }
+
+    function decimals() public view override returns (uint8) {
+        return dec;
+    }
+}
+
+/// @dev Pays exactly what the test names, for an exact bound.
+contract ExactVenue {
+    function swap(address input, address output, uint256 amount, uint256 pay, address to) external {
+        IERC20(input).transferFrom(msg.sender, address(this), amount);
+        MockToken(output).mint(to, pay);
+    }
+}
+
 contract GenericExecutorV1Test is Test {
     ShieldV1 internal shield;
     ShieldRegistryV1 internal registry;
@@ -905,6 +930,95 @@ contract GenericExecutorV1Test is Test {
         // The asset is never the output either.
         c = _unpricedCfg(address(usdc));
         _refused(c, TRANSFORM, abi.encodeWithSelector(GenericExecutorV1.ConfigInvalid.selector, "tokenOut"));
+    }
+
+    // ------------------------------------- round 15: exact values, 18 decimals at most
+
+    /// G13-H1: one raw unit's value is the price times a whole power of ten,
+    /// so the bound is exact for 6 and 18 decimals at an odd price; a token
+    /// over 18 decimals is refused, at admission and at a firing.
+    function test_r15_theOracleBoundIsExactAt6And18Decimals() public {
+        MockDecimalsToken six = new MockDecimalsToken(6);
+        oracle.set(address(six), 199_999_999); // $1.99999999
+        ExactVenue venue = new ExactVenue();
+        GenericExecutorV1.Config memory c = _cfg();
+        c.tokenOut = address(six);
+        c.venues[0] = GenericExecutorV1.Venue(address(venue), address(venue));
+        bytes32 id = _register(c); // 0.5 % slippage; the asset is $1 at 18 decimals
+        // $100 sold (unit value 1e8 at 18 decimals) needs 9.95e27: ceil(9.95e27 / (199_999_999 * 1e12)) raw units.
+        uint256 need = 49_750_001;
+        // Routes are built before the expectation: a call in the arguments would consume it.
+        bytes memory short = _exactRoute(venue, address(six), need - 1, exec.nextClone(id));
+        vm.expectRevert(
+            _outcome(
+                id,
+                abi.encodeWithSelector(
+                    GenericExecutorV1.OutputBelowMinimum.selector, (need - 1) * 199_999_999e12, 995e25
+                )
+            )
+        );
+        vm.prank(agent);
+        shield.fire(id, 100e18, short);
+        bytes memory enough = _exactRoute(venue, address(six), need, exec.nextClone(id));
+        vm.prank(agent);
+        shield.fire(id, 100e18, enough);
+        assertEq(six.balanceOf(principal), need);
+    }
+
+    function _exactRoute(ExactVenue venue, address out, uint256 pay, address clone)
+        internal
+        view
+        returns (bytes memory)
+    {
+        return _route(
+            IExecutorV1.Call({
+                target: address(venue),
+                spender: address(venue),
+                approveToken: address(usdc),
+                approveAmount: 100e18,
+                claimStep: false,
+                data: abi.encodeCall(ExactVenue.swap, (address(usdc), out, 100e18, pay, clone))
+            })
+        );
+    }
+
+    function test_r15_overEighteenDecimalsIsRefusedAtAdmissionForEveryPricedToken() public {
+        bytes memory refused = abi.encodeWithSelector(GenericExecutorV1.ConfigInvalid.selector, "oracle");
+        MockDecimalsToken big = new MockDecimalsToken(19);
+        oracle.set(address(big), 1e8);
+        // As tokenOut.
+        GenericExecutorV1.Config memory c = _cfg();
+        c.tokenOut = address(big);
+        _refused(c, TRANSFORM, refused);
+        // As a further output at the oracle (its registry round is bound).
+        MockToken wbtc = _wbtc();
+        _review(address(big));
+        c = _anyCfg(wbtc, false);
+        c.moreOuts[0].token = address(big);
+        c.prices = _pinned3(address(big));
+        _refused(c, TRANSFORM, refused);
+        // Under floors and unpriced no value is computed, so decimals do not matter.
+        c = _anyCfg(wbtc, true);
+        c.moreOuts[0].token = address(big);
+        vm.prank(principal);
+        shield.registerMandate(_params(TRANSFORM, address(usdc), c, 0));
+    }
+
+    function test_r15_aTokenThatGrowsPast18DecimalsAfterAdmissionCannotFire() public {
+        MockDecimalsToken out = new MockDecimalsToken(18);
+        oracle.set(address(out), 1e8);
+        GenericExecutorV1.Config memory c = _cfg();
+        c.tokenOut = address(out);
+        bytes32 id = _register(c);
+        out.setDecimals(19);
+        uint256 before = usdc.balanceOf(principal);
+        address clone = exec.nextClone(id);
+        vm.expectRevert(
+            _outcome(id, abi.encodeWithSelector(GenericExecutorV1.ConfigInvalid.selector, "oracle"))
+        );
+        vm.prank(agent);
+        shield.fire(id, 100e18, _route(_swapTo(address(out), 100e18, clone)));
+        assertEq(usdc.balanceOf(principal), before, "nothing left the owner");
     }
 
     function _refused(GenericExecutorV1.Config memory c, bytes32 action, bytes memory err) internal {
