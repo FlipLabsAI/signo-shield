@@ -73,8 +73,10 @@ contract MockExecutor is IExecutorV1 {
         IERC20 asset = IERC20(ctx.asset);
         uint256 spend = amount * spendBps / 10_000;
         if (amount > spend) asset.transfer(ctx.principal, amount - spend); // unspent goes back
-        // "spent" tokens are burned to a sink so they leave the system
-        if (spend != 0) asset.transfer(address(0xdead), spend);
+        // "spent" tokens are burned to a sink so they leave the system; capped
+        // at what is held, since a scaled (aToken-like) asset rounds a unit.
+        uint256 held = asset.balanceOf(address(this));
+        if (spend != 0) asset.transfer(address(0xdead), spend <= held ? spend : held);
         if (extraPull != 0) asset.transferFrom(ctx.principal, address(0xdead), extraPull);
         used = useOverride ? reportOverride : spend;
     }

@@ -13,6 +13,7 @@ import {ExpressionEvaluator} from "contracts/v1/ExpressionEvaluator.sol";
 import {ExprLib} from "contracts/v1/libraries/ExprLib.sol";
 import {MockExecutor, MockToken, MockWallet1271} from "./mocks/MockExecutor.sol";
 import {MockBalances} from "./mocks/MockCatalog.sol";
+import {MockScaledToken} from "./mocks/MockScaledToken.sol";
 
 contract ShieldV1Test is Test {
     ShieldV1 internal shield;
@@ -117,6 +118,76 @@ contract ShieldV1Test is Test {
     function _register(IShieldV1.MandateParams memory p) internal returns (bytes32 id) {
         vm.prank(principal);
         id = shield.registerMandate(p);
+    }
+
+    /// Round 11 (found on the X Layer fork): with an Aave aToken as the asset
+    /// (repay from collateral), each transfer rounds to scaled units, so after
+    /// the fee reached the recipient the core could hold one unit less than the
+    /// unused reserve and the refund reverted with Panic(0x11). The refund now
+    /// goes first and the fee recipient takes at most what is left.
+    function _scaledMandate(uint256 index) internal returns (MockScaledToken a, bytes32 id) {
+        a = new MockScaledToken();
+        a.setIndex(index);
+        a.mint(principal, 1_000e18);
+        vm.prank(principal);
+        a.approve(address(shield), type(uint256).max);
+        IShieldV1.MandateParams memory p = _params();
+        p.asset = address(a);
+        p.maxTransactionValue = 100e18;
+        p.maxCumulativeValue = 1_000e18;
+        id = _register(p);
+    }
+
+    /// The firing never reverts on the fee refund, whatever the rounding.
+    function testFuzz_fixFeeRefundSurvivesScaledTokenRounding(
+        uint96 amountSeed,
+        uint16 spendSeed,
+        uint64 indexFrac
+    ) public {
+        // Aave's liquidity index is at least one ray and grows slowly; up to 2x here.
+        (MockScaledToken a, bytes32 id) = _scaledMandate(1e27 + bound(uint256(indexFrac), 0, 1e27));
+        uint256 amount = bound(amountSeed, 1e12, 100e18);
+        exec.setSpendBps(bound(spendSeed, 1, 9_999)); // part unspent: the unused fee reserve goes back
+        vm.prank(agent);
+        shield.fire(id, amount, "");
+        // Nothing of this firing's reserve is stranded in the core beyond one scaled unit.
+        assertLe(a.scaledBalanceOf(address(shield)), 1);
+    }
+
+    /// What the owner lost matches what the core charged, within the token's own rounding
+    /// (a few units: each transfer rounds to the scaled unit, at most 2 wei at index <= 2).
+    function testFuzz_scaledTokenChargeMatchesTheOwnersOutflow(
+        uint96 amountSeed,
+        uint16 spendSeed,
+        uint64 indexFrac
+    ) public {
+        (MockScaledToken a, bytes32 id) = _scaledMandate(1e27 + bound(uint256(indexFrac), 0, 1e27));
+        uint256 amount = bound(amountSeed, 1e12, 100e18);
+        exec.setSpendBps(bound(spendSeed, 1, 9_999));
+        uint256 ownerBefore = a.balanceOf(principal);
+        vm.prank(agent);
+        uint256 spent = shield.fire(id, amount, "");
+        assertApproxEqAbs(ownerBefore - a.balanceOf(principal), spent, 8);
+        assertLe(spent, amount + amount * 10 / 10_000);
+    }
+
+    function test_fixFeeRefundAtTheForkIndex() public {
+        MockScaledToken a = new MockScaledToken();
+        a.setIndex(1001455417921049884907935708); // X Layer aXETH, 24 Sep 2026
+        a.mint(principal, 1e18);
+        vm.prank(principal);
+        a.approve(address(shield), type(uint256).max);
+        IShieldV1.MandateParams memory p = _params();
+        p.asset = address(a);
+        p.maxTransactionValue = 1e17;
+        p.maxCumulativeValue = 1e18;
+        bytes32 id = _register(p);
+        for (uint256 i = 1; i <= 40; i++) {
+            exec.setSpendBps(10_000 - i * 7);
+            vm.prank(agent);
+            shield.fire(id, 9078486110904132 + i * 131, "");
+            vm.warp(vm.getBlockTimestamp() + 1 hours);
+        }
     }
 
     // ----------------------------------------------------------- registration

@@ -226,9 +226,17 @@ contract ShieldV1 is IShieldV1, ReentrancyGuard, EIP712 {
             if (f.used > amount) revert SpendExceedsAmount(f.used, amount);
             if (left > f.used) f.used = left;
             uint256 feeOn = feeRecipient == address(0) ? 0 : m.feeBps;
-            f.fee = Math.mulDiv(f.used, feeOn, BPS);
+            uint256 feeDue = Math.mulDiv(f.used, feeOn, BPS);
+            // The unused reserve goes back first, then the recipient takes the
+            // fee from what is left. A rebasing asset (an Aave aToken rounds
+            // every transfer to its scaled units) can leave the core one unit
+            // short of the sum; that unit is short on the fee, never on the
+            // owner's refund, and the firing never reverts on it (FLIP-280
+            // round 11, found on the X Layer fork: Panic(0x11) in the refund).
+            if (f.feeMax > feeDue) asset.safeTransfer(m.principal, f.feeMax - feeDue);
+            uint256 held = asset.balanceOf(address(this));
+            f.fee = feeDue < held ? feeDue : held;
             if (f.fee != 0) asset.safeTransfer(feeRecipient, f.fee);
-            if (f.feeMax > f.fee) asset.safeTransfer(m.principal, f.feeMax - f.fee);
             spent = f.used + f.fee;
             m.cumulativeUsed -= (amount + f.feeMax) - spent;
         } else {
