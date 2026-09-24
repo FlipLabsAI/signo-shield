@@ -13,6 +13,23 @@ contract MockToken is ERC20 {
     }
 }
 
+/// @dev A token that burns 1% of every transfer (not of a mint): the owner
+///      receives less than the sandbox sent.
+contract MockFeeToken is ERC20 {
+    constructor() ERC20("Fee", "FEE") {}
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+
+    function _update(address from, address to, uint256 value) internal override {
+        if (from == address(0) || to == address(0)) return super._update(from, to, value);
+        uint256 fee = value / 100;
+        super._update(from, address(0xFEE), fee);
+        super._update(from, to, value - fee);
+    }
+}
+
 /// @dev A configurable executor: spends `spendBps` of what it received (the
 ///      rest goes back to the principal), reports `reportOverride` if set,
 ///      can pull `extraPull` from the principal through a prior approval (to

@@ -13,7 +13,7 @@ import {IExecutorV1} from "contracts/v1/interfaces/IExecutorV1.sol";
 import {ExpressionEvaluator} from "contracts/v1/ExpressionEvaluator.sol";
 import {DisposableCloneV1} from "contracts/v1/DisposableCloneV1.sol";
 import {GenericExecutorV1} from "contracts/v1/GenericExecutorV1.sol";
-import {MockToken} from "./mocks/MockExecutor.sol";
+import {MockFeeToken, MockToken} from "./mocks/MockExecutor.sol";
 import {MockDex, MockOracle, MockVault, MockMarket} from "./mocks/MockVenues.sol";
 
 contract GenericExecutorV1Test is Test {
@@ -633,6 +633,34 @@ contract GenericExecutorV1Test is Test {
         vm.expectRevert();
         vm.prank(agent);
         shield.fire(id, 99e18, _route2(a, b));
+    }
+
+    /// A fee-on-transfer output: the value check reads what reached the owner,
+    /// after the token's own fee on the sweep, never what the route paid.
+    function test_r12_aFeeOnTransferOutputIsJudgedOnWhatReachedTheOwner() public {
+        MockFeeToken fee = new MockFeeToken();
+        oracle.set(address(fee), 1e8);
+        GenericExecutorV1.Config memory c = _cfg();
+        c.moreOuts = new GenericExecutorV1.Output[](1);
+        c.moreOuts[0] = GenericExecutorV1.Output({token: address(fee), floor: 0});
+        c.prices = new ExprLib.PriceRound[](3);
+        c.prices[0] = ExprLib.PriceRound(address(usdc), bytes32(0), address(0));
+        c.prices[1] = ExprLib.PriceRound(address(weth), bytes32(0), address(0));
+        c.prices[2] = ExprLib.PriceRound(address(fee), bytes32(0), address(0));
+        bytes32 id = _register(c); // 0.5% slippage
+        address clone = exec.nextClone(id);
+        IExecutorV1.Call memory k = _swapTo(address(fee), 100e18, clone);
+        // The route pays 100 at par; the sweep's 1% fee leaves 99 with the owner.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IShieldV1.OutcomeRejected.selector,
+                id,
+                IShieldV1.MandateReason.OUTCOME_FAILED,
+                abi.encodeWithSelector(GenericExecutorV1.OutputBelowMinimum.selector, 99e26, 995e25)
+            )
+        );
+        vm.prank(agent);
+        shield.fire(id, 100e18, _route(k));
     }
 
     function test_r12_admissionRefusesWhatTheRuleCannotJudge() public {
