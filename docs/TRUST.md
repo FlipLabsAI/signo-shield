@@ -5,7 +5,7 @@
 What each party can and cannot do, stated so it can be checked against the
 code. Public code is inspectable evidence, not an audit claim: the contracts
 have had two internal reviews with every finding fixed and pinned by a test
-(FLIP-201 records them), Slither and `forge lint` are clean, and nobody
+Slither and `forge lint` are clean, and nobody
 outside the team has audited them.
 
 Addresses on X Layer (chain 196), source commit `3907f08` (deployed

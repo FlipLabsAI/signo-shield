@@ -1,4 +1,9 @@
-# Signo Shield — architecture
+# Signo Shield v0.1: architecture
+
+> This page describes v0.1 (16 and 17 September 2026), which stays deployed for
+> existing mandates. Shield v1 is described in
+> [ARCHITECTURE-V1.md](ARCHITECTURE-V1.md), and how one led to the other in
+> [DESIGN-HISTORY.md](DESIGN-HISTORY.md).
 
 The contract enforces the **bound**. Signo decides the **action**.
 
@@ -190,7 +195,7 @@ variable debt to fall by what was repaid; the rate mode is pinned to variable.
 `repayWithCollateral` takes a slice of the collateral aToken, withdraws it,
 swaps it through the router pinned in the mandate with the agent's calldata
 (the collateral is approved to a separately pinned spender, since aggregators
-such as OKX pull through their own approval contract), bounded by a minimum
+pull through their own approval contract), bounded by a minimum
 output from the Aave oracle and the mandate's slippage limit, repays, and
 requires the health factor to end at or above the pinned target (the fee has
 already left the position when that check runs, so it holds for the final
@@ -212,9 +217,8 @@ cleared before it returns.
 
 `forge lint` runs as part of `forge build` and is clean. Slither reports
 twenty-three findings on the contracts, all of them the design stated above,
-each left in place on purpose. Two independent reviews (recorded on FLIP-201) found one medium and four low
-issues each, all fixed and pinned with tests; their findings and the fixes are
-listed there. `docs/TRUST.md` states what each party can and cannot do.
+each left in place on purpose. Two independent reviews found one medium and four low
+issues each, all fixed and pinned with tests. `docs/TRUST.md` states what each party can and cannot do.
 
 | Finding | Where | Why it stays |
 | --- | --- | --- |
@@ -230,11 +234,11 @@ listed there. `docs/TRUST.md` states what each party can and cannot do.
 ## Status
 
 Core, condition module and Aave V3 adapter are built and tested: unit suites,
-fork suites on X Layer and Arbitrum One at pinned blocks, a replay of real OKX
+fork suites on X Layer and Arbitrum One at pinned blocks, a replay of real DEX
 aggregator calldata through the swap leg, a parity check against the app's own
 action-plan calldata, the deployment script on a fork, and the slippage
 arithmetic across token decimals (`docs/TESTS.md`). `tools/demo-fork.sh` runs
 the whole story on a local fork. The Tier 1 generic executor
-(`contracts/executors/`) is built and fork-proven (a real OKX swap and a real
+(`contracts/executors/`) is built and fork-proven (a real aggregator swap and a real
 Aave supply through a disposable sandbox on X Layer, `test/fork/GenericExecutor.fork.t.sol`);
 it is not deployed or listed until its own review (docs/TIER1.md, last section).

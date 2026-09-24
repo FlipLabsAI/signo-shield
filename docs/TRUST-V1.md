@@ -1,21 +1,24 @@
 # Signo Shield v1: security design and trust boundaries
 
 This page says what each party can and cannot do in Shield v1, so it can be
-checked against the code. The short version: an AI agent can act for you,
-but only through a mandate you signed. The contract checks every firing, and
-the worst an agent can do is spend what you allowed, on the one action you
-allowed, through the venues you allowed.
+checked against the code. How v1 works is in
+[`ARCHITECTURE-V1.md`](ARCHITECTURE-V1.md). The short version: an AI agent
+can act for you, but only through a mandate you signed. The contract checks
+every firing, and the worst an agent can do is spend what you allowed, on the
+one action you allowed, through the venues you allowed.
 
 Status: public code is evidence, not an audit claim. The v1 contracts went
 through fifteen review rounds (an internal author and an independent
-reviewer, FLIP-280). Every finding was fixed and pinned by a test. The final
-review found no open high or critical item. Nobody outside the team has
-audited them. `forge lint` and `forge fmt` are clean.
+reviewer; the story is in [`DESIGN-HISTORY.md`](DESIGN-HISTORY.md)). Every
+finding was fixed and pinned by a test, except one accepted limit of swaps
+with no price check, described below. The final review found no open high
+or critical item. Nobody outside the team has audited the contracts.
+`forge lint` and `forge fmt` are clean.
 
 ## Deployed on X Layer (chain 196)
 
 Source commit `9acaa6f` (round 15), deployed 24 Sep 2026, verified on
-Sourcify and OKLink. The manifest is in `deployments/manifest.json`.
+Sourcify and on the X Layer block explorer. The manifest is in `deployments/manifest.json`.
 
 | Contract | Address |
 | --- | --- |
@@ -36,10 +39,12 @@ The v0.1 contracts in `TRUST.md` stay live beside v1 for existing mandates.
    result, and optionally a trigger and an outcome check. The agent chooses
    only the amount (within the caps), the route (through the signed venues)
    and, when the owner signed several outputs, which one to buy.
-2. **Every firing runs in a fresh sandbox.** The executor deploys a
-   single-use clone per firing. The clone may call only the signed venues,
-   approves only for the call, and sweeps every token it holds back to the
-   owner. The agent never holds the owner's tokens.
+2. **A generic firing runs in a fresh sandbox.** The generic and claim
+   executors deploy a single-use clone per firing. The clone may call only
+   the signed venues, approves only for the call, and sweeps every token it
+   holds back to the owner. The Aave adapter knows one protocol: it calls
+   only the Aave pool and, for a repay from collateral, the signed swap
+   router and spender. The agent never holds the owner's tokens.
 3. **The result is measured on the owner, not reported.** After the calls,
    the executor measures what left the owner and what arrived at the owner,
    and applies the mandatory check of the action. If the check fails, the
@@ -59,10 +64,10 @@ The v0.1 contracts in `TRUST.md` stay live beside v1 for existing mandates.
 
 | Party | Can | Cannot |
 | --- | --- | --- |
-| **Owner** (the wallet that signs) | register, amend and revoke their own mandates; set every number in them; revoke the token allowance at any time | change a mandate's agent, executor, action or asset after registration; touch anyone else's mandate |
+| **Owner** (the wallet that signs) | register, amend and revoke their own mandates; set every number in them; change the agent by amendment; revoke the token allowance at any time | change a mandate's executor, evaluator, action, asset or funding mode after registration (that is a new mandate); touch anyone else's mandate |
 | **Agent** (a key held in Turnkey) | call `fire` on a mandate that names it, for an amount within the caps, while the trigger holds, with a route through the signed venues | send the output anywhere but the owner; call or approve an unsigned contract; exceed a cap; fire after expiry, revocation, a freeze or a halt; hold the owner's tokens |
 | **Admin** (registry owner, `Ownable2Step`) | list executors, evaluators, reads, price rounds and claim rules for new mandates; set the fee and fee recipient; appoint enforcers; execute a restoration an enforcer approved, 24 h after it was queued | move funds; change or revoke a live mandate; raise a live mandate's fee; lift a freeze or halt on its own |
-| **Enforcer** | freeze an agent; halt an executor or evaluator; suspend a venue; revoke a venue, a read or a claim rule for good | anything that moves funds or loosens a limit |
+| **Enforcer** | freeze and unfreeze an agent; halt an executor or evaluator; suspend a venue; approve a restoration; revoke a venue, a read or a claim rule for good | anything that moves funds; lift a halt or a suspension without the admin and the 24 h delay; undo a revocation |
 | **Executors** | run one firing for the core, in a sandbox, and revert unless the action's check passes | be called by anyone but the core; keep tokens or approvals between firings |
 | **Evaluator** | judge a trigger or outcome tree over listed reads | write state or hold tokens; treat an unreadable value as "true" (an unreadable read reverts) |
 | **Anyone** | read every mandate; call `canFireBy` | everything else |
@@ -82,8 +87,8 @@ still sign a swap of it, with no price check. Then the signed caps are the
 whole loss bound, and the contract checks only that something signed
 arrived. That means a reported balance increase. A token that rebases can
 show one without a purchase. The app offers this only for tokens with no
-feed, says so on the review screen, and its agent refuses a route that OKX
-rates over 15 % price impact. That is an off-chain guard, not a contract
+feed, says so on the review screen, and its agent refuses a route that the
+swap venue rates over 15 % price impact. That is an off-chain guard, not a contract
 check.
 
 ## What a leaked key can do
@@ -113,7 +118,7 @@ freeze on chain.
 
 ## Known limits
 
-- X Layer only. OKX DEX is the only swap venue.
+- X Layer only. The app signs one DEX aggregator as its only swap venue.
 - One asset (the token sold) per mandate. A trigger fires once per crossing:
   it must turn false before it can fire again.
 - Oracle-priced tokens need 18 decimals or fewer.
