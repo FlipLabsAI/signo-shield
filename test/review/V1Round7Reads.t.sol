@@ -42,6 +42,24 @@ contract R7CollateralMarket {
     }
 }
 
+/// Aave's account-data shape with a settable health factor (round 9: the only read
+/// the registry lets say its top means "infinite").
+contract R9HealthFactorPool {
+    uint256 public hf;
+
+    function setHealthFactor(uint256 v) external {
+        hf = v;
+    }
+
+    function getUserAccountData(address)
+        external
+        view
+        returns (uint256, uint256, uint256, uint256, uint256, uint256)
+    {
+        return (0, 0, 0, 0, 0, hf);
+    }
+}
+
 /// Actual core/executor/evaluator, with catalog targets returning boundary-sized values.
 /// Counterexamples are not claims about reachable balances in the launch Aave market.
 contract V1Round7ReadsTest is V1ReviewBase {
@@ -167,9 +185,13 @@ contract V1Round7ReadsTest is V1ReviewBase {
         evaluator.judgeOutcome(tree, principal, new int256[](0), before_, 0);
     }
 
-    function _mathTree(ExprLib.Kind op, uint256 rhs, bytes32 id) internal view returns (bytes memory) {
+    function _mathTree(ExprLib.Kind op, uint256 rhs, bytes32 id, address target)
+        internal
+        view
+        returns (bytes memory)
+    {
         ExprLib.Read[] memory r = new ExprLib.Read[](1);
-        r[0] = ExprLib.Read(id, address(market), abi.encode(principal), ExprLib.Subject.Principal, 18);
+        r[0] = ExprLib.Read(id, target, abi.encode(principal), ExprLib.Subject.Principal, 18);
         ExprLib.Node[] memory n = new ExprLib.Node[](5);
         n[0] = ExprLib.Node(uint8(ExprLib.Kind.READ), 0, 0);
         n[1] = ExprLib.Node(uint8(ExprLib.Kind.CONST), rhs, 0);
@@ -179,18 +201,50 @@ contract V1Round7ReadsTest is V1ReviewBase {
         return abi.encode(r, n);
     }
 
-    /// The top only exists for a descriptor that says it means "unbounded"; arithmetic on
-    /// it stays checked and fails closed.
+    /// Aave's health factor as the deploy script lists it (per address, word 5, flagged).
+    function _healthFactor(R9HealthFactorPool pool) internal returns (bytes32) {
+        return registry.listDescriptor(
+            IDescriptors.Descriptor({
+                kind: IDescriptors.DescriptorKind.PerAddress,
+                target: address(pool),
+                selector: R9HealthFactorPool.getUserAccountData.selector,
+                argCount: 1,
+                subjectArg: 0,
+                subjectRule: IDescriptors.SubjectRule.PrincipalRequired,
+                word: 5,
+                isSigned: false,
+                mustBePositive: false,
+                decimals: 18,
+                freshness: IDescriptors.Freshness.None,
+                maxAge: 0,
+                gasStipend: 500_000,
+                copyBytes: 192,
+                unboundedTop: true
+            })
+        );
+    }
+
+    /// The top only exists for Aave's health factor (round 9: the registry refuses the
+    /// flag on an amount, such as this collateral read); arithmetic on it stays checked
+    /// and fails closed.
     function test_topArithmeticOverflowAndDivisionByZeroStillFailClosed() public {
         market.setCollateral(principal, type(uint256).max);
         (IDescriptors.Descriptor memory d,,) = registry.descriptorOf(collateralId);
         d.unboundedTop = true;
-        bytes32 topId = registry.listDescriptor(d);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShieldRegistryV1.InvalidParams.selector, bytes32("unboundedTop"))
+        );
+        registry.listDescriptor(d);
         vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.ValueOutOfRange.selector, 0));
-        evaluator.judgeTrigger(_mathTree(ExprLib.Kind.ADD, 1, collateralId), principal, new int256[](0), 0);
-        bytes memory add = _mathTree(ExprLib.Kind.ADD, 1, topId);
-        bytes memory mul = _mathTree(ExprLib.Kind.MUL, 2, topId);
-        bytes memory div = _mathTree(ExprLib.Kind.DIV, 0, topId);
+        evaluator.judgeTrigger(
+            _mathTree(ExprLib.Kind.ADD, 1, collateralId, address(market)), principal, new int256[](0), 0
+        );
+        R9HealthFactorPool pool = new R9HealthFactorPool();
+        pool.setHealthFactor(type(uint256).max);
+        bytes32 topId = _healthFactor(pool);
+        bytes memory add = _mathTree(ExprLib.Kind.ADD, 1, topId, address(pool));
+        bytes memory mul = _mathTree(ExprLib.Kind.MUL, 2, topId, address(pool));
+        bytes memory div = _mathTree(ExprLib.Kind.DIV, 0, topId, address(pool));
         vm.expectRevert(abi.encodeWithSignature("Panic(uint256)", 0x11));
         evaluator.judgeTrigger(add, principal, new int256[](0), 0);
         vm.expectRevert(abi.encodeWithSignature("Panic(uint256)", 0x11));
@@ -198,8 +252,29 @@ contract V1Round7ReadsTest is V1ReviewBase {
         vm.expectRevert(abi.encodeWithSignature("Panic(uint256)", 0x12));
         evaluator.judgeTrigger(div, principal, new int256[](0), 0);
         assertTrue(
-            evaluator.judgeTrigger(_mathTree(ExprLib.Kind.SUB, 1, topId), principal, new int256[](0), 0)
+            evaluator.judgeTrigger(
+                _mathTree(ExprLib.Kind.SUB, 1, topId, address(pool)), principal, new int256[](0), 0
+            )
         );
+    }
+
+    /// Round 9: only Aave's exact "no debt" value (type(uint256).max) reads as infinite.
+    /// A health factor that is merely above the int256 range is refused like any read.
+    function test_fixOnlyTheExactNoDebtMarkerIsInfinite() public {
+        R9HealthFactorPool pool = new R9HealthFactorPool();
+        bytes32 hfId = _healthFactor(pool);
+        // health factor - 1.5 >= 0
+        bytes memory atLeast = _mathTree(ExprLib.Kind.SUB, 1.5e18, hfId, address(pool));
+        pool.setHealthFactor(type(uint256).max);
+        assertTrue(evaluator.judgeTrigger(atLeast, principal, new int256[](0), 0));
+        pool.setHealthFactor(uint256(type(int256).max) + 1);
+        vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.ValueOutOfRange.selector, 0));
+        evaluator.judgeTrigger(atLeast, principal, new int256[](0), 0);
+        pool.setHealthFactor(type(uint256).max - 1);
+        vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.ValueOutOfRange.selector, 0));
+        evaluator.judgeTrigger(atLeast, principal, new int256[](0), 0);
+        pool.setHealthFactor(1.2e18);
+        assertFalse(evaluator.judgeTrigger(atLeast, principal, new int256[](0), 0));
     }
 
     /// Round 8: an owed amount above the range is refused, so the reward floor can no

@@ -252,15 +252,17 @@ library ExprLib {
         bytes memory out = _staticRead(r.target, d.gasStipend, abi.encodePacked(d.selector, r.args), need, i);
         if (d.freshness == IDescriptors.Freshness.ChainlinkRound) _checkRound(out, d.maxAge, i);
         uint256 raw = _word(out, d.word);
-        // An unsigned value above the int256 range is refused, unless the
-        // descriptor says its top means "unbounded" (Aave's no-debt health
-        // factor): then it reads as the top of the signed range. The reviewed
-        // catalog leaves amount descriptors unflagged; the registry cannot
-        // prove that classification. A wrongly flagged amount would saturate
-        // too (FLIP-280 O1). Arithmetic on the top value remains checked.
+        // An unsigned value above the int256 range is refused. The one
+        // exception is Aave's "no debt" health factor, which Aave reports as
+        // exactly type(uint256).max and its app shows as infinite: on a
+        // descriptor that says so (the registry lists that flag only on
+        // getUserAccountData's health factor), that exact value reads as the
+        // top, above every limit. Any other value above the range is refused
+        // there too, so no amount ever saturates (FLIP-280 rounds 7-9).
+        // Arithmetic on the top value is checked.
         // forge-lint: disable-next-line(unsafe-typecast)
         if (!d.isSigned && raw > uint256(type(int256).max)) {
-            if (!d.unboundedTop) revert IEvaluatorV1.ValueOutOfRange(i);
+            if (!d.unboundedTop || raw != type(uint256).max) revert IEvaluatorV1.ValueOutOfRange(i);
             // forge-lint: disable-next-line(unsafe-typecast)
             raw = uint256(type(int256).max);
         }

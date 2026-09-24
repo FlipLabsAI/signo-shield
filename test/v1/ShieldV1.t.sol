@@ -553,32 +553,47 @@ contract ShieldV1Test is Test {
         );
     }
 
-    /// Round 8: only an unsigned read's top can mean "unbounded"; a signed value
-    /// cannot be above the int256 range, so the flag there is refused as meaningless.
-    function test_unboundedTopOnlyOnUnsignedDescriptors() public {
+    /// Round 9 (Austin: "handle infinite for health factor only"): the flag is
+    /// accepted only on Aave's health factor, getUserAccountData's sixth word,
+    /// unsigned. Any other read, and so any amount, is refused it.
+    function test_unboundedTopOnlyOnAaveHealthFactor() public {
         IDescriptors.Descriptor memory d = IDescriptors.Descriptor({
             kind: IDescriptors.DescriptorKind.Shape,
             target: address(0),
-            selector: bytes4(keccak256("value(address)")),
+            selector: bytes4(keccak256("getUserAccountData(address)")),
             argCount: 1,
             subjectArg: 0,
             subjectRule: IDescriptors.SubjectRule.PrincipalRequired,
-            word: 0,
+            word: 5,
             isSigned: true,
             mustBePositive: false,
             decimals: 0,
             freshness: IDescriptors.Freshness.None,
             maxAge: 0,
-            gasStipend: 100_000,
-            copyBytes: 32,
+            gasStipend: 500_000,
+            copyBytes: 192,
             unboundedTop: true
         });
+        bytes memory refused =
+            abi.encodeWithSelector(IShieldRegistryV1.InvalidParams.selector, bytes32("unboundedTop"));
+        // Signed: a signed value is never above the int256 range.
         vm.prank(admin);
-        vm.expectRevert(
-            abi.encodeWithSelector(IShieldRegistryV1.InvalidParams.selector, bytes32("unboundedTop"))
-        );
+        vm.expectRevert(refused);
         registry.listDescriptor(d);
         d.isSigned = false;
+        // Another word of the same call: the debt and collateral are amounts.
+        d.word = 1;
+        vm.prank(admin);
+        vm.expectRevert(refused);
+        registry.listDescriptor(d);
+        // Another call.
+        d.word = 5;
+        d.selector = bytes4(keccak256("balanceOf(address)"));
+        vm.prank(admin);
+        vm.expectRevert(refused);
+        registry.listDescriptor(d);
+        // The health factor itself.
+        d.selector = bytes4(keccak256("getUserAccountData(address)"));
         vm.prank(admin);
         registry.listDescriptor(d);
     }

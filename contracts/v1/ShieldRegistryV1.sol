@@ -20,6 +20,10 @@ import {IDescriptors} from "./interfaces/IDescriptors.sol";
 /// Claim rules (FLIP-280 F1/F2, 23 Sep): the admin lists the exact claim calls
 /// a claim mandate may sign; an enforcer can revoke one for every mandate.
 contract ShieldRegistryV1 is IShieldRegistryV1, IDescriptors, Ownable2Step {
+    /// @dev Aave v3's getUserAccountData(address): its sixth word is the health
+    ///      factor, type(uint256).max when the account has no debt.
+    bytes4 internal constant HEALTH_FACTOR_SELECTOR = 0xbf92857c; // getUserAccountData(address)
+
     string public constant VERSION = "1.0.0";
     uint64 public constant RESTORE_DELAY = 24 hours;
 
@@ -285,7 +289,12 @@ contract ShieldRegistryV1 is IShieldRegistryV1, IDescriptors, Ownable2Step {
             revert InvalidParams("freshness");
         }
         if (d.gasStipend == 0) revert InvalidParams("gasStipend");
-        if (d.unboundedTop && d.isSigned) revert InvalidParams("unboundedTop");
+        // "Infinite" is Aave's health factor only (Austin, round 9): the sixth
+        // word of getUserAccountData, unsigned. No other read, and so no amount,
+        // can be listed with it.
+        if (d.unboundedTop && (d.isSigned || d.selector != HEALTH_FACTOR_SELECTOR || d.word != 5)) {
+            revert InvalidParams("unboundedTop");
+        }
         if (_descriptors[id].gasStipend == 0) _descriptors[id] = d;
         _descriptorListed[id] = true;
         emit DescriptorListed(id, true);

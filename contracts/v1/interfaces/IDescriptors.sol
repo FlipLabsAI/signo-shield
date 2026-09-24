@@ -43,11 +43,11 @@ interface IDescriptors {
         uint32 maxAge;
         uint32 gasStipend;
         uint16 copyBytes;
-        // Unsigned only: the value's top of range means "unbounded" (Aave reports
-        // "no debt" as a health factor of type(uint256).max), so a value above the
-        // int256 range reads as the top of that range. Every other descriptor
-        // refuses such a value. Amount strictness relies on correct catalog
-        // classification: the registry cannot distinguish a ratio from an amount.
+        // Aave's health factor only (getUserAccountData, word 5, unsigned; the
+        // registry refuses the flag anywhere else): Aave reports "no debt" as
+        // exactly type(uint256).max, which reads as the top of the int256 range,
+        // i.e. infinite. Any other value above the range is refused, here and on
+        // every other descriptor: two amounts must never read as equal (round 9).
         bool unboundedTop;
     }
 
