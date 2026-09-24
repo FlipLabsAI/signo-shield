@@ -12,10 +12,9 @@ Full design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Status
 
-**Execute is staff-only for now** (Austin, 23 September 2026), including the
-Shield v1 rollout. Publishing or deploying v1 does not open Execute to
-non-staff users. This is an app rollout policy, not an additional on-chain
-staff role; the contracts enforce their own mandate and caller rules.
+**Execute is for partners only for now**, including the Shield v1 rollout.
+Publishing or deploying v1 does not open Execute to the public. The contracts
+continue to enforce their own mandate and caller rules.
 
 The deployed v0.1 contracts are recorded in `deployments/manifest.json`.
 The v1 implementation is under `contracts/v1/`; the v0.1 design in
