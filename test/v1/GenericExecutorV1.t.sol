@@ -760,6 +760,153 @@ contract GenericExecutorV1Test is Test {
         );
     }
 
+    // ------------------------------------------------- round 14: no price promise
+
+    /// Austin, 24 Sep: an agent may trade small caps no oracle prices and the
+    /// registry never reviewed. The owner opts out of any price check; the
+    /// signed caps are then the whole loss bound, and something signed must
+    /// still arrive.
+    function _unpricedCfg(address out) internal view returns (GenericExecutorV1.Config memory c) {
+        c = _cfg();
+        c.tokenOut = out;
+        c.rateKind = uint8(GenericExecutorV1.RateKind.Unpriced);
+        c.oracle = address(0);
+        c.maxSlippageBps = 0;
+    }
+
+    function _outcome(bytes32 id, bytes memory detail) internal pure returns (bytes memory) {
+        return abi.encodeWithSelector(
+            IShieldV1.OutcomeRejected.selector, id, IShieldV1.MandateReason.OUTCOME_FAILED, detail
+        );
+    }
+
+    function test_r14_unpricedTakesAnyTokenAndPromisesNoValue() public {
+        MockToken smallCap = new MockToken(); // no oracle price, no registry round
+        bytes32 id = _register(_unpricedCfg(address(smallCap)));
+        dex.setRate(1); // 100 usdc buys 100 raw units: far below any fair value
+        address clone = exec.nextClone(id);
+        vm.prank(agent);
+        uint256 spent = shield.fire(id, 100e18, _route(_swapTo(address(smallCap), 100e18, clone)));
+        assertEq(spent, 100e18);
+        assertEq(smallCap.balanceOf(principal), 100, "what the route bought reached the owner");
+    }
+
+    function test_r14_unpricedRefusesAFiringWhereNothingArrives() public {
+        MockToken smallCap = new MockToken();
+        bytes32 id = _register(_unpricedCfg(address(smallCap)));
+        dex.setRate(0); // the asset leaves, nothing comes back
+        uint256 before = usdc.balanceOf(principal);
+        address clone = exec.nextClone(id);
+        vm.expectRevert(
+            _outcome(id, abi.encodeWithSelector(GenericExecutorV1.OutputBelowMinimum.selector, 0, 1))
+        );
+        vm.prank(agent);
+        shield.fire(id, 100e18, _route(_swapTo(address(smallCap), 100e18, clone)));
+        assertEq(usdc.balanceOf(principal), before, "nothing left the owner");
+    }
+
+    function test_r14_theSignedCapsAreTheLossBound() public {
+        MockToken smallCap = new MockToken();
+        bytes32 id = _register(_unpricedCfg(address(smallCap))); // 1,000 a firing, 10,000 in total
+        dex.setRate(1);
+        address clone = exec.nextClone(id);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShieldV1.MandateBlocked.selector, id, IShieldV1.MandateReason.OVER_TX_CAP)
+        );
+        vm.prank(agent);
+        shield.fire(id, 1_000e18 + 1, _route(_swapTo(address(smallCap), 1_000e18 + 1, clone)));
+        for (uint256 i = 0; i < 10; i++) {
+            clone = exec.nextClone(id);
+            vm.prank(agent);
+            shield.fire(id, 1_000e18, _route(_swapTo(address(smallCap), 1_000e18, clone)));
+        }
+        clone = exec.nextClone(id);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IShieldV1.MandateBlocked.selector, id, IShieldV1.MandateReason.OVER_CUMULATIVE_CAP
+            )
+        );
+        vm.prank(agent);
+        shield.fire(id, 1, _route(_swapTo(address(smallCap), 1, clone)));
+    }
+
+    function test_r14_unpricedSeveralOutputsSettleOnAnyArrival() public {
+        MockToken a = new MockToken();
+        MockToken b = new MockToken(); // neither priced nor reviewed
+        GenericExecutorV1.Config memory c = _unpricedCfg(address(a));
+        c.moreOuts = new GenericExecutorV1.Output[](1);
+        c.moreOuts[0] = GenericExecutorV1.Output({token: address(b), floor: 0});
+        bytes32 id = _register(c);
+        // Only the second output, at a tiny rate: settled.
+        dex.setRate(1);
+        address clone = exec.nextClone(id);
+        vm.prank(agent);
+        shield.fire(id, 100e18, _route(_swapTo(address(b), 100e18, clone)));
+        assertEq(b.balanceOf(principal), 100);
+        assertEq(a.balanceOf(principal), 0);
+        // Nothing of either: refused (one raw unit of any output is a whole firing).
+        dex.setRate(0);
+        clone = exec.nextClone(id);
+        vm.expectRevert(
+            _outcome(id, abi.encodeWithSelector(GenericExecutorV1.OutputBelowMinimum.selector, 0, 1e18))
+        );
+        vm.prank(agent);
+        shield.fire(id, 100e18, _route(_swapTo(address(b), 100e18, clone)));
+    }
+
+    function test_r14_unpricedSignsNothingThatReadsAsACheck() public {
+        MockToken smallCap = new MockToken();
+        MockToken other = new MockToken();
+        bytes memory unpriced = abi.encodeWithSelector(GenericExecutorV1.ConfigInvalid.selector, "unpriced");
+        bytes memory moreOuts = abi.encodeWithSelector(GenericExecutorV1.ConfigInvalid.selector, "moreOuts");
+        GenericExecutorV1.Config memory c;
+
+        // An oracle, a rate or floor, a slippage or an override would read as a check.
+        c = _unpricedCfg(address(smallCap));
+        c.oracle = address(oracle);
+        _refused(c, TRANSFORM, unpriced);
+        c = _unpricedCfg(address(smallCap));
+        c.rateOrFloor = 1;
+        _refused(c, TRANSFORM, unpriced);
+        c = _unpricedCfg(address(smallCap));
+        c.maxSlippageBps = 50;
+        _refused(c, TRANSFORM, unpriced);
+        c = _unpricedCfg(address(smallCap));
+        c.slippageOverride = true;
+        _refused(c, TRANSFORM, unpriced);
+        // So would a signed price rule.
+        c = _unpricedCfg(address(smallCap));
+        c.prices = new ExprLib.PriceRound[](1);
+        c.prices[0] = ExprLib.PriceRound(address(usdc), bytes32(0), address(0));
+        _refused(
+            c, TRANSFORM, abi.encodeWithSelector(GenericExecutorV1.ConfigInvalid.selector, "price:round")
+        );
+        // And a floor on a further output.
+        c = _unpricedCfg(address(smallCap));
+        c.moreOuts = new GenericExecutorV1.Output[](1);
+        c.moreOuts[0] = GenericExecutorV1.Output({token: address(other), floor: 1});
+        _refused(c, TRANSFORM, moreOuts);
+        // The structural refusals still hold: the asset, tokenOut or a repeat
+        // as an output, a token with no code, more than four.
+        address[4] memory bad = [address(usdc), address(smallCap), address(0xDEAD), address(exec)];
+        for (uint256 i = 0; i < bad.length; i++) {
+            c.moreOuts[0] = GenericExecutorV1.Output({token: bad[i], floor: 0});
+            _refused(c, TRANSFORM, moreOuts);
+        }
+        c.moreOuts = new GenericExecutorV1.Output[](2);
+        c.moreOuts[0] = GenericExecutorV1.Output({token: address(other), floor: 0});
+        c.moreOuts[1] = GenericExecutorV1.Output({token: address(other), floor: 0});
+        _refused(c, TRANSFORM, moreOuts);
+        c.moreOuts = new GenericExecutorV1.Output[](5);
+        for (uint256 i = 0; i < 5; i++) {
+            c.moreOuts[i] = GenericExecutorV1.Output({token: address(new MockToken()), floor: 0});
+        }
+        _refused(c, TRANSFORM, moreOuts);
+        // The asset is never the output either.
+        c = _unpricedCfg(address(usdc));
+        _refused(c, TRANSFORM, abi.encodeWithSelector(GenericExecutorV1.ConfigInvalid.selector, "tokenOut"));
+    }
+
     function _refused(GenericExecutorV1.Config memory c, bytes32 action, bytes memory err) internal {
         IShieldV1.MandateParams memory p = _params(action, address(usdc), c, 0);
         vm.prank(principal);

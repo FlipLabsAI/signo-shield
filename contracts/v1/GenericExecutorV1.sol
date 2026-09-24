@@ -59,7 +59,10 @@ contract GenericExecutorV1 is IExecutorV1 {
         Fixed,
         Oracle,
         Floor,
-        Erc4626
+        Erc4626,
+        // No price promise (round 14): the signed caps are the whole loss
+        // bound; something signed must still arrive.
+        Unpriced
     }
 
     struct Venue {
@@ -93,9 +96,10 @@ contract GenericExecutorV1 is IExecutorV1 {
         uint256 signedAssets; // REDEEM, optional floor: convertToAssets(signedShares) at signing
         uint16 sanityBandBps; // REDEEM, optional floor: how far the sample's value may fall below signing; 0 = no floor
         ExprLib.PriceRound[] prices; // Oracle TRANSFORM: the signed fresh-round rules for [asset, tokenOut, moreOuts...]
-        // TRANSFORM (Oracle or Floor): further tokens the route may deliver
-        // instead of or beside tokenOut; the loss bound is judged on the value
-        // of all of them together, whichever the route chose (round 12).
+        // TRANSFORM (Oracle, Floor or Unpriced): further tokens the route may
+        // deliver instead of or beside tokenOut; the loss bound is judged on
+        // the value of all of them together, whichever the route chose (round
+        // 12); unpriced, only that one of them arrived (round 14).
         Output[] moreOuts;
     }
 
@@ -262,35 +266,44 @@ contract GenericExecutorV1 is IExecutorV1 {
             // a token quotes 0 there yet prices a real deposit exactly, and the
             // firing judges precision on the exact amount (FLIP-280 O1).
             if (!_quotesShares(c.tokenOut, asset)) revert ConfigInvalid("vault:rate");
+        } else if (k == RateKind.Unpriced) {
+            // Nothing that reads as a price check is signed with it.
+            if (c.oracle != address(0) || c.rateOrFloor != 0 || c.maxSlippageBps != 0 || c.slippageOverride) {
+                revert ConfigInvalid("unpriced");
+            }
         } else {
             if (c.rateOrFloor == 0) revert ConfigInvalid("floor");
         }
     }
 
-    /// @dev Each further output (transforms only, Oracle or Floor rule): a
-    ///      distinct token that is not the asset, answers balanceOf and
-    ///      decimals, and carries exactly what its rule reads (an oracle price,
-    ///      or a floor).
+    /// @dev Each further output (transforms only, Oracle, Floor or Unpriced
+    ///      rule): a distinct token that is not the asset, answers balanceOf
+    ///      and decimals, and carries exactly what its rule reads (an oracle
+    ///      price, a floor, or nothing).
     function _validateMoreOuts(Config memory c, address asset, bytes32 action) internal view {
         uint256 m = c.moreOuts.length;
         if (m == 0) return;
         RateKind k = RateKind(c.rateKind);
         bool oracle = k == RateKind.Oracle;
-        // Every output of a several-output transform is a token the registry
-        // bound a fresh round for: reviewed, independent assets only, so two
-        // addresses over one balance cannot be counted twice without the
-        // admin listing both (round 13, G12-H2; the app keeps the same list).
-        bool bad = action != ACTION_TRANSFORM || m > MAX_MORE_OUTS || (!oracle && k != RateKind.Floor)
-            || !_reviewed(c.tokenOut);
+        bool unpriced = k == RateKind.Unpriced;
+        // Every output of a several-output transform whose value is summed is
+        // a token the registry bound a fresh round for: reviewed, independent
+        // assets only, so two addresses over one balance cannot be counted
+        // twice without the admin listing both (round 13, G12-H2; the app
+        // keeps the same list). Unpriced sums no value, so any token may be
+        // one (round 14).
+        bool bad = action != ACTION_TRANSFORM || m > MAX_MORE_OUTS
+            || (!oracle && !unpriced && k != RateKind.Floor) || (!unpriced && !_reviewed(c.tokenOut));
         for (uint256 i = 0; i < m && !bad; i++) {
             Output memory o = c.moreOuts[i];
-            bad = !_reviewed(o.token);
-            // Under the oracle rule Aave's oracle must price it; under floors it carries one.
+            bad = !unpriced && !_reviewed(o.token);
+            // At the oracle, Aave's oracle must price it; under floors it
+            // carries one; unpriced, it carries none.
             // forge-lint: disable-next-item(calls-loop)
-            bool unjudged =
-                oracle ? o.floor != 0 || IPriceOracle(c.oracle).getAssetPrice(o.token) == 0 : o.floor == 0;
-            bad = bad || unjudged || o.token == asset || o.token == c.tokenOut
-                || _isReserved(o.token, address(0), address(0)) || !_answersBalanceOf(o.token);
+            bool unjudged = oracle
+                ? o.floor != 0 || IPriceOracle(c.oracle).getAssetPrice(o.token) == 0
+                : (o.floor == 0) != unpriced;
+            bad = bad || unjudged || _isReserved(o.token, asset, c.tokenOut) || !_answersBalanceOf(o.token);
             for (uint256 j = 0; j < i; j++) {
                 if (c.moreOuts[j].token == o.token) bad = true;
             }
@@ -477,7 +490,8 @@ contract GenericExecutorV1 is IExecutorV1 {
     ///      before the route; `unit` ends with the asset's) is at least the
     ///      value sold less the slippage; with floors, each output counts as
     ///      its share of its own floor, and the shares add up to one whole
-    ///      firing. Returns what was needed; reverts when short.
+    ///      firing; unpriced (no floors), one raw unit of any output is a
+    ///      whole firing. Returns what was needed; reverts when short.
     function _anyOutput(Config memory c, uint256 spent, uint256[] memory got, uint256[] memory unit)
         internal
         pure
@@ -488,9 +502,10 @@ contract GenericExecutorV1 is IExecutorV1 {
         need = oracle ? Math.mulDiv(spent * unit[n], BPS - c.maxSlippageBps, BPS) : WAD;
         uint256 score = 0;
         for (uint256 i = 0; i < n; i++) {
-            score += oracle
-                ? got[i] * unit[i]
-                : Math.mulDiv(got[i], WAD, i == 0 ? c.rateOrFloor : c.moreOuts[i - 1].floor);
+            // Unpriced signs no floor (admission refuses one elsewhere): one raw
+            // unit of any output settles the firing (round 14).
+            uint256 floor = i == 0 ? c.rateOrFloor : c.moreOuts[i - 1].floor;
+            score += oracle ? got[i] * unit[i] : Math.mulDiv(got[i], WAD, floor == 0 ? 1 : floor);
         }
         if (need == 0) need = 1;
         if (score < need) revert OutputBelowMinimum(score, need);
@@ -714,8 +729,9 @@ contract GenericExecutorV1 is IExecutorV1 {
         }
     }
 
-    /// @dev The minimum for one output under Fixed, Floor or ERC-4626. The
-    ///      oracle rule goes through `_anyOutput` (one shared valuation).
+    /// @dev The minimum for one output under Fixed, Floor, ERC-4626 or
+    ///      Unpriced (no floor: 0, which the caller raises to one raw unit).
+    ///      The oracle rule goes through `_anyOutput` (one shared valuation).
     function _minOut(Config memory c, uint256 spent, uint256 amount, Firing memory f)
         internal
         pure
