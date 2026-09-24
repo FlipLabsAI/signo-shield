@@ -267,8 +267,8 @@ transactions on the v1 core.
 
 ## Where the line is
 
-The design in `docs/ARCHITECTURE.md` and the off-chain pieces this contract
-is built to serve (the intent schema, the encoder catalogue, receipt-token
+The first design idea (bounded execution checked by post-conditions) and
+the off-chain pieces this contract is built to serve (the intent schema, the encoder catalogue, receipt-token
 handling, position unlocking, the alerting cron) existed before this
 repository was started. Everything in this repository, and everything in the
 tables above, was added from 15 September 2026 onward.

@@ -69,7 +69,7 @@ sequenceDiagram
 ```
 
 The full sequence, with every reason code, is in
-[`docs/ARCHITECTURE-V1.md`](docs/ARCHITECTURE-V1.md).
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## What an owner can sign
 
@@ -108,11 +108,10 @@ stay deployed beside v1 for mandates signed before it.
 | Document | What it covers |
 | --- | --- |
 | [`docs/DESIGN-HISTORY.md`](docs/DESIGN-HISTORY.md) | How the design got here in nine days: v0.1, the generic executor, why v1, and what each of the fifteen review rounds changed |
-| [`docs/ARCHITECTURE-V1.md`](docs/ARCHITECTURE-V1.md) | How v1 works: the contracts, the mandate, the firing, the executors, triggers and outcomes, emergency controls |
-| [`docs/TRUST-V1.md`](docs/TRUST-V1.md) | Who can do what, what each action checks, what a leaked key can do, known limits |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How v1 works: the contracts, the mandate, the firing, the executors, triggers and outcomes, emergency controls |
+| [`docs/TRUST.md`](docs/TRUST.md) | Who can do what, what each action checks, what a leaked key can do, known limits |
 | [`docs/APP-SIDE.md`](docs/APP-SIDE.md) | What the Signo app does around the contracts, when it was built, and every mainnet firing |
 | [`docs/TESTS.md`](docs/TESTS.md) | The 499 tests, and what each suite proves |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/TIER1.md`](docs/TIER1.md), [`docs/TRUST.md`](docs/TRUST.md) | The v0.1 design, its generic executor, and its trust boundaries |
 | [`docs/REUSE.md`](docs/REUSE.md) | Third-party code and its licences |
 
 ## Build and test
@@ -145,19 +144,6 @@ API key of that aggregator; the suite itself needs none. CI runs the build,
 the tests, `forge fmt --check` and a check that `abi/` is current on every
 push.
 
-## Run the v0.1 demo on a fork
-
-```bash
-tools/demo-fork.sh
-```
-
-Starts a local fork of X Layer, funds a demo wallet, deploys the v0.1
-contracts, has the user open a small Aave position and sign one mandate, and
-has the agent fire it. It prints the debt, the health factor, `canFire` and
-the budget before and after. The second `canFire` is refused because the
-repay lifted the health factor past the trigger. Needs Foundry (anvil, forge,
-cast) and python3, nothing else.
-
 ## Layout
 
 ```
@@ -170,7 +156,7 @@ test/review/           the independent reviewer's suites, imported as written
 test/fork/             pinned-chain suites, v0.1 and v1
 test/                  v0.1 unit suites and mocks
 script/                deploy scripts (DeployV1 for v1) and the v0.1 register-and-fire demo
-tools/                 artifact export, the fork demo, the aggregator fixture generator
+tools/                 artifact export, a v0.1 fork demo, the aggregator fixture generator
 abi/                   generated ABIs, checked in so they can be read without the toolchain
 deployments/           the manifest keyed by chain id, generated from broadcast files
 docs/                  design, trust, tests, app side, reuse

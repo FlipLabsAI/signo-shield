@@ -1,244 +1,350 @@
-# Signo Shield v0.1: architecture
+# Signo Shield v1: architecture
 
-> This page describes v0.1 (16 and 17 September 2026), which stays deployed for
-> existing mandates. Shield v1 is described in
-> [ARCHITECTURE-V1.md](ARCHITECTURE-V1.md), and how one led to the other in
-> [DESIGN-HISTORY.md](DESIGN-HISTORY.md).
+Shield v1 lets an owner give an agent a bounded job on the owner's wallet. The
+owner signs a mandate from their own wallet. The mandate names the agent, the
+action, the token the action may spend, the caps, the validity window, the
+exact contracts the action may call, the rule that judges the result, and
+optionally a trigger and an outcome check. The agent decides when to fire,
+how much to spend within the caps, which route to take through the signed
+contracts and, when the owner signed several outputs, which one to buy. The
+contract does not trust those decisions. It checks every firing, and a firing
+that fails a check reverts as a whole.
 
-The contract enforces the **bound**. Signo decides the **action**.
+This page describes the mechanism, with the contract and function names so
+each claim can be checked in `contracts/v1/`. Who can do what, and what a
+leaked key can do, is in [`TRUST.md`](TRUST.md). The deployed addresses
+are in [`deployments/manifest.json`](../deployments/manifest.json). How the
+design got here is in [`DESIGN-HISTORY.md`](DESIGN-HISTORY.md).
 
-Anything that is a number goes on chain, because a number is enforceable
-without understanding anything. Anything that is a judgement stays off chain.
-That single rule is what keeps this action-agnostic: there is no contract per
-intent type, and adding a protocol needs no new Solidity.
+## The contracts
 
-It is called a Shield rather than a Guardian because it is something the agent
-uses, not another agent. The owner signs a mandate. The agent fires a mandate
-through the Shield.
-
-## Tier 1 — bounded execution (built as `GenericExecutor`; see `docs/TIER1.md`)
-
-Three pieces, none of which parse calldata.
-
-1. **The agent holds no allowance.** The Shield does, and it pulls at most the
-   mandate's per-firing amount.
-2. **The call runs from a fresh disposable clone.** A minimal proxy, deployed
-   and discarded within the transaction, holding no allowance of its own, so no
-   standing approval survives the firing.
-3. **A post-condition on the owner's balances.** The owner pins the input
-   token, the output token, the direction and a minimum rate at registration.
-   The agent supplies only a number, a target and calldata. The contract
-   computes the bound itself.
-
-   One rule: the pinned output token must rise on the owner by at least the
-   bound. Supply: the aToken must rise. ERC-4626 deposit: shares must rise.
-   Swap: the output token must rise at the owner's limit rate. A repay (the
-   debt token must fall) is not this shape; it is the Aave adapter's.
-
-**Why this is not a calldata filter.** A filter parses the call, and is fooled
-by batched calls and by delegatecall. A post-condition measures the owner's
-balances at the end, so there is no parser to fool.
-
-**Loss bound: tolerance times budget.** Fifty basis points on five thousand
-USDC is about twenty-five USDC worst case. That is tighter than an
-adapter-per-action design, where a malicious listed adapter can take a full
-per-action cap.
-
-## Tier 2 — pinned adapter (the exception)
-
-Reserved for two cases:
-
-- the demo mandate, where a pinned path makes a stronger on-stage claim;
-- **obligation-shaped grants**, where a balance check cannot see the harm.
-  Credit delegation and operator bits: Aave `approveDelegation`, Compound
-  `allow`, Morpho `setAuthorization`. Nothing in the owner's balances moves when
-  one of those is granted, so a post-condition has nothing to measure.
-
-## Conditions
-
-One generic module covers every trigger. Pin a view target, its calldata, the
-word offset to read out of the return data, a comparator and a threshold.
-`staticcall` cannot change state, so a fully generic reader is safe in a way a
-generic writer would not be. Health factor, oracle price, token balance and
-vault share price are one contract.
-
-This is the part that is not standard practice: all nine ERC-7579 SmartSessions
-policies inspect the call being made. None of them read protocol state.
-
-The evaluator is pluggable per mandate. A condition names which listed
-`ICondition` judges it (`condition.evaluator`); the zero address is the
-default module above. The owner lists evaluators the way adapters are
-listed (`setEvaluator`), and a mandate pins its evaluator at registration,
-so delisting reaches no live mandate. The first listed evaluator is
-`CompoundCondition`: "A and B" or "A or B" over up to eight plain leaves,
-every leaf read every time with no short-circuit, so a leaf that cannot be
-read reverts the whole trigger instead of hiding behind a true sibling — and
-the registration dry-run exercises every leaf, so a dead one is refused at
-signing. Leaves only, one level deep: eight flat leaves cover "health factor
-below X and price above Y and balance over Z", and nesting would make a
-trigger's cost unbounded and its meaning hard to put on a review screen.
-
-## Amendment
-
-Raising a cap, extending an expiry or changing a trigger is one owner
-transaction through `amendMandate`. The asset is immutable: a new input token
-is a new mandate, and it needs its own ERC-20 approve, so that is one
-signature in an ERC-5792 batching wallet and two elsewhere.
-
-Three rules hold for every amendment:
-
-- `amendMandate` can never change the agent address;
-- every amendment re-renders the **whole** resulting permission, never the
-  delta, so a user and an indexer read the same thing;
-- widening emits the registration event shape.
-
-## Grant shapes this design has to live with
-
-The ceiling on action-agnosticism is the protocols, not this contract:
-
-1. no grant at all, where the protocol takes `onBehalfOf` (Aave and Spark
-   supply and repay; Compound reward claim is permissionless);
-2. a plain ERC-20 allowance;
-3. an ERC-4626 share allowance, which the standard mandates, so one path covers
-   Yearn V3, MetaMorpho, Sky, Pendle SY and Aave collateral exits via the
-   aToken;
-4. a protocol-native operator bit, which costs one extra setup transaction.
-
-## Known limits
-
-- Native ETH cannot be approved. That needs WETH, not an escrow: funds staying
-  in the owner's wallet is the property this design exists to keep.
-- Aave's `claimAllRewardsOnBehalf` is gated by their RewardsAdmin, so Aave
-  reward claiming is not delegable.
-- Solana and cross-chain execution are a separate model, not this contract.
-
-## What is built
-
-**`SignoShield`** holds the mandate record and enforces it. Field names follow
-ERC-8226 where they mean the same thing (`principal`, `agent`, `asset`,
-`validFrom`, `validUntil`, `revoked`, `maxTransactionValue`,
-`maxCumulativeValue`, `cumulativeUsed`); the rest is ours: the pinned pair
-(`adapter`, `action`), the trigger `condition`, an opaque `actionConfig` the
-adapter validates, and `feeBps`. The fee is the Shield's current rate stamped
-into the record at registration (10 bps at launch), never changed for the life
-of a mandate; a rate change reaches new registrations only, and a fee
-recipient of `address(0)` disables collection entirely. It is charged on what
-a firing actually spends, on top of the amount, and the lifetime cap covers
-both: the worst case (all of the amount spent, fee on all of it) is what has
-to fit, and what is reserved before the adapter runs. The contract is
-interface-aligned with ERC-8226, never conformant.
-
-The agent's entire authority is `fire(mandateId, amount, data)`. Every firing
-runs the same fixed sequence, and `canFire(mandateId, amount)` reports the
-first failing step as a reason code so a relayer and a UI can say why before
-sending anything:
-
-```
-NONEXISTENT → AGENT_FROZEN → NOT_AGENT → NOT_YET_VALID → EXPIRED → REVOKED
-→ ZERO_AMOUNT → OVER_TX_CAP → OVER_CUMULATIVE_CAP
-→ INSUFFICIENT_ALLOWANCE → INSUFFICIENT_BALANCE → TRIGGER_NOT_MET
-```
-
-The allowance and balance checks cover the worst case of the firing (amount
-plus the fee on all of it). What `canFire` cannot see is the adapter's own
-outcome check and the protocol's answer; those surface as `OutcomeRejected`.
-
-Then: reserve the worst case against the budget, take the fee's worst case
-from the principal, pull `amount` with the allowance the principal granted
-the Shield, hand it to the pinned adapter, **measure** what left the
-principal (the larger of the adapter's report and the balance drop counts,
-and more than `amount` leaving reverts), settle the fee on that and refund
-the rest, reconcile the budget to spend plus fee, emit the receipt. The fee
-leaves before the adapter runs so every outcome check the adapter makes sees
-the principal's final state. Any adapter-side revert surfaces as
-`OutcomeRejected(mandateId, POSTCONDITION_FAILED, adapterError)`: one typed
-code for a relayer, the adapter's own revert data for whoever has to read it,
-and the whole transaction reverts. `canFireBy(mandateId, caller, amount)` is
-`canFire` for a specific caller, `NOT_AGENT` included. The Shield holds no
-funds between transactions and has no withdrawal function. A trigger that
-cannot be read reverts rather than reporting "not met".
-
-Three roles, kept apart. The **principal** registers, amends and revokes its
-own mandates; amendment cannot change `agent`, `adapter`, `action` or `asset`,
-cannot raise the fee, cannot move the lifetime cap under what is used, and
-re-emits the whole record. The **admin** (`Ownable2Step`) lists adapters for
-new registrations, appoints enforcers and sets the fee rate for new
-registrations; it cannot move funds, freeze, or renounce the seat. One admin
-lever reaches live mandates: the fee recipient, which turns collection on or
-off and moves where the fee goes. It can only lower what a principal pays,
-and it can never point at the Shield or a listed adapter. Listing an adapter
-is a trust decision on what the adapter does with the funds inside one
-firing, and only that: the Shield measures what left the principal itself,
-so a listed adapter can under-report but never under-charge the budget. An
-**enforcer** can freeze and unfreeze an agent and nothing else, and the admin
-address can never be one (a person holding two keys can, which is why the
-admin seat belongs behind a multisig before real users); the deployment script appoints one before handing the seat
-over, so the freeze switch is armed from the first block. A mandate pins its
-adapter at registration, so listing or delisting later reaches no live
-mandate. Registration dry-runs the trigger, so a target without code, a
-wrong selector or a word past the return data is refused rather than signed
-into a mandate that could never fire; and the lifetime cap must hold one
-firing at the per-firing cap plus its fee.
-
-**`ConditionModule`** is the generic trigger described above, as one
-`staticcall` reader, and the Shield's default evaluator.
-
-**`CompoundCondition`** is the first listed evaluator: `and` / `or` over
-plain leaves, each judged by the default module, every leaf every time.
-
-**`AaveV3Adapter`** is the first Tier 2 adapter: one contract for the protocol,
-one entry point per action, callable only by the Shield, holding no state.
-`supply` requires the principal's aToken balance to rise by the amount (a
-first supply of a reserve also turns it on as collateral, as Aave does).
-`repay` clamps to the debt actually owed, returns the rest, and requires the
-variable debt to fall by what was repaid; the rate mode is pinned to variable.
-`repayWithCollateral` takes a slice of the collateral aToken, withdraws it,
-swaps it through the router pinned in the mandate with the agent's calldata
-(the collateral is approved to a separately pinned spender, since aggregators
-pull through their own approval contract), bounded by a minimum
-output from the Aave oracle and the mandate's slippage limit, repays, and
-requires the health factor to end at or above the pinned target (the fee has
-already left the position when that check runs, so it holds for the final
-state). What the
-router took is measured as the drop in the adapter's own balance across the
-call, so tokens anyone parks on the adapter neither block a firing nor loosen
-its bound (parked debt asset ends up with whichever principal fires next,
-never with the agent); the loss bound of the swap leg is the slippage limit
-times the budget, measured against the Aave oracle, so it carries the
-oracle's own deviation from the market; the unsold part of the slice goes back into the position, never to
-the wallet; a sale that overshoots the debt by more than the slippage bound
-is refused. Aave itself refuses a collateral transfer that would leave the
-position under-collateralised, so a slice that breaks the loan never reaches
-the swap. The router and the spender may not be any token or protocol
-contract the adapter holds authority over. Every approval an action grants is
-cleared before it returns.
-
-## Static analysis
-
-`forge lint` runs as part of `forge build` and is clean. Slither reports
-twenty-three findings on the contracts, all of them the design stated above,
-each left in place on purpose. Two independent reviews found one medium and four low
-issues each, all fixed and pinned with tests. `docs/TRUST.md` states what each party can and cannot do.
-
-| Finding | Where | Why it stays |
+| Contract | Job | Runtime size |
 | --- | --- | --- |
-| arbitrary `from` in `transferFrom` | `SignoShield.fire` | The principal granted the Shield the allowance so that exactly this, bounded by the checks above, can happen without their signature. |
-| reentrancy (balance, events, no-eth) | `fire`, adapter actions | `fire` is `nonReentrant`; the adapter keeps no state; receipts are emitted after the checked outcome on purpose. |
-| strict equality on a balance | adapter `debt == 0` | A zero debt is refused, not compared for a payout. |
-| unused return | `getUserAccountData` | Only the health-factor word is needed. |
-| missing zero check | `setFeeRecipient`, adapter constructor | `address(0)` disables fees by design; the constructor's code-length check refuses it. |
-| timestamp comparison | validity window | Mandate validity is a timestamp window, as in ERC-8226. |
-| assembly, low-level call | condition module, swap leg | The generic reader and the pinned-router call are the design; both are bounded by balance checks. |
-| naming | `ADDRESSES_PROVIDER` | Aave's own function name. |
+| `ShieldV1` | The core. Holds every mandate, pulls only the mandate's asset within the caps, hands it to the executor, measures what left the owner, settles the fee, judges the outcome. | 17,436 bytes |
+| `ShieldRegistryV1` | Executor and evaluator listings, the read catalog (descriptors), price rounds, claim rules, and the emergency controls. | 12,282 bytes |
+| `ExpressionEvaluator` + `ExprLib` | Judges trigger and outcome trees over listed reads. Stateless; every function is a view. | 11,706 bytes |
+| `GenericExecutorV1` | Funded actions that know no protocol: transform (swap, deposit), transfer, redeem, repay. Runs the agent's calls in a sandbox. | 24,452 bytes |
+| `DisposableCloneV1` | The sandbox template. One minimal-proxy clone per firing. | 2,835 bytes |
+| `AaveV3AdapterV1` | Aave v3 supply, repay, and repay from collateral, each with its own check. | 15,055 bytes |
+| `ClaimExecutorV1` | Collects listed rewards to the owner. Pulls nothing. | 11,377 bytes |
 
-## Status
+Sizes are from `forge build --sizes` at the deployed source commit. The
+contract size limit is 24,576 bytes.
 
-Core, condition module and Aave V3 adapter are built and tested: unit suites,
-fork suites on X Layer and Arbitrum One at pinned blocks, a replay of real DEX
-aggregator calldata through the swap leg, a parity check against the app's own
-action-plan calldata, the deployment script on a fork, and the slippage
-arithmetic across token decimals (`docs/TESTS.md`). `tools/demo-fork.sh` runs
-the whole story on a local fork. The Tier 1 generic executor
-(`contracts/executors/`) is built and fork-proven (a real aggregator swap and a real
-Aave supply through a disposable sandbox on X Layer, `test/fork/GenericExecutor.fork.t.sol`);
-it is not deployed or listed until its own review (docs/TIER1.md, last section).
+**Why the registry is a separate contract.** The first v1 core held the
+listings, the catalog and the emergency controls too, and had 163 bytes to
+spare. The split moved them into `ShieldRegistryV1`, so the core keeps its
+byte budget for the firing sequence. The core is bound to one registry at
+construction (`ShieldV1.registry`) and consults it at registration and at every
+firing. The registry's owner is also the core's admin (`ShieldV1.onlyAdmin`
+reads `registry.owner()`), so there is one admin. Every contract is immutable.
+A change is a new version.
+
+## The mandate
+
+The owner calls `ShieldV1.registerMandate(MandateParams)`. The fields are in
+`IShieldV1.MandateParams`:
+
+| Field | Meaning |
+| --- | --- |
+| `agent` | The one address that may call `fire`. Not the owner, not the core. |
+| `executor`, `evaluator` | Must be listed in the registry at registration. |
+| `asset` | The one token the core may pull from the owner. |
+| `maxTransactionValue`, `maxCumulativeValue` | The per-firing cap and the lifetime cap. The fee counts inside the lifetime cap. |
+| `validFrom`, `validUntil` | The validity window. |
+| `maxFeeBps` | The highest fee the owner accepts. Registration fails if the current fee is higher. |
+| `funding` | `PULL` (the core pulls `amount` of the asset) or `NONE` (claims only; nothing is pulled). |
+| `action`, `actionConfig` | The action (for example `generic.transform`) and its signed configuration: venues, outputs, the rate rule, slippage, price rules. The executor validates it (`validateConfig`). |
+| `trigger`, `outcome` | Optional expression trees, validated by the evaluator. |
+
+At registration the core also stamps the current `feeBps` into the mandate
+and keeps it for life, and it captures the values that the trees' `SIGNED`
+nodes name (`ExpressionEvaluator.capture`). A trigger such as "8 % below the
+price at signing" compares a live read with that captured value. The mandate
+id is `keccak256(chainid, core, principal, nonce)`.
+
+**Amendment** (`ShieldV1.amendMandate`, owner only). The executor, the
+evaluator, the asset, the funding mode and the action cannot change
+(`FieldImmutable`). The agent, the caps, the window, the fee ceiling, the
+action config and the trees can. The lifetime cap cannot drop below what is
+used. The stamped fee stays and must fit the new ceiling. A changed config or
+tree is validated as new; an unchanged one keeps working through a descriptor
+the admin has since delisted, but never through a revoked one. A changed tree
+has its `SIGNED` values taken again.
+
+**Revocation.** `ShieldV1.revokeMandate` from the owner, or
+`ShieldV1.revokeWithSig` with the owner's EIP-712 signature (an EOA by
+recovery, a contract wallet by ERC-1271), so anyone can submit a revocation
+the owner signed. Revocation is permanent.
+
+## A firing
+
+The agent calls `ShieldV1.fire(mandateId, amount, route)`. The route is opaque
+to the core and is handed to the executor. The steps, in the order the code
+runs them:
+
+1. **Checks** (`ShieldV1._check`, the same sequence `canFireBy` reports). The
+   first failure reverts with `MandateBlocked(mandateId, reason)`:
+   `NONEXISTENT`, `AGENT_FROZEN`, `NOT_AGENT`, `EXECUTOR_HALTED`,
+   `EVALUATOR_HALTED`, `NOT_YET_VALID`, `EXPIRED`, `REVOKED`; then for
+   funding `NONE` only `AMOUNT_NOT_ZERO`; for funding `PULL`: `ZERO_AMOUNT`,
+   `OVER_TX_CAP`, `OVER_CUMULATIVE_CAP` (the amount plus the worst-case fee
+   must fit what is left), `INSUFFICIENT_ALLOWANCE`, `INSUFFICIENT_BALANCE`.
+2. **Trigger.** If the mandate has one, `judgeTrigger` must return true, else
+   `TRIGGER_NOT_MET`. Nothing has moved yet.
+3. **Snapshots, before any pull.** The outcome's `BEFORE` values
+   (`ExpressionEvaluator.snapshot`) and the executor's own mandatory
+   before-values (`IExecutorV1.snapshot`: a debt and a collateral read, a
+   vault quote, a health factor). The pull cannot change them.
+4. **Funding** (`_fund`). The core adds the amount and the worst-case fee to
+   the used budget, pulls the fee reserve to itself, records the owner's
+   asset balance, then pulls `amount` to the executor.
+5. **Executor** (`_runExecutor`). The executor runs the action and its
+   mandatory check. Any executor revert becomes
+   `OutcomeRejected(mandateId, OUTCOME_FAILED, detail)` with the executor's
+   error as the detail.
+6. **Settle** (`_settle`). The core measures what left the owner. The exact
+   spend rule: the measured outflow and the executor's report must each be at
+   most `amount`, and the larger is charged. The unused fee reserve goes back
+   to the owner first; then the fee on what was spent goes to the fee
+   recipient, capped at what the core still holds. (An Aave aToken rounds
+   each transfer, so the core can be one unit short; that unit comes off the
+   fee, never off the owner's refund.) The used budget is corrected to the
+   real spend plus fee.
+7. **Outcome.** If the mandate has one, `judgeOutcome` runs on the owner's
+   final state, else `OutcomeRejected(..., OUTCOME_FAILED, "")`.
+8. **Receipt.** `MandateFired(mandateId, agent, executor, action, amount,
+   spent, fee)`.
+
+A revert at any step undoes every step, so a failed firing moves nothing and
+charges no fee. The core has no cooldown; when to fire is decided off chain.
+
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant S as ShieldV1
+    participant R as ShieldRegistryV1
+    participant E as ExpressionEvaluator
+    participant X as Executor
+    participant C as Sandbox clone
+    participant O as Owner wallet
+    A->>S: fire(mandateId, amount, route)
+    S->>R: frozen? halted? (with caps, window, allowance)
+    S->>E: judgeTrigger
+    S->>E: snapshot (outcome BEFORE values)
+    S->>X: snapshot (mandatory before-values)
+    O->>S: fee reserve
+    O->>X: amount of the asset
+    S->>X: execute(ctx, amount, route)
+    X->>C: step(call) for each signed venue call
+    C->>O: sweep asset, outputs, sweep set
+    X->>X: measure the owner, mandatory check
+    S->>O: refund unused fee reserve
+    S->>S: pay fee on what was spent
+    S->>E: judgeOutcome on the final state
+    S-->>A: MandateFired
+```
+
+## Executors and their checks
+
+An executor answers `semanticsOf(action)`. The core accepts only known
+semantics (`SemanticsV1`: transform, transfer, redeem, repay, claim collect,
+claim compose) and fails closed on anything else. Funding `NONE` is allowed
+only for the claim semantics. Each executor runs its mandatory check itself;
+the owner's outcome tree is judged by the core in addition.
+
+### The sandbox
+
+`GenericExecutorV1` and `ClaimExecutorV1` run every firing in a fresh
+`DisposableCloneV1`, deployed at a deterministic address per mandate and
+firing (`nextClone` predicts it, so a route can be quoted for it). For the
+generic executor, the route is `abi.encode(Call[])`, at most 16 calls and
+8,192 bytes (`_decodeRoute`). For each call, `_runSandbox` requires that:
+
+- the `(target, spender)` pair is one of the venue pairs the owner signed
+  (`_venueAllowed`);
+- neither is suspended or revoked in the registry;
+- an approved token is the asset, an output, or in the signed sweep set.
+
+`DisposableCloneV1.step` approves at most what the clone holds, makes the
+call, and clears the approval. `finish` sweeps the asset, every output and the
+sweep set to the owner and proves each balance is zero. After the sweep,
+anyone may call `sendToOwner` to send any other token the used clone holds,
+and it pays only that owner. At admission (`validateConfig`) a venue may not
+be the asset, an output, the core, the executor, the clone template, or an
+address with no code. The exceptions are a redeem and a vault deposit, where
+the vault itself is the only venue.
+
+### Transform (`generic.transform`)
+
+The owner sells the asset for `tokenOut`, and optionally for up to four
+further outputs (`moreOuts`, `MAX_MORE_OUTS`). What was spent is the amount
+less what came back to the owner. Each output is measured as the rise in the
+owner's balance. Nothing spent reverts `NothingSold`. The rate rule
+(`RateKind`) decides the check:
+
+| Rule | Check at firing |
+| --- | --- |
+| `Fixed` | at least `spent x rate` of `tokenOut`, less a rounding tolerance of one basis point plus one unit |
+| `Oracle` | the value of everything that arrived is at least the value sold less the signed slippage |
+| `Floor` | a signed minimum per firing; with several outputs, each output counts as its share of its own floor, and the shares must add up to one |
+| `Erc4626` | at least the vault's exact pre-call `convertToShares(amount)` less the slippage; the quote must be at least 100 raw share units (`QuoteTooSmall`) |
+| `Unpriced` | at least one raw unit of a signed output |
+
+Under `Oracle`, `_transform` reads a value per raw unit for every output and
+for the asset before the route runs, and the same numbers judge what arrived,
+so a route cannot move the prices it is judged by. The unit value is
+`price x 10^(18 - decimals)` from the oracle the owner signed
+(`_unitValue`), so it is exact. A token with more than 18 decimals is refused
+at admission and at a firing. Each priced token also carries a signed price
+rule: the Chainlink round the registry bound for that token at signing, or
+the explicit no-round mode when the registry binds none
+(`ExprLib.priceRoundsMatch`). At a firing that round must be fresh and
+positive (`ExprLib.requireFreshPrice`). The signed oracle is itself checked
+against suspension. Several outputs under `Oracle` or `Floor` must be tokens
+the registry bound a price round for (`_reviewed`), so two addresses over one
+balance cannot be counted twice.
+
+`Unpriced` is the owner's explicit opt-in for tokens with no feed. No oracle,
+rate, floor, slippage, override or price rule may be signed with it
+(`ConfigInvalid("unpriced")`). The caps are the whole loss bound. "Arrived"
+means a reported balance increase, so a rebasing token can show one without a
+purchase.
+
+Slippage is capped at 1 % (`MAX_SLIPPAGE_BPS`) unless the owner signs an
+override, and then at 10 % (`MAX_SLIPPAGE_OVERRIDE_BPS`).
+
+### Transfer (`generic.transfer`)
+
+The amount goes to the one recipient the owner signed. There is no route and
+no venue (a transfer that signs a venue is refused). The recipient's balance
+must rise by the full amount, so a token that charges a transfer fee fails.
+
+### Redeem (`generic.redeem`)
+
+The asset is an ERC-4626 vault share and the output is its underlying. The
+only venue is the vault. The owner must receive at least the exact pre-call
+`convertToAssets(amount)` (scaled down for a partial redemption) less the
+slippage. An optional floor compares a signed sample (shares and their value
+at signing) with the vault now: at signing both edges of the band apply, at a
+firing only the lower edge, before and after the call.
+
+### Repay (`generic.repay`)
+
+The debt read must be `balanceOf` on a debt token whose
+`UNDERLYING_ASSET_ADDRESS` is the asset, with the same decimals. The core
+snapshots the debt and the collateral before the pull. After the calls, the
+debt must have fallen by at least what was spent less the slippage
+(`DebtNotReduced`), and the collateral must not have fallen
+(`CollateralFell`).
+
+### Aave v3 (`AaveV3AdapterV1`)
+
+The pool is fixed at construction and checked against suspension at every
+firing.
+
+- **Supply** (`aave-v3.supply`): the owner's aToken balance rises by the
+  amount, within a rounding tolerance.
+- **Repay** (`aave-v3.repay`): the variable debt falls by what was repaid;
+  anything not needed goes back to the owner.
+- **Repay from collateral** (`aave-v3.repayWithCollateral`): the asset is the
+  collateral aToken. The adapter withdraws, sells through the signed router
+  and spender with the agent's route, and requires at least the Aave-oracle
+  value less the slippage, with both prices passing their signed fresh
+  rounds. It re-supplies what it did not sell and repays. The snapshot is the
+  owner's health factor before the core pulls anything. A firing is refused if
+  that health factor is already at the signed target; the debt must fall; and
+  the health factor after the firing must be higher than before it. Near a
+  health factor of 1, one firing cannot reach the target, so later firings
+  step the rest.
+
+### Claim (`claim.collect`, `ClaimExecutorV1`)
+
+Funding `NONE`: nothing is pulled and the agent sends no route. The mandate
+signs up to eight listed claim rules and up to eight reward tokens. At a
+firing the executor builds each claim call itself from its rule, with the
+owner's address written into the owner arguments, and runs it in a sandbox. A
+revoked rule or a blocked venue stops it. Each reward token must reach the
+owner by more than the signed dust and by at least the claimable amount read
+before the claims, less the dust. Claim-and-reinvest (`claim.compose`) is not
+offered by this executor.
+
+## Triggers and outcomes
+
+A tree is `abi.encode(Read[] reads, Node[] nodes)` (`ExprLib`). A node refers
+only to nodes with a smaller index, the last node is the root, and the root
+must be Boolean. The node kinds are `CONST`, `READ`, `SIGNED` (the value taken
+at signing), `BEFORE` (outcome only: the value taken before the pull),
+`AMOUNT`, arithmetic (`ADD`, `SUB`, `MUL`, `DIV`, `MIN`, `MAX`), comparisons
+(`LT`, `LE`, `GT`, `GE`, `EQ`) and `AND`, `OR`, `NOT`. Numeric and Boolean
+nodes cannot mix. Arithmetic is checked `int256`; overflow and division by
+zero revert. A tree has at most 16 reads, 64 nodes and 12,288 bytes.
+
+**The read catalog.** A read names a descriptor and supplies only its
+arguments. The descriptor (`IDescriptors.Descriptor`) fixes everything that
+could misdescribe the read: the contract (or, for a `Shape` descriptor, any
+contract that answers a standard interface such as `balanceOf`), the
+selector, which argument is the account, which return word is the value, its
+signedness and decimals, the freshness rule, and the gas and copy bounds. A
+descriptor's id is the hash of its contents, so nothing can be replaced under
+an id. The admin lists descriptors for new mandates; delisting stops new
+registrations only; an enforcer's revocation stops every firing that reads
+through it. A read about an account must name the owner, unless the tree
+names another account on purpose (`SubjectMismatch`). A `Shape` read pins the
+instance's decimals at signing.
+
+**Price rounds.** A Chainlink descriptor checks the round: the update is not
+in the future and not older than `maxAge`, the round is complete, and the
+answer is positive. `DeployV1` binds the six X Layer Chainlink feeds (ETH,
+BTC, USDT, USDC, OKB, SOL) as price rounds with `FEED_MAX_AGE = 25 hours`:
+the feeds' 24-hour heartbeat plus one hour.
+
+**The health factor marker.** An unsigned value above the `int256` range is
+refused (`ValueOutOfRange`). The one exception: a descriptor flagged
+`unboundedTop`, which the registry accepts only on word 5 of Aave's
+`getUserAccountData` (the health factor), reads exactly `type(uint256).max`
+("no debt") as the top of the range, so it is above every limit. The
+executors refuse a flagged read anywhere it would be an amount.
+
+**An unreadable read.** Every read failure reverts (`ReadFailed`,
+`ReadTooShort`, `ReadStale`, `ReadNotPositive`, `ValueOutOfRange`). It never
+turns into true or false. A trigger that cannot be read blocks the firing.
+Registration makes one liveness read per read, so a tree that cannot be read
+is refused at signing. At every judgement the evaluator runs the shape checks
+again, rebinds the owner, and checks that every descriptor the tree names,
+live or captured, is not revoked and its target is not blocked.
+
+## Emergency controls and the admin
+
+In `ShieldRegistryV1`:
+
+| Control | Who | Effect | Restore |
+| --- | --- | --- | --- |
+| `freezeAgent` | enforcer | the agent cannot fire any mandate | `unfreezeAgent`, enforcer |
+| `halt` | enforcer | every mandate that pins this executor or evaluator stops | enforcer `queueUnhalt`, then admin `executeUnhalt` 24 hours later |
+| `suspend` | enforcer | no executor calls, approves or reads through this address | enforcer `queueLift`, then admin `executeLift` 24 hours later |
+| `revoke` | enforcer | the same, permanently | none |
+| `revokeDescriptor`, `revokeClaimRule` | enforcer | no firing reads through it or makes that claim | none |
+
+A new halt or suspension increases its epoch and cancels a queued
+restoration (`RESTORE_DELAY = 24 hours`). The admin is the registry owner
+through `Ownable2Step`: ownership moves in two steps and cannot be renounced,
+and the admin cannot be an enforcer. The admin lists executors, evaluators,
+descriptors, claim rules and price rounds for new mandates, appoints
+enforcers, and sets the fee (at most 10 %, `MAX_FEE_BPS`) and the fee
+recipient on the core. A fee change reaches new mandates only. `DeployV1`
+sets the fee at 10 basis points by default (`SHIELD_FEE_BPS`). With no fee
+recipient set, no fee is charged.
+
+## Limits
+
+- One asset per mandate: the only token the core pulls.
+- A transform delivers `tokenOut` and at most four further outputs.
+- Under the oracle rule, every priced token has 18 decimals or fewer.
+- Under `Unpriced`, the caps are the whole loss bound.
+- At most 16 calls and 16 venue pairs per firing; 16 reads and 64 nodes per
+  tree; 8 claim rules and 8 reward tokens per claim mandate.
+- The contract has no cooldown. The Signo app fires a trigger once per
+  crossing: the condition must turn false before the app fires it again.
+- `GenericExecutorV1` is 124 bytes under the contract size limit, so a new
+  semantics is a new executor, listed by the admin, not a change to this one.

@@ -1,126 +1,127 @@
-# Signo Shield: trust boundaries
+# Signo Shield v1: security design and trust boundaries
 
-> **Shield v1** (deployed 24 Sep 2026) has its own page: [TRUST-V1.md](TRUST-V1.md). This page describes v0.1, which stays live for existing mandates.
+This page says what each party can and cannot do in Shield v1, so it can be
+checked against the code. How v1 works is in
+[`ARCHITECTURE.md`](ARCHITECTURE.md). The short version: an AI agent
+can act for you, but only through a mandate you signed. The contract checks
+every firing, and the worst an agent can do is spend what you allowed, on the
+one action you allowed, through the venues you allowed.
 
-What each party can and cannot do, stated so it can be checked against the
-code. Public code is inspectable evidence, not an audit claim: the contracts
-have had two internal reviews with every finding fixed and pinned by a test
-Slither and `forge lint` are clean, and nobody
-outside the team has audited them.
+Status: public code is evidence, not an audit claim. The v1 contracts went
+through fifteen review rounds (an internal author and an independent
+reviewer; the story is in [`DESIGN-HISTORY.md`](DESIGN-HISTORY.md)). Every
+finding was fixed and pinned by a test, except one accepted limit of swaps
+with no price check, described below. The final review found no open high
+or critical item. Nobody outside the team has audited the contracts.
+`forge lint` and `forge fmt` are clean.
 
-Addresses on X Layer (chain 196), source commit `3907f08` (deployed
-2026-09-17, Sourcify-verified):
-SignoShield `0x8a07B505Da63f2Fd0a17BEb78e906F2f9b42b4B4`,
-ConditionModule `0x506577BC1770231b353C22729Bd4a7472ae8e210`,
-CompoundCondition `0xb58E1A61F7ccF358c2a7f78705c56644fC10D059` (listed),
-AaveV3Adapter `0x8eDE71F6613E3cAd455EDb7ced313aeD23164C76` (listed),
-GenericExecutor `0x364efa85B3D2aA8A539DB6856D1D2bF34b423654` with its clone
-template `0x2bC45CFd3E3B3cB7580a004Ba5A0287131D9633C`, listed on the Shield
-only by the admin's `setAdapter`; see `docs/TIER1.md` for what it bounds.
-The previous set (Shield `0x9331…c60a`, source `fe47fdb`, and the executor
-from `d9464c9`) holds no mandate and is not used by the app.
+## Deployed on X Layer (chain 196)
+
+Source commit `9acaa6f` (round 15), deployed 24 Sep 2026, verified on
+Sourcify and on the X Layer block explorer. The manifest is in `deployments/manifest.json`.
+
+| Contract | Address |
+| --- | --- |
+| ShieldV1 (core) | `0xd64807a7207D62d8F3E14aC1e05dB9fD1f1500CB` |
+| ShieldRegistryV1 | `0xE87b50B7E3e996a0C60B4a24221FE44B4277272A` |
+| ExpressionEvaluator | `0xaB964864f6436A15445279e41C7C99985B9eCcb5` |
+| GenericExecutorV1 | `0x41817086D841E146F52E95BA85C68DE541654f18` |
+| AaveV3AdapterV1 | `0x78749F9bfB020358050a2EeB53aD5234C4B840b5` |
+| ClaimExecutorV1 | `0x2434AC952990C0C78940D92362354A26E673DB0E` |
+
+The first-generation (v0.1) contracts stay deployed beside v1 for mandates
+signed before it; their addresses are in the manifest.
+
+## The design in five rules
+
+1. **The owner signs the whole envelope.** A mandate pins the agent, the
+   action, the asset, the per-firing and lifetime caps, the validity window,
+   the exact venues (contract and approval pairs), the rule that judges the
+   result, and optionally a trigger and an outcome check. The agent chooses
+   only the amount (within the caps), the route (through the signed venues)
+   and, when the owner signed several outputs, which one to buy.
+2. **A generic firing runs in a fresh sandbox.** The generic and claim
+   executors deploy a single-use clone per firing. The clone may call only
+   the signed venues, approves only for the call, and sweeps every token it
+   holds back to the owner. The Aave adapter knows one protocol: it calls
+   only the Aave pool and, for a repay from collateral, the signed swap
+   router and spender. The agent never holds the owner's tokens.
+3. **The result is measured on the owner, not reported.** After the calls,
+   the executor measures what left the owner and what arrived at the owner,
+   and applies the mandatory check of the action. If the check fails, the
+   whole transaction reverts. Nothing moves, and no fee is charged.
+4. **Prices come from reviewed feeds.** A swap judged at the oracle is
+   valued with Aave's price oracle, read before the route runs, so a route
+   cannot move the prices it is judged by. Each priced token's Chainlink
+   round, bound in the registry, must also be fresh. Tokens valued this way
+   must have 18 decimals or fewer.
+5. **Stopping is fast; restarting is slow.** An enforcer can freeze an agent,
+   halt an executor or evaluator, or suspend a venue in one transaction.
+   Lifting a halt or a suspension needs an enforcer's approval and then the
+   admin, 24 hours later. Revoking a venue, a read or a claim rule is
+   permanent.
 
 ## The parties
 
-| Party | Holds | Can | Cannot |
-| --- | --- | --- | --- |
-| **Principal** (the wallet owner) | their own key; an ERC-20 allowance they granted the Shield | register, amend and revoke their own mandates; set every number in them; revoke the allowance at the token | change a mandate's agent, adapter, action or asset after registration; raise its fee; drop its lifetime cap under what is used; touch anyone else's mandate |
-| **Agent** (the signer key, held in Turnkey) | the right to call `fire` | fire a live mandate it is named on, for an amount within the caps, while the trigger holds, through the pinned adapter, into the principal's own position | receive tokens; hold an allowance; pick the recipient, the protocol or the action; fire after expiry, revocation or freeze; fire past the per-firing or lifetime cap; fire a mandate naming another agent |
-| **Admin** (`Ownable2Step` owner) | the admin seat | list and delist adapters and condition evaluators for **new** registrations; appoint and remove enforcers; set the fee rate for **new** registrations; set the fee recipient, which reaches live mandates only by turning collection off, on, or elsewhere | move funds; change, freeze or revoke a live mandate; raise a live mandate's fee; point the fee at the Shield or a listed adapter; be an enforcer (as an address; a person with two keys can, so the seat belongs behind a multisig before real users); renounce the seat |
-| **Enforcer** | a role granted by the admin | freeze and unfreeze an agent address, which halts every mandate it holds | anything else: no funds, no mandate changes, no revocation |
-| **Adapter** (AaveV3Adapter) | tokens only inside one `fire` call | execute one pinned action for the Shield, and revert unless the outcome check passes | be called by anyone but the Shield; keep tokens between calls; keep an approval after returning; under-charge the budget (the Shield measures what left the principal itself, so a listed adapter that mis-reports is still charged for what it took, and taking more than the amount reverts the firing) |
-| **Generic executor** (Tier 1) | tokens only inside one `fire` call, in a single-use clone | run the agent's calldata against the one target and spender the owner pinned, then require the pinned output token to rise on the owner by the bound the owner's rule computes (fixed rate, oracle less slippage, or a floor) | pick the target, the spender, the output token or the rate; keep an approval; run a clone twice; count output paid to anyone but the owner; count tokens a stranger parked at the sandbox as a refund; read the oracle after the agent's call |
-| **Evaluator** (the default ConditionModule, or a listed one such as CompoundCondition) | nothing; called with `staticcall` | judge a mandate's trigger: the default module reads one word of one view call, a compound judges two to eight such leaves with "and" or "or", every leaf every time | write state; hold tokens; be switched on a live mandate by anyone but its principal (the evaluator is pinned at registration, and an amendment that keeps it needs no listing); nest compounds |
-| **Fee recipient** | the fee on each firing | receive `feeBps` of what a firing spent | pull anything; affect a firing |
-| **Anyone** | nothing | read every mandate; call `canFire` | everything else |
+| Party | Can | Cannot |
+| --- | --- | --- |
+| **Owner** (the wallet that signs) | register, amend and revoke their own mandates; set every number in them; change the agent by amendment; revoke the token allowance at any time | change a mandate's executor, evaluator, action, asset or funding mode after registration (that is a new mandate); touch anyone else's mandate |
+| **Agent** (a key held in Turnkey) | call `fire` on a mandate that names it, for an amount within the caps, while the trigger holds, with a route through the signed venues | send the output anywhere but the owner; call or approve an unsigned contract; exceed a cap; fire after expiry, revocation, a freeze or a halt; hold the owner's tokens |
+| **Admin** (registry owner, `Ownable2Step`) | list executors, evaluators, reads, price rounds and claim rules for new mandates; set the fee and fee recipient; appoint enforcers; execute a restoration an enforcer approved, 24 h after it was queued | move funds; change or revoke a live mandate; raise a live mandate's fee; lift a freeze or halt on its own |
+| **Enforcer** | freeze and unfreeze an agent; halt an executor or evaluator; suspend a venue; approve a restoration; revoke a venue, a read or a claim rule for good | anything that moves funds; lift a halt or a suspension without the admin and the 24 h delay; undo a revocation |
+| **Executors** | run one firing for the core, in a sandbox, and revert unless the action's check passes | be called by anyone but the core; keep tokens or approvals between firings |
+| **Evaluator** | judge a trigger or outcome tree over listed reads | write state or hold tokens; treat an unreadable value as "true" (an unreadable read reverts) |
+| **Anyone** | read every mandate; call `canFireBy` | everything else |
 
-## What holds funds, and when
+## What each action checks
 
-Between transactions: only the principal's wallet and the principal's own
-Aave position. The Shield holds nothing and has no withdrawal function. The
-adapter holds nothing. Inside one `fire`, the Shield pulls `amount` from the
-principal with the allowance the principal granted, hands it to the adapter,
-and the adapter must leave it in the principal's own position (supply),
-return it to the principal (repay refunds the unspent part), or have swapped
-and repaid it (repay with collateral, unsold collateral re-supplied). What
-the fee recipient receives is the only value that leaves the principal for a
-third party, and its rate was stamped into the mandate at registration.
+- **Swap** (`generic.transform`): the output's value at the oracle is at least the input's value less the owner's slippage, with both sides priced before the route. With several signed outputs, the value of everything that arrived is summed. Alternatives the owner can sign instead: a fixed minimum ("at least 250 received"), the vault's own quote for an ERC-4626 deposit, or no price check (below).
+- **Transfer**: the amount reaches the one recipient the owner signed.
+- **Vault withdraw** (`generic.redeem`): the owner receives at least the vault's quote less the slippage, with an optional floor.
+- **Repay on Aave**: the debt fell. **Repay from collateral**: judged on the health factor before anything moves. A position already at the target is refused, and each firing must raise the health factor.
+- **Claim**: listed claim rules only, and every declared reward goes to the owner.
 
-## What bounds a firing
+## Swaps with no price check
 
-The contract checks, in this order, before anything moves:
-`NONEXISTENT`, `AGENT_FROZEN`, `NOT_AGENT`, `NOT_YET_VALID`, `EXPIRED`,
-`REVOKED`, `ZERO_AMOUNT`, `OVER_TX_CAP`, `OVER_CUMULATIVE_CAP`,
-`INSUFFICIENT_ALLOWANCE`, `INSUFFICIENT_BALANCE`, `TRIGGER_NOT_MET`. The
-lifetime cap is charged the worst case (all of the amount spent, fee on all
-of it) before the adapter runs and reconciled to what actually left the
-principal after, measured by the Shield, not reported by the adapter. The
-fee's worst case leaves the principal before the adapter runs and the unowed
-part comes back after, so every outcome check the adapter makes sees the
-final state. Every adapter-side revert surfaces as `OutcomeRejected` and the
-whole transaction reverts. What `canFire` cannot foresee is the adapter's
-own outcome check and the protocol's answer.
+A token with no Chainlink feed cannot be valued on chain. The owner can
+still sign a swap of it, with no price check. Then the signed caps are the
+whole loss bound, and the contract checks only that something signed
+arrived. That means a reported balance increase. A token that rebases can
+show one without a purchase. The app offers this only for tokens with no
+feed, says so on the review screen, and its agent refuses a route that the
+swap venue rates over 15 % price impact. That is an off-chain guard, not a contract
+check.
 
-The trigger is a `staticcall` into the evaluator the mandate pinned: by
-default the plain ConditionModule (a pinned target, pinned calldata, a word
-offset, a comparator and a threshold), or a listed evaluator such as
-CompoundCondition, whose calldata carries two to eight plain leaves joined by
-"and" or "or". Every leaf is read on every check, and a compound's outer
-word, comparator and threshold must be zero. It cannot change state and it
-cannot read another chain. A leaf is still an arbitrary view read the
-principal chose, so a review screen must show each one as the read it is. A
-trigger that cannot be read reverts rather than reporting "not met". A mandate may be registered without
-a trigger; then the caps and the window are its only bound, and a user
-interface must say so.
+## What a leaked key can do
 
-## The swap leg
-
-Repay with collateral is the one action that touches a third-party router.
-The router **and** the approval contract are pinned in the mandate by the
-principal; the agent supplies only the calldata. The adapter approves the
-pinned spender for the slice, calls the pinned router, measures what left
-its own balance, requires the output to reach a minimum derived from the
-Aave oracle and the mandate's slippage limit, refuses a sale that overshoots
-the debt by more than that limit, re-supplies the unsold part, repays, and
-requires the health factor to end at or above the pinned target. Neither
-the router nor the spender may be a token or protocol contract the adapter
-has authority over during the firing. The loss bound of the swap leg is the
-slippage limit times the lifetime cap.
-
-## What a leaked key buys
-
-- **Agent key**: firings of live mandates within their caps, windows and
-  triggers, landing in the principals' own positions. Stopped by an
-  enforcer's freeze in one transaction, or by each principal's revoke. The
-  key lives in Turnkey; the app holds an API key that may ask Turnkey to
-  sign, scoped to the Shield, revocable there.
-- **Admin key**: control over future registrations (which adapters, what
-  fee, who enforces) and nothing over live mandates or funds. The seat moves
-  only by `Ownable2Step` (propose, then accept from the new key).
-- **Enforcer key**: the power to halt agents, never to move or take.
-- **Principal key**: the principal's own funds, as always; the Shield adds no
-  exposure beyond the allowance the principal chose to grant, and that
-  allowance is spendable only through the principal's own mandates.
+- **Agent key**: fire live mandates that name it, within their caps, venues,
+  rules, windows and triggers, into the owners' own wallets. An enforcer's
+  freeze stops it in one transaction, and each owner can revoke. The key is
+  held in Turnkey, and the app signs through a non-root Turnkey user whose
+  policy limits it to `fire` on the Shield cores.
+- **Admin key**: control over future listings and fees, and nothing over live
+  mandates or funds. The seat moves only in two steps (propose, then accept).
+  It belongs behind a multisig before scale.
+- **Enforcer key**: the power to stop things, never to move or loosen.
+- **Owner key**: the owner's own funds, as always. The Shield adds no exposure
+  beyond the allowance the owner granted, and that allowance is spendable
+  only through the owner's own mandates.
 
 ## Off-chain, for completeness
 
-Signo's watcher decides *when* to fire and *how much*, within the mandate;
-the contract does not trust those decisions, it checks them. The app's copy
-of a mandate is written only from a chain read and re-read on a schedule;
-the chain wins every difference. The signer simulates before it sends,
-keeps one transaction in flight per agent, bounds retries, and stops in this
-order, fastest first: revoking the signer's key at the key service or freezing
-the agent on chain (seconds), a kill switch read fail-closed (no answer means
-no firing), and an environment hard stop that needs a redeploy but survives
-an outage of the app's database. A user interface may show a mandate's
-numbers; only the wallet's signature creates one.
+The agent decides when to fire and how much, within the mandate. The
+contract does not trust those decisions; it checks them. Before each firing,
+the app reads every signed venue's code and configuration and refuses a
+venue that changed since review. The signer simulates each firing before it
+sends it and keeps one transaction in flight per agent. It can be stopped by
+a kill switch read fail-closed, by revoking the key at Turnkey, or by a
+freeze on chain.
 
 ## Known limits
 
-- Native gas tokens cannot be approved; a mandate needs an ERC-20 (WOKB, not OKB).
-- One Shield per chain, one mandate per chain; nothing bridges.
-- Aave reward claiming is not delegable through the Shield.
-- An unlimited cap is accepted by the contract; the bound that remains is the pinned action itself.
-- The swap leg's loss bound is the slippage limit times the budget, measured against the Aave oracle, so it carries the oracle's own deviation from the market. A principal may pin up to 10 %; a user interface should default far under it.
-- The admin and enforcer keys are single addresses today; the admin seat belongs behind a multisig or timelock before real users.
-- Nobody outside the team has audited these contracts. Say "reviewed", never "audited".
+- X Layer only. The app signs one DEX aggregator as its only swap venue.
+- One asset (the token sold) per mandate. A trigger fires once per crossing:
+  it must turn false before it can fire again.
+- Oracle-priced tokens need 18 decimals or fewer.
+- Swaps with no price check are bounded by the caps only (see above).
+- Not externally audited.

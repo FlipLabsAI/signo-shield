@@ -192,8 +192,7 @@ through the app, a small smoke-test swap, was mined at 15:25.
 
 ## Where to read more
 
-- [`ARCHITECTURE-V1.md`](ARCHITECTURE-V1.md): how v1 works.
-- [`TRUST-V1.md`](TRUST-V1.md): who can do what, and what each action checks.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md): how v1 works.
+- [`TRUST.md`](TRUST.md): who can do what, and what each action checks.
 - [`APP-SIDE.md`](APP-SIDE.md): what the Signo app does around the contracts.
 - [`TESTS.md`](TESTS.md): the test map.
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) and [`TRUST.md`](TRUST.md): v0.1.
