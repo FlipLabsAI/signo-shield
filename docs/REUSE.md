@@ -43,5 +43,4 @@ repository is original. The core inherits OpenZeppelin's `Ownable2Step` and
 `ReentrancyGuard` and uses `SafeERC20`, as listed above; no OpenZeppelin source
 is copied into this tree. The design it implements — bounded execution with
 post-conditions and a disposable clone, one generic condition module, pinned
-adapters as the exception — is Signo's, and is described in
-`docs/ARCHITECTURE.md`.
+adapters as the exception — is Signo's. `docs/ARCHITECTURE.md` describes the current version.
