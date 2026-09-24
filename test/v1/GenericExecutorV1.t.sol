@@ -478,4 +478,231 @@ contract GenericExecutorV1Test is Test {
         vm.prank(principal);
         shield.registerMandate(_params(TRANSFORM, address(usdc), c, 0));
     }
+
+    // ------------------------------------------- round 12: any of several outputs
+
+    /// A second output token at twice weth's price, so the value sums are not 1:1.
+    function _wbtc() internal returns (MockToken wbtc) {
+        wbtc = new MockToken();
+        oracle.set(address(wbtc), 2e8);
+    }
+
+    function _anyCfg(MockToken wbtc, bool floors) internal view returns (GenericExecutorV1.Config memory c) {
+        c = _cfg();
+        c.moreOuts = new GenericExecutorV1.Output[](1);
+        c.moreOuts[0] = GenericExecutorV1.Output({token: address(wbtc), floor: floors ? 40e18 : 0});
+        if (floors) {
+            c.rateKind = uint8(GenericExecutorV1.RateKind.Floor);
+            c.rateOrFloor = 100e18; // 100 weth settles a whole firing, or 40 wbtc, or shares of each
+            c.oracle = address(0);
+            c.maxSlippageBps = 0;
+        } else {
+            c.prices = new ExprLib.PriceRound[](3);
+            c.prices[0] = ExprLib.PriceRound(address(usdc), bytes32(0), address(0));
+            c.prices[1] = ExprLib.PriceRound(address(weth), bytes32(0), address(0));
+            c.prices[2] = ExprLib.PriceRound(address(wbtc), bytes32(0), address(0));
+        }
+    }
+
+    function _swapTo(address tokenOut, uint256 amountIn, address to)
+        internal
+        view
+        returns (IExecutorV1.Call memory k)
+    {
+        k = _swapCall(amountIn, to);
+        k.data = abi.encodeCall(MockDex.swap, (address(usdc), tokenOut, amountIn, to));
+    }
+
+    function _route2(IExecutorV1.Call memory a, IExecutorV1.Call memory b)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        IExecutorV1.Call[] memory calls = new IExecutorV1.Call[](2);
+        calls[0] = a;
+        calls[1] = b;
+        return abi.encode(calls);
+    }
+
+    function _register(GenericExecutorV1.Config memory c) internal returns (bytes32 id) {
+        vm.prank(principal);
+        id = shield.registerMandate(_params(TRANSFORM, address(usdc), c, 0));
+    }
+
+    /// Austin, 24 Sep: a mandate bounds the loss, not the route. The route may
+    /// deliver only the second signed output; the oracle judges its value.
+    function test_r12_theOracleJudgesWhicheverOutputArrived() public {
+        MockToken wbtc = _wbtc();
+        bytes32 id = _register(_anyCfg(wbtc, false));
+        dex.setRate(0.5e18); // 100 usdc ($100) -> 50 wbtc ($100)
+        address clone = exec.nextClone(id);
+        uint256 wethBefore = weth.balanceOf(principal);
+        vm.prank(agent);
+        uint256 spent = shield.fire(id, 100e18, _route(_swapTo(address(wbtc), 100e18, clone)));
+        assertEq(spent, 100e18);
+        assertEq(wbtc.balanceOf(principal), 50e18, "the second output reached the owner");
+        assertEq(weth.balanceOf(principal), wethBefore, "tokenOut untouched");
+        assertEq(wbtc.balanceOf(clone), 0, "swept");
+    }
+
+    function test_r12_aLossIsRefusedWhicheverOutputTheRouteChose() public {
+        MockToken wbtc = _wbtc();
+        bytes32 id = _register(_anyCfg(wbtc, false));
+        dex.setRate(0.5e18);
+        dex.setSkim(100); // 1% short, the mandate allows 0.5%
+        uint256 before = usdc.balanceOf(principal);
+        address clone = exec.nextClone(id);
+        // $99 of value against $100 sold less 0.5%, WAD-scaled in the oracle's base currency
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IShieldV1.OutcomeRejected.selector,
+                id,
+                IShieldV1.MandateReason.OUTCOME_FAILED,
+                abi.encodeWithSelector(GenericExecutorV1.OutputBelowMinimum.selector, 99e26, 995e25)
+            )
+        );
+        vm.prank(agent);
+        shield.fire(id, 100e18, _route(_swapTo(address(wbtc), 100e18, clone)));
+        assertEq(usdc.balanceOf(principal), before, "nothing left the owner");
+    }
+
+    function test_r12_aSplitAcrossOutputsCountsItsWholeValue() public {
+        MockToken wbtc = _wbtc();
+        // Two signed venues: one pays weth 1:1, the other wbtc at half (both fair).
+        MockDex half = new MockDex();
+        half.setRate(0.5e18);
+        GenericExecutorV1.Config memory c = _anyCfg(wbtc, false);
+        c.venues = new GenericExecutorV1.Venue[](2);
+        c.venues[0] = GenericExecutorV1.Venue({target: address(dex), spender: address(dex)});
+        c.venues[1] = GenericExecutorV1.Venue({target: address(half), spender: address(half)});
+        bytes32 id = _register(c);
+        address clone = exec.nextClone(id);
+        // 60 usdc -> 60 weth ($60) and 40 usdc -> 20 wbtc ($40), in one firing
+        IExecutorV1.Call memory a = _swapTo(address(weth), 60e18, clone);
+        IExecutorV1.Call memory b = _swapTo(address(wbtc), 40e18, clone);
+        b.target = address(half);
+        b.spender = address(half);
+        uint256 wethBefore = weth.balanceOf(principal);
+        vm.prank(agent);
+        uint256 spent = shield.fire(id, 100e18, _route2(a, b));
+        assertEq(spent, 100e18);
+        assertEq(weth.balanceOf(principal) - wethBefore, 60e18);
+        assertEq(wbtc.balanceOf(principal), 20e18);
+    }
+
+    function test_r12_floorsCountEachOutputsShareAndTheSharesAddUp() public {
+        MockToken wbtc = _wbtc();
+        // Only wbtc: 40 wbtc is a whole firing.
+        bytes32 id = _register(_anyCfg(wbtc, true));
+        dex.setRate(0.4e18);
+        address clone = exec.nextClone(id);
+        vm.prank(agent);
+        shield.fire(id, 100e18, _route(_swapTo(address(wbtc), 100e18, clone)));
+        assertEq(wbtc.balanceOf(principal), 40e18);
+        // One unit short of the floor: refused.
+        dex.setSkim(1);
+        clone = exec.nextClone(id);
+        vm.expectRevert();
+        vm.prank(agent);
+        shield.fire(id, 100e18, _route(_swapTo(address(wbtc), 100e18, clone)));
+    }
+
+    function test_r12_floorSharesSplitAcrossOutputsAddUpToOneFiring() public {
+        MockToken wbtc = _wbtc();
+        MockDex half = new MockDex();
+        half.setRate(0.4e18);
+        GenericExecutorV1.Config memory c = _anyCfg(wbtc, true);
+        c.venues = new GenericExecutorV1.Venue[](2);
+        c.venues[0] = GenericExecutorV1.Venue({target: address(dex), spender: address(dex)});
+        c.venues[1] = GenericExecutorV1.Venue({target: address(half), spender: address(half)});
+        bytes32 id = _register(c);
+        // 50 weth (half of its 100 floor) + 20 wbtc (half of its 40 floor): one whole firing.
+        address clone = exec.nextClone(id);
+        IExecutorV1.Call memory a = _swapTo(address(weth), 50e18, clone);
+        IExecutorV1.Call memory b = _swapTo(address(wbtc), 50e18, clone);
+        b.target = address(half);
+        b.spender = address(half);
+        vm.prank(agent);
+        shield.fire(id, 100e18, _route2(a, b));
+        // 49 weth + 20 wbtc is 0.49 + 0.5: short.
+        clone = exec.nextClone(id);
+        a = _swapTo(address(weth), 49e18, clone);
+        b = _swapTo(address(wbtc), 50e18, clone);
+        b.target = address(half);
+        b.spender = address(half);
+        vm.expectRevert();
+        vm.prank(agent);
+        shield.fire(id, 99e18, _route2(a, b));
+    }
+
+    function test_r12_admissionRefusesWhatTheRuleCannotJudge() public {
+        MockToken wbtc = _wbtc();
+        MockToken unpriced = new MockToken();
+        GenericExecutorV1.Config memory c;
+        bytes memory moreOuts = abi.encodeWithSelector(GenericExecutorV1.ConfigInvalid.selector, "moreOuts");
+
+        // The asset, tokenOut or a repeat as a further output.
+        c = _anyCfg(wbtc, false);
+        c.moreOuts[0].token = address(usdc);
+        c.prices[2].token = address(usdc);
+        _refused(c, TRANSFORM, moreOuts);
+        c = _anyCfg(wbtc, false);
+        c.moreOuts[0].token = address(weth);
+        c.prices[2].token = address(weth);
+        _refused(c, TRANSFORM, moreOuts);
+        // A token Aave's oracle does not price, under the oracle rule.
+        c = _anyCfg(wbtc, false);
+        c.moreOuts[0].token = address(unpriced);
+        c.prices[2].token = address(unpriced);
+        _refused(c, TRANSFORM, moreOuts);
+        // A floor under the oracle rule, and no floor under the floor rule.
+        c = _anyCfg(wbtc, false);
+        c.moreOuts[0].floor = 1;
+        _refused(c, TRANSFORM, moreOuts);
+        c = _anyCfg(wbtc, true);
+        c.moreOuts[0].floor = 0;
+        _refused(c, TRANSFORM, moreOuts);
+        // The fixed rate cannot judge several outputs.
+        c = _anyCfg(wbtc, true);
+        c.rateKind = uint8(GenericExecutorV1.RateKind.Fixed);
+        c.rateOrFloor = 1e18;
+        _refused(c, TRANSFORM, moreOuts);
+        // More than four further outputs.
+        c = _anyCfg(wbtc, true);
+        c.moreOuts = new GenericExecutorV1.Output[](5);
+        for (uint256 i = 0; i < 5; i++) {
+            MockToken t = new MockToken();
+            c.moreOuts[i] = GenericExecutorV1.Output({token: address(t), floor: 1});
+        }
+        _refused(c, TRANSFORM, moreOuts);
+        // Only a transform delivers outputs.
+        c = _cfg();
+        c.recipient = address(0xBEEF);
+        c.venues = new GenericExecutorV1.Venue[](0);
+        c.moreOuts = new GenericExecutorV1.Output[](1);
+        c.moreOuts[0] = GenericExecutorV1.Output({token: address(wbtc), floor: 0});
+        _refused(c, TRANSFER, moreOuts);
+        // The price rules must cover every output, in order.
+        c = _anyCfg(wbtc, false);
+        ExprLib.PriceRound[] memory two = new ExprLib.PriceRound[](2);
+        two[0] = c.prices[0];
+        two[1] = c.prices[1];
+        c.prices = two;
+        _refused(
+            c, TRANSFORM, abi.encodeWithSelector(GenericExecutorV1.ConfigInvalid.selector, "price:round")
+        );
+        // An output is never a venue.
+        c = _anyCfg(wbtc, false);
+        c.venues[0] = GenericExecutorV1.Venue({target: address(wbtc), spender: address(dex)});
+        _refused(
+            c, TRANSFORM, abi.encodeWithSelector(GenericExecutorV1.ConfigInvalid.selector, "venue:target")
+        );
+    }
+
+    function _refused(GenericExecutorV1.Config memory c, bytes32 action, bytes memory err) internal {
+        IShieldV1.MandateParams memory p = _params(action, address(usdc), c, 0);
+        vm.prank(principal);
+        vm.expectRevert(err);
+        shield.registerMandate(p);
+    }
 }

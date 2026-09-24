@@ -32,8 +32,8 @@ contract GenericExecutorV1 is IExecutorV1 {
     bytes32 public constant ACTION_REDEEM = keccak256("generic.redeem");
     bytes32 public constant ACTION_REPAY = keccak256("generic.repay");
     uint8 public constant CONFIG_VERSION = 1;
-    uint256 public constant BPS = 10_000;
-    uint256 public constant WAD = 1e18;
+    uint256 internal constant BPS = 10_000;
+    uint256 internal constant WAD = 1e18;
     /// @dev Contract-hard slippage ceiling without a signed override, and the absolute ceiling with one.
     uint16 public constant MAX_SLIPPAGE_BPS = 100;
     uint16 public constant MAX_SLIPPAGE_OVERRIDE_BPS = 1_000;
@@ -50,6 +50,8 @@ contract GenericExecutorV1 is IExecutorV1 {
     uint256 public constant MAX_CALLS = 16;
     uint256 public constant MAX_VENUES = 16;
     uint256 public constant MAX_SWEEP = 16;
+    /// @dev Further outputs a transform may deliver beside `tokenOut`.
+    uint256 internal constant MAX_MORE_OUTS = 4;
     uint256 public constant MAX_ROUTE_BYTES = 8192;
     bytes4 private constant SEL_UNDERLYING = 0xb16a19de; // UNDERLYING_ASSET_ADDRESS()
 
@@ -63,6 +65,13 @@ contract GenericExecutorV1 is IExecutorV1 {
     struct Venue {
         address target;
         address spender;
+    }
+
+    /// @dev A further token a transform may deliver, and (Floor rule) the
+    ///      least of it that settles a whole firing on its own.
+    struct Output {
+        address token;
+        uint256 floor;
     }
 
     /// @dev Version 1 of the signed configuration, `abi.encode(uint8 version, Config)`.
@@ -83,7 +92,11 @@ contract GenericExecutorV1 is IExecutorV1 {
         uint256 signedShares; // REDEEM, optional floor: the sample it is judged on (for example the whole position)
         uint256 signedAssets; // REDEEM, optional floor: convertToAssets(signedShares) at signing
         uint16 sanityBandBps; // REDEEM, optional floor: how far the sample's value may fall below signing; 0 = no floor
-        ExprLib.PriceRound[] prices; // Oracle TRANSFORM: the signed fresh-round rules for [asset, tokenOut]
+        ExprLib.PriceRound[] prices; // Oracle TRANSFORM: the signed fresh-round rules for [asset, tokenOut, moreOuts...]
+        // TRANSFORM (Oracle or Floor): further tokens the route may deliver
+        // instead of or beside tokenOut; the loss bound is judged on the value
+        // of all of them together, whichever the route chose (round 12).
+        Output[] moreOuts;
     }
 
     struct Firing {
@@ -175,10 +188,15 @@ contract GenericExecutorV1 is IExecutorV1 {
         for (uint256 i = 0; i < c.venues.length; i++) {
             address t = c.venues[i].target;
             address sp = c.venues[i].spender;
-            if (surfaceIsToken ? _isOurs(t) : _isReserved(t, asset, c.tokenOut)) {
+            if (surfaceIsToken ? _isOurs(t) : _isReserved(t, asset, c.tokenOut) || _isMoreOut(c, t)) {
                 revert ConfigInvalid("venue:target");
             }
-            if (sp != address(0) && (surfaceIsToken ? _isOurs(sp) : _isReserved(sp, asset, c.tokenOut))) {
+            if (
+                sp != address(0)
+                    && (surfaceIsToken
+                            ? _isOurs(sp)
+                            : _isReserved(sp, asset, c.tokenOut) || _isMoreOut(c, sp))
+            ) {
                 revert ConfigInvalid("venue:spender");
             }
         }
@@ -186,6 +204,7 @@ contract GenericExecutorV1 is IExecutorV1 {
             if (!_answersBalanceOf(c.sweepSet[i])) revert ConfigInvalid("sweep:token");
         }
         _validateSlippage(c);
+        _validateMoreOuts(c, asset, action);
         // A price rule is signed exactly where a price is read: never a
         // decorative one the owner could mistake for a check.
         bool priced = action == ACTION_TRANSFORM && RateKind(c.rateKind) == RateKind.Oracle;
@@ -225,7 +244,7 @@ contract GenericExecutorV1 is IExecutorV1 {
             if (c.oracle.code.length == 0 || c.maxSlippageBps == 0) revert ConfigInvalid("oracle");
             if (IPriceOracle(c.oracle).getAssetPrice(asset) == 0) revert ConfigInvalid("oracle:in");
             if (IPriceOracle(c.oracle).getAssetPrice(c.tokenOut) == 0) revert ConfigInvalid("oracle:out");
-            if (!ExprLib.priceRoundsMatch(c.prices, ExprLib.pair(asset, c.tokenOut), registry)) {
+            if (!ExprLib.priceRoundsMatch(c.prices, _outputs(c, asset), registry)) {
                 revert ConfigInvalid("price:round");
             }
             // forge-lint: disable-next-line(unused-return)
@@ -248,6 +267,33 @@ contract GenericExecutorV1 is IExecutorV1 {
         } else {
             if (c.rateOrFloor == 0) revert ConfigInvalid("floor");
         }
+    }
+
+    /// @dev Each further output (transforms only, Oracle or Floor rule): a
+    ///      distinct token that is not the asset, answers balanceOf and
+    ///      decimals, and carries exactly what its rule reads (an oracle price,
+    ///      or a floor).
+    function _validateMoreOuts(Config memory c, address asset, bytes32 action) internal view {
+        uint256 m = c.moreOuts.length;
+        if (m == 0) return;
+        RateKind k = RateKind(c.rateKind);
+        bool oracle = k == RateKind.Oracle;
+        bool bad = action != ACTION_TRANSFORM || m > MAX_MORE_OUTS || (!oracle && k != RateKind.Floor);
+        for (uint256 i = 0; i < m && !bad; i++) {
+            Output memory o = c.moreOuts[i];
+            // Under the oracle rule Aave's oracle must price it; under floors it carries one.
+            // forge-lint: disable-next-item(calls-loop)
+            bool unjudged =
+                oracle ? o.floor != 0 || IPriceOracle(c.oracle).getAssetPrice(o.token) == 0 : o.floor == 0;
+            bad = unjudged || o.token == asset || o.token == c.tokenOut
+                || _isReserved(o.token, address(0), address(0)) || !_answersBalanceOf(o.token);
+            for (uint256 j = 0; j < i; j++) {
+                if (c.moreOuts[j].token == o.token) bad = true;
+            }
+            // forge-lint: disable-next-line(unused-return,calls-loop)
+            if (!bad) IERC20Metadata(o.token).decimals();
+        }
+        if (bad) revert ConfigInvalid("moreOuts");
     }
 
     function _validateRedeem(Config memory c, address asset) internal view {
@@ -370,7 +416,13 @@ contract GenericExecutorV1 is IExecutorV1 {
     {
         Firing memory f;
         f.inBefore = IERC20(ctx.asset).balanceOf(ctx.principal);
-        f.outBefore = IERC20(c.tokenOut).balanceOf(ctx.principal);
+        // tokenOut, then any further outputs the owner signed (round 12).
+        address[] memory outs = _outputs(c, address(0));
+        uint256[] memory got = new uint256[](outs.length);
+        for (uint256 i = 0; i < outs.length; i++) {
+            // forge-lint: disable-next-line(calls-loop)
+            got[i] = IERC20(outs[i]).balanceOf(ctx.principal);
+        }
         if (RateKind(c.rateKind) == RateKind.Oracle) (f.priceIn, f.priceOut) = _prices(c, ctx.asset);
         // The vault's conversion of the exact amount, before the deposit: the
         // minimum is priced at full precision, never a unit quote scaled up.
@@ -378,16 +430,60 @@ contract GenericExecutorV1 is IExecutorV1 {
             f.sharesQuote = IERC4626(c.tokenOut).convertToShares(amount);
         }
         _runSandbox(ctx, c, f, amount, calls);
-        uint256 received = IERC20(c.tokenOut).balanceOf(ctx.principal) - f.outBefore;
+        for (uint256 i = 0; i < outs.length; i++) {
+            // forge-lint: disable-next-line(calls-loop)
+            got[i] = IERC20(outs[i]).balanceOf(ctx.principal) - got[i];
+        }
         uint256 returned = IERC20(ctx.asset).balanceOf(ctx.principal) - f.inBefore;
         returned = returned > f.parked ? returned - f.parked : 0;
         spent = returned >= amount ? 0 : amount - returned;
         if (spent == 0) revert NothingSold();
-        uint256 minOut = _minOut(c, ctx.asset, spent, amount, f);
-        if (minOut == 0) minOut = 1;
-        if (received < minOut) revert OutputBelowMinimum(received, minOut);
+        uint256 minOut;
+        if (outs.length == 1) {
+            minOut = _minOut(c, ctx.asset, spent, amount, f);
+            if (minOut == 0) minOut = 1;
+            if (got[0] < minOut) revert OutputBelowMinimum(got[0], minOut);
+        } else {
+            // What each output got is in the receipt's token transfers.
+            minOut = _anyOutput(c, ctx.asset, spent, outs, got);
+        }
         // forge-lint: disable-next-line(reentrancy-events)
-        emit Executed(ctx.mandateId, ctx.principal, ctx.action, f.clone, spent, received, minOut);
+        emit Executed(ctx.mandateId, ctx.principal, ctx.action, f.clone, spent, got[0], minOut);
+    }
+
+    /// @dev Several outputs (round 12, Austin: a mandate bounds the loss, not
+    ///      the route): what arrived, summed over every signed output, meets
+    ///      the rule. At the oracle, its value is at least the value sold less
+    ///      the slippage (WAD-scaled base currency); with floors, each output
+    ///      counts as its share of its own floor, and the shares add up to one
+    ///      whole firing. Returns what was needed; reverts when short.
+    function _anyOutput(
+        Config memory c,
+        address asset,
+        uint256 spent,
+        address[] memory outs,
+        uint256[] memory got
+    ) internal view returns (uint256 need) {
+        bool oracle = RateKind(c.rateKind) == RateKind.Oracle;
+        need = oracle ? Math.mulDiv(_value(c.oracle, asset, spent), BPS - c.maxSlippageBps, BPS) : WAD;
+        uint256 score = 0;
+        for (uint256 i = 0; i < outs.length; i++) {
+            score += oracle
+                ? _value(c.oracle, outs[i], got[i])
+                : Math.mulDiv(got[i], WAD, i == 0 ? c.rateOrFloor : c.moreOuts[i - 1].floor);
+        }
+        if (need == 0) need = 1;
+        if (score < need) revert OutputBelowMinimum(score, need);
+    }
+
+    /// @dev `amount` of `token` in the oracle's base currency, scaled by WAD
+    ///      (rounds down, toward refusing).
+    function _value(address oracle, address token, uint256 amount) internal view returns (uint256) {
+        // forge-lint: disable-next-line(calls-loop)
+        uint256 p = IPriceOracle(oracle).getAssetPrice(token);
+        if (p == 0) revert ConfigInvalid("oracle");
+        // forge-lint: disable-next-line(calls-loop)
+        return Math.mulDiv(amount, p * WAD, 10 ** IERC20Metadata(token).decimals());
     }
 
     function _transfer(Context calldata ctx, Config memory c, uint256 amount, bytes calldata route)
@@ -516,7 +612,7 @@ contract GenericExecutorV1 is IExecutorV1 {
     }
 
     function _sweepable(Config memory c, address asset, address token) internal pure returns (bool) {
-        if (token == asset || token == c.tokenOut) return true;
+        if (token == asset || token == c.tokenOut || _isMoreOut(c, token)) return true;
         for (uint256 i = 0; i < c.sweepSet.length; i++) {
             if (c.sweepSet[i] == token) return true;
         }
@@ -524,12 +620,36 @@ contract GenericExecutorV1 is IExecutorV1 {
     }
 
     function _sweepList(Config memory c, address asset) internal pure returns (address[] memory list) {
-        list = new address[](c.sweepSet.length + 2);
+        uint256 m = c.moreOuts.length;
+        list = new address[](c.sweepSet.length + 2 + m);
         list[0] = asset;
         list[1] = c.tokenOut == address(0) ? asset : c.tokenOut;
-        for (uint256 i = 0; i < c.sweepSet.length; i++) {
-            list[i + 2] = c.sweepSet[i];
+        for (uint256 i = 0; i < m; i++) {
+            list[i + 2] = c.moreOuts[i].token;
         }
+        for (uint256 i = 0; i < c.sweepSet.length; i++) {
+            list[i + 2 + m] = c.sweepSet[i];
+        }
+    }
+
+    /// @dev `first` (when set), tokenOut, then the further outputs: the
+    ///      outputs of a firing, or with the asset first the tokens an oracle
+    ///      transform prices, in the order its rules are signed.
+    function _outputs(Config memory c, address first) internal pure returns (address[] memory list) {
+        uint256 k = first == address(0) ? 0 : 1;
+        list = new address[](c.moreOuts.length + 1 + k);
+        if (k == 1) list[0] = first;
+        list[k] = c.tokenOut;
+        for (uint256 i = 0; i < c.moreOuts.length; i++) {
+            list[i + 1 + k] = c.moreOuts[i].token;
+        }
+    }
+
+    function _isMoreOut(Config memory c, address token) internal pure returns (bool) {
+        for (uint256 i = 0; i < c.moreOuts.length; i++) {
+            if (c.moreOuts[i].token == token) return true;
+        }
+        return false;
     }
 
     // ================================================================== helpers
@@ -625,8 +745,10 @@ contract GenericExecutorV1 is IExecutorV1 {
         // The oracle is a dependency like any venue: a suspended or revoked one stops the firing.
         if (registry.isVenueBlocked(c.oracle)) revert VenueBlocked(c.oracle);
         // A positive price, and the fresh underlying round the owner signed (admitted equal to the registry's rule).
-        ExprLib.requireFreshPrice(c.prices[0], registry);
-        ExprLib.requireFreshPrice(c.prices[1], registry);
+        for (uint256 i = 0; i < c.prices.length; i++) {
+            // forge-lint: disable-next-line(calls-loop)
+            ExprLib.requireFreshPrice(c.prices[i], registry);
+        }
         priceIn = IPriceOracle(c.oracle).getAssetPrice(tokenIn);
         priceOut = IPriceOracle(c.oracle).getAssetPrice(c.tokenOut);
         if (priceIn == 0 || priceOut == 0) revert ConfigInvalid("oracle");
