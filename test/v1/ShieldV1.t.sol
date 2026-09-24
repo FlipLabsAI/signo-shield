@@ -142,10 +142,10 @@ contract ShieldV1Test is Test {
     function testFuzz_fixFeeRefundSurvivesScaledTokenRounding(
         uint96 amountSeed,
         uint16 spendSeed,
-        uint64 indexFrac
+        uint256 indexFrac
     ) public {
         // Aave's liquidity index is at least one ray and grows slowly; up to 2x here.
-        (MockScaledToken a, bytes32 id) = _scaledMandate(1e27 + bound(uint256(indexFrac), 0, 1e27));
+        (MockScaledToken a, bytes32 id) = _scaledMandate(1e27 + bound(indexFrac, 0, 1e27));
         uint256 amount = bound(amountSeed, 1e12, 100e18);
         exec.setSpendBps(bound(spendSeed, 1, 9_999)); // part unspent: the unused fee reserve goes back
         vm.prank(agent);
@@ -159,9 +159,9 @@ contract ShieldV1Test is Test {
     function testFuzz_scaledTokenChargeMatchesTheOwnersOutflow(
         uint96 amountSeed,
         uint16 spendSeed,
-        uint64 indexFrac
+        uint256 indexFrac
     ) public {
-        (MockScaledToken a, bytes32 id) = _scaledMandate(1e27 + bound(uint256(indexFrac), 0, 1e27));
+        (MockScaledToken a, bytes32 id) = _scaledMandate(1e27 + bound(indexFrac, 0, 1e27));
         uint256 amount = bound(amountSeed, 1e12, 100e18);
         exec.setSpendBps(bound(spendSeed, 1, 9_999));
         uint256 ownerBefore = a.balanceOf(principal);

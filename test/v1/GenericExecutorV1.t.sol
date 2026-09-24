@@ -3,6 +3,9 @@ pragma solidity 0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 import {ExprLib} from "contracts/v1/libraries/ExprLib.sol";
+import {MockFeed} from "test/v1/mocks/MockCatalog.sol";
+import {PinnedPrices} from "test/v1/mocks/PinnedPrices.sol";
+import {IShieldRegistryV1} from "contracts/v1/interfaces/IShieldRegistryV1.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {ShieldV1} from "contracts/v1/ShieldV1.sol";
@@ -485,6 +488,40 @@ contract GenericExecutorV1Test is Test {
     function _wbtc() internal returns (MockToken wbtc) {
         wbtc = new MockToken();
         oracle.set(address(wbtc), 2e8);
+        _review(address(weth));
+        _review(address(wbtc));
+    }
+
+    /// Round 13 (G12-H2): several outputs must be tokens the registry bound a
+    /// fresh round for. Bind one for `token` (a mock Chainlink feed, fresh now).
+    function _review(address token) internal {
+        MockFeed f = new MockFeed();
+        f.set(1, 1e8, vm.getBlockTimestamp(), 1);
+        IDescriptors.Descriptor memory d;
+        d.kind = IDescriptors.DescriptorKind.PerAddress;
+        d.target = address(f);
+        d.selector = MockFeed.latestRoundData.selector;
+        d.subjectArg = -1;
+        d.word = 1;
+        d.isSigned = true;
+        d.mustBePositive = true;
+        d.decimals = 8;
+        d.freshness = IDescriptors.Freshness.ChainlinkRound;
+        d.maxAge = 86_400;
+        d.gasStipend = 160_000;
+        d.copyBytes = 160;
+        vm.startPrank(admin);
+        registry.setPriceRound(token, registry.listDescriptor(d), address(f));
+        vm.stopPrank();
+    }
+
+    /// The signed price rules for [usdc, weth, `out`], as the registry binds them now.
+    function _pinned3(address out) internal view returns (ExprLib.PriceRound[] memory) {
+        address[] memory t = new address[](3);
+        t[0] = address(usdc);
+        t[1] = address(weth);
+        t[2] = out;
+        return PinnedPrices.pin(IShieldRegistryV1(address(registry)), t);
     }
 
     function _anyCfg(MockToken wbtc, bool floors) internal view returns (GenericExecutorV1.Config memory c) {
@@ -497,10 +534,7 @@ contract GenericExecutorV1Test is Test {
             c.oracle = address(0);
             c.maxSlippageBps = 0;
         } else {
-            c.prices = new ExprLib.PriceRound[](3);
-            c.prices[0] = ExprLib.PriceRound(address(usdc), bytes32(0), address(0));
-            c.prices[1] = ExprLib.PriceRound(address(weth), bytes32(0), address(0));
-            c.prices[2] = ExprLib.PriceRound(address(wbtc), bytes32(0), address(0));
+            c.prices = _pinned3(address(wbtc));
         }
     }
 
@@ -643,10 +677,9 @@ contract GenericExecutorV1Test is Test {
         GenericExecutorV1.Config memory c = _cfg();
         c.moreOuts = new GenericExecutorV1.Output[](1);
         c.moreOuts[0] = GenericExecutorV1.Output({token: address(fee), floor: 0});
-        c.prices = new ExprLib.PriceRound[](3);
-        c.prices[0] = ExprLib.PriceRound(address(usdc), bytes32(0), address(0));
-        c.prices[1] = ExprLib.PriceRound(address(weth), bytes32(0), address(0));
-        c.prices[2] = ExprLib.PriceRound(address(fee), bytes32(0), address(0));
+        _review(address(weth));
+        _review(address(fee));
+        c.prices = _pinned3(address(fee));
         bytes32 id = _register(c); // 0.5% slippage
         address clone = exec.nextClone(id);
         IExecutorV1.Call memory k = _swapTo(address(fee), 100e18, clone);

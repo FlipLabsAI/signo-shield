@@ -104,8 +104,6 @@ contract GenericExecutorV1 is IExecutorV1 {
         uint256 parked;
         uint256 inBefore;
         uint256 outBefore;
-        uint256 priceIn;
-        uint256 priceOut;
         uint256 sharesQuote;
         int256 debtBefore;
         int256 collBefore;
@@ -278,14 +276,20 @@ contract GenericExecutorV1 is IExecutorV1 {
         if (m == 0) return;
         RateKind k = RateKind(c.rateKind);
         bool oracle = k == RateKind.Oracle;
-        bool bad = action != ACTION_TRANSFORM || m > MAX_MORE_OUTS || (!oracle && k != RateKind.Floor);
+        // Every output of a several-output transform is a token the registry
+        // bound a fresh round for: reviewed, independent assets only, so two
+        // addresses over one balance cannot be counted twice without the
+        // admin listing both (round 13, G12-H2; the app keeps the same list).
+        bool bad = action != ACTION_TRANSFORM || m > MAX_MORE_OUTS || (!oracle && k != RateKind.Floor)
+            || !_reviewed(c.tokenOut);
         for (uint256 i = 0; i < m && !bad; i++) {
             Output memory o = c.moreOuts[i];
+            bad = !_reviewed(o.token);
             // Under the oracle rule Aave's oracle must price it; under floors it carries one.
             // forge-lint: disable-next-item(calls-loop)
             bool unjudged =
                 oracle ? o.floor != 0 || IPriceOracle(c.oracle).getAssetPrice(o.token) == 0 : o.floor == 0;
-            bad = unjudged || o.token == asset || o.token == c.tokenOut
+            bad = bad || unjudged || o.token == asset || o.token == c.tokenOut
                 || _isReserved(o.token, address(0), address(0)) || !_answersBalanceOf(o.token);
             for (uint256 j = 0; j < i; j++) {
                 if (c.moreOuts[j].token == o.token) bad = true;
@@ -294,6 +298,13 @@ contract GenericExecutorV1 is IExecutorV1 {
             if (!bad) IERC20Metadata(o.token).decimals();
         }
         if (bad) revert ConfigInvalid("moreOuts");
+    }
+
+    /// @dev The registry binds a price round to `token` (a listed Chainlink feed).
+    function _reviewed(address token) internal view returns (bool) {
+        // forge-lint: disable-next-line(calls-loop,unused-return)
+        (bytes32 id,) = registry.priceRound(token);
+        return id != bytes32(0);
     }
 
     function _validateRedeem(Config memory c, address asset) internal view {
@@ -419,11 +430,19 @@ contract GenericExecutorV1 is IExecutorV1 {
         // tokenOut, then any further outputs the owner signed (round 12).
         address[] memory outs = _outputs(c, address(0));
         uint256[] memory got = new uint256[](outs.length);
+        // At the oracle, each output's value per unit, then the asset's, is read
+        // BEFORE the route, and the same numbers judge what arrived, for one
+        // output or several (round 13, G12-H1: a route must not move the
+        // prices it is judged by; one shared valuation).
+        bool oracle = RateKind(c.rateKind) == RateKind.Oracle;
+        if (oracle) _checkPrices(c);
+        uint256[] memory unit = new uint256[](outs.length + 1);
         for (uint256 i = 0; i < outs.length; i++) {
             // forge-lint: disable-next-line(calls-loop)
             got[i] = IERC20(outs[i]).balanceOf(ctx.principal);
+            if (oracle) unit[i] = _unitValue(c.oracle, outs[i]);
         }
-        if (RateKind(c.rateKind) == RateKind.Oracle) (f.priceIn, f.priceOut) = _prices(c, ctx.asset);
+        if (oracle) unit[outs.length] = _unitValue(c.oracle, ctx.asset);
         // The vault's conversion of the exact amount, before the deposit: the
         // minimum is priced at full precision, never a unit quote scaled up.
         if (RateKind(c.rateKind) == RateKind.Erc4626) {
@@ -439,51 +458,52 @@ contract GenericExecutorV1 is IExecutorV1 {
         spent = returned >= amount ? 0 : amount - returned;
         if (spent == 0) revert NothingSold();
         uint256 minOut;
-        if (outs.length == 1) {
-            minOut = _minOut(c, ctx.asset, spent, amount, f);
+        if (outs.length == 1 && !oracle) {
+            minOut = _minOut(c, spent, amount, f);
             if (minOut == 0) minOut = 1;
             if (got[0] < minOut) revert OutputBelowMinimum(got[0], minOut);
         } else {
             // What each output got is in the receipt's token transfers.
-            minOut = _anyOutput(c, ctx.asset, spent, outs, got);
+            minOut = _anyOutput(c, spent, got, unit);
         }
         // forge-lint: disable-next-line(reentrancy-events)
         emit Executed(ctx.mandateId, ctx.principal, ctx.action, f.clone, spent, got[0], minOut);
     }
 
-    /// @dev Several outputs (round 12, Austin: a mandate bounds the loss, not
-    ///      the route): what arrived, summed over every signed output, meets
-    ///      the rule. At the oracle, its value is at least the value sold less
-    ///      the slippage (WAD-scaled base currency); with floors, each output
-    ///      counts as its share of its own floor, and the shares add up to one
-    ///      whole firing. Returns what was needed; reverts when short.
-    function _anyOutput(
-        Config memory c,
-        address asset,
-        uint256 spent,
-        address[] memory outs,
-        uint256[] memory got
-    ) internal view returns (uint256 need) {
+    /// @dev The oracle rule for one output or several, and the floor rule for
+    ///      several (round 12, Austin: a mandate bounds the loss, not the
+    ///      route): what arrived, summed over every signed output, meets the
+    ///      rule. At the oracle, its value (at the per-unit values read
+    ///      before the route; `unit` ends with the asset's) is at least the
+    ///      value sold less the slippage; with floors, each output counts as
+    ///      its share of its own floor, and the shares add up to one whole
+    ///      firing. Returns what was needed; reverts when short.
+    function _anyOutput(Config memory c, uint256 spent, uint256[] memory got, uint256[] memory unit)
+        internal
+        pure
+        returns (uint256 need)
+    {
         bool oracle = RateKind(c.rateKind) == RateKind.Oracle;
-        need = oracle ? Math.mulDiv(_value(c.oracle, asset, spent), BPS - c.maxSlippageBps, BPS) : WAD;
+        uint256 n = got.length;
+        need = oracle ? Math.mulDiv(spent * unit[n], BPS - c.maxSlippageBps, BPS) : WAD;
         uint256 score = 0;
-        for (uint256 i = 0; i < outs.length; i++) {
+        for (uint256 i = 0; i < n; i++) {
             score += oracle
-                ? _value(c.oracle, outs[i], got[i])
+                ? got[i] * unit[i]
                 : Math.mulDiv(got[i], WAD, i == 0 ? c.rateOrFloor : c.moreOuts[i - 1].floor);
         }
         if (need == 0) need = 1;
         if (score < need) revert OutputBelowMinimum(score, need);
     }
 
-    /// @dev `amount` of `token` in the oracle's base currency, scaled by WAD
-    ///      (rounds down, toward refusing).
-    function _value(address oracle, address token, uint256 amount) internal view returns (uint256) {
+    /// @dev One raw unit of `token` in the oracle's base currency, times WAD.
+    ///      Exact for up to 26 decimals (an 8-decimal price times 1e18).
+    function _unitValue(address oracle, address token) internal view returns (uint256) {
         // forge-lint: disable-next-line(calls-loop)
         uint256 p = IPriceOracle(oracle).getAssetPrice(token);
         if (p == 0) revert ConfigInvalid("oracle");
         // forge-lint: disable-next-line(calls-loop)
-        return Math.mulDiv(amount, p * WAD, 10 ** IERC20Metadata(token).decimals());
+        return Math.mulDiv(p, WAD, 10 ** IERC20Metadata(token).decimals());
     }
 
     function _transfer(Context calldata ctx, Config memory c, uint256 amount, bytes calldata route)
@@ -694,14 +714,15 @@ contract GenericExecutorV1 is IExecutorV1 {
         }
     }
 
-    function _minOut(Config memory c, address tokenIn, uint256 spent, uint256 amount, Firing memory f)
+    /// @dev The minimum for one output under Fixed, Floor or ERC-4626. The
+    ///      oracle rule goes through `_anyOutput` (one shared valuation).
+    function _minOut(Config memory c, uint256 spent, uint256 amount, Firing memory f)
         internal
-        view
+        pure
         returns (uint256)
     {
         RateKind k = RateKind(c.rateKind);
         if (k == RateKind.Fixed) return _lessRounding(Math.mulDiv(spent, c.rateOrFloor, WAD));
-        if (k == RateKind.Floor) return c.rateOrFloor;
         if (k == RateKind.Erc4626) {
             // What was deposited at the pre-call conversion; a partial one is
             // the exact quote scaled down.
@@ -709,12 +730,7 @@ contract GenericExecutorV1 is IExecutorV1 {
             if (exact < MIN_QUOTE_UNITS) revert QuoteTooSmall(exact);
             return _lessRounding(Math.mulDiv(exact, BPS - c.maxSlippageBps, BPS));
         }
-        uint256 fair = Math.mulDiv(
-            spent,
-            f.priceIn * 10 ** IERC20Metadata(c.tokenOut).decimals(),
-            f.priceOut * 10 ** IERC20Metadata(tokenIn).decimals()
-        );
-        return Math.mulDiv(fair, BPS - c.maxSlippageBps, BPS);
+        return c.rateOrFloor;
     }
 
     function _lessRounding(uint256 exact) internal pure returns (uint256) {
@@ -737,21 +753,15 @@ contract GenericExecutorV1 is IExecutorV1 {
         return abi.decode(ret, (address));
     }
 
-    function _prices(Config memory c, address tokenIn)
-        internal
-        view
-        returns (uint256 priceIn, uint256 priceOut)
-    {
+    function _checkPrices(Config memory c) internal view {
         // The oracle is a dependency like any venue: a suspended or revoked one stops the firing.
         if (registry.isVenueBlocked(c.oracle)) revert VenueBlocked(c.oracle);
-        // A positive price, and the fresh underlying round the owner signed (admitted equal to the registry's rule).
+        // The fresh underlying round the owner signed for every priced token
+        // (admitted equal to the registry's rule); `_unitValue` refuses a zero price.
         for (uint256 i = 0; i < c.prices.length; i++) {
             // forge-lint: disable-next-line(calls-loop)
             ExprLib.requireFreshPrice(c.prices[i], registry);
         }
-        priceIn = IPriceOracle(c.oracle).getAssetPrice(tokenIn);
-        priceOut = IPriceOracle(c.oracle).getAssetPrice(c.tokenOut);
-        if (priceIn == 0 || priceOut == 0) revert ConfigInvalid("oracle");
     }
 
     function _answersBalanceOf(address token) internal view returns (bool) {

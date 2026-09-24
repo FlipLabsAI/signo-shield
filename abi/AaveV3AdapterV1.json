@@ -310,7 +310,7 @@
     "name": "snapshot",
     "inputs": [
       {
-        "name": "",
+        "name": "ctx",
         "type": "tuple",
         "internalType": "struct IExecutorV1.Context",
         "components": [
@@ -374,7 +374,7 @@
         "internalType": "bytes"
       }
     ],
-    "stateMutability": "pure"
+    "stateMutability": "view"
   },
   {
     "type": "function",

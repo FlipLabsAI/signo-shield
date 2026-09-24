@@ -255,18 +255,26 @@ contract GenericExecutorV1OutputsForkTest is Test {
         shield.registerMandate(p);
     }
 
-    /// USDG is an Aave reserve with no Chainlink round bound: "positivity
-    /// only". It is admitted and judged at Aave's own price, as a one-token
-    /// oracle swap into USDG already is. This test records that trust.
-    function test_r12f_aPositivityOnlyOutputIsJudgedAtAavesPrice() public {
+    /// USDG is an Aave reserve with no Chainlink round bound. Round 13 (G12-H2):
+    /// it cannot be one of several outputs (only reviewed tokens with a bound
+    /// round can), while a one-token oracle swap into USDG is still judged at
+    /// Aave's own price, as before round 12.
+    function test_r13_aTokenWithoutABoundRoundCannotBeOneOfSeveral() public {
         (bytes32 id0,) = registry.priceRound(USDG);
         assertEq(id0, bytes32(0), "USDG has no bound round");
-        bytes32 id = _register(_outs(XETH, USDG), 100);
+        IShieldV1.MandateParams memory p = _params(_outs(XETH, USDG), 100);
+        vm.prank(principal);
+        vm.expectRevert(abi.encodeWithSelector(GenericExecutorV1.ConfigInvalid.selector, "moreOuts"));
+        shield.registerMandate(p);
+        // One output: admitted, judged at Aave's price (positivity only).
+        address[] memory one = new address[](1);
+        one[0] = USDG;
+        bytes32 id = _register(one, 100);
         address clone = exec.nextClone(id);
-        IExecutorV1.Call[] memory k3 = _one(_pay(USDG, 100e6, _fair(USDG, 100e6, 9_800), clone));
-        assertEq(_refusedWith(id, 100e6, k3), GenericExecutorV1.OutputBelowMinimum.selector);
-        clone = exec.nextClone(id);
-        _fire(id, 100e6, _one(_pay(USDG, 100e6, _fair(USDG, 100e6, 9_950), clone)));
+        IExecutorV1.Call[] memory thin = _one(_pay(USDG, 100e6, _fair(USDG, 100e6, 9_800), clone));
+        IExecutorV1.Call[] memory fair = _one(_pay(USDG, 100e6, _fair(USDG, 100e6, 9_950), clone));
+        assertEq(_refusedWith(id, 100e6, thin), GenericExecutorV1.OutputBelowMinimum.selector);
+        _fire(id, 100e6, fair);
         assertGt(IERC20(USDG).balanceOf(principal), 0);
     }
 

@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
+// Review control copied from 45a607a; only contract name/import paths changed.
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IExecutorV1, SemanticsV1} from "./interfaces/IExecutorV1.sol";
-import {IShieldV1} from "./interfaces/IShieldV1.sol";
-import {IShieldRegistryV1} from "./interfaces/IShieldRegistryV1.sol";
-import {ExprLib} from "./libraries/ExprLib.sol";
+import {IExecutorV1, SemanticsV1} from "contracts/v1/interfaces/IExecutorV1.sol";
+import {IShieldV1} from "contracts/v1/interfaces/IShieldV1.sol";
+import {IShieldRegistryV1} from "contracts/v1/interfaces/IShieldRegistryV1.sol";
+import {ExprLib} from "contracts/v1/libraries/ExprLib.sol";
 import {
     IAaveOracle,
     IPool,
@@ -24,7 +25,7 @@ import {
 ///         back in the position. The swap leg of the last one takes its route
 ///         from the agent, against the signed router and spender, both checked
 ///         against the core's suspension and revocation lists.
-contract AaveV3AdapterV1 is IExecutorV1 {
+contract R1112LegacyAave is IExecutorV1 {
     using SafeERC20 for IERC20;
 
     string public constant VERSION = "1.0.0";
@@ -147,13 +148,8 @@ contract AaveV3AdapterV1 is IExecutorV1 {
     // =============================================================== execution
 
     /// @inheritdoc IExecutorV1
-    /// @dev Repay from collateral: the owner's health factor before the core
-    ///      pulls anything (round 13, G11-H1). Nothing for the other actions.
-    function snapshot(Context calldata ctx, uint256) external view returns (bytes memory) {
-        if (ctx.action != ACTION_REPAY_WITH_COLLATERAL) return "";
-        // forge-lint: disable-next-line(unused-return)
-        (,,,,, uint256 hf) = pool.getUserAccountData(ctx.principal);
-        return abi.encode(hf);
+    function snapshot(Context calldata, uint256) external pure returns (bytes memory) {
+        return "";
     }
 
     /// @inheritdoc IExecutorV1
@@ -220,18 +216,6 @@ contract AaveV3AdapterV1 is IExecutorV1 {
         (,, address variableDebt) = _reserveTokens(c.debtAsset);
         uint256 debtBefore = IERC20(variableDebt).balanceOf(ctx.principal);
         if (debtBefore == 0) revert NoDebt();
-        // The core pulled the slice before this call, and Aave refuses a pull
-        // that leaves the owner under a health factor of 1, so near 1 one
-        // firing cannot reach the target (round 11). A firing runs only while
-        // the owner is under the target and must leave the position better
-        // than it was; the next firings step the rest. Both are judged on the
-        // health factor BEFORE the pull (the snapshot), so the pull itself can
-        // neither open the gate nor count as progress (round 13, G11-H1). The
-        // unused fee reserve and any unsold collateral come back after this
-        // check, so the owner's final health factor is higher still.
-        if (ctx.before.length != 32) revert ConfigInvalid("before");
-        uint256 hfBefore = abi.decode(ctx.before, (uint256));
-        if (hfBefore >= c.targetHealthFactor) revert OutcomeFailed("health factor already at target");
         (uint256 sold, uint256 received) = _withdrawAndSwap(c, ctx.principal, route);
         if (received > debtBefore + (debtBefore * c.maxSlippageBps) / BPS) {
             revert OutcomeFailed("sold more collateral than the debt needs");
@@ -242,7 +226,7 @@ contract AaveV3AdapterV1 is IExecutorV1 {
         }
         // forge-lint: disable-next-line(unused-return)
         (,,,,, uint256 healthFactor) = pool.getUserAccountData(ctx.principal);
-        if (healthFactor <= hfBefore) revert OutcomeFailed("health factor did not rise");
+        if (healthFactor < c.targetHealthFactor) revert OutcomeFailed("health factor below target");
         uint256 aTokenLeft = _returnBalance(IERC20(ctx.asset), ctx.principal);
         // forge-lint: disable-next-item(reentrancy-events)
         emit RepaidWithCollateral(
