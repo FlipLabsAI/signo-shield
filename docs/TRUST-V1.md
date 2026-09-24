@@ -45,13 +45,15 @@ The v0.1 contracts in `TRUST.md` stay live beside v1 for existing mandates.
    and applies the mandatory check of the action. If the check fails, the
    whole transaction reverts. Nothing moves, and no fee is charged.
 4. **Prices come from reviewed feeds.** A swap judged at the oracle is
-   valued with prices read before the route runs (so a route cannot move the
-   prices it is judged by), from Chainlink rounds the registry binds and
-   that must be fresh. Tokens valued this way must have 18 decimals or fewer.
+   valued with Aave's price oracle, read before the route runs, so a route
+   cannot move the prices it is judged by. Each priced token's Chainlink
+   round, bound in the registry, must also be fresh. Tokens valued this way
+   must have 18 decimals or fewer.
 5. **Stopping is fast; restarting is slow.** An enforcer can freeze an agent,
    halt an executor or evaluator, or suspend a venue in one transaction.
-   Restoring needs an enforcer's approval and then the admin, 24 hours later.
-   Revoking a venue, a read or a claim rule is permanent.
+   Lifting a halt or a suspension needs an enforcer's approval and then the
+   admin, 24 hours later. Revoking a venue, a read or a claim rule is
+   permanent.
 
 ## The parties
 
@@ -67,7 +69,7 @@ The v0.1 contracts in `TRUST.md` stay live beside v1 for existing mandates.
 
 ## What each action checks
 
-- **Swap** (`generic.transform`): the output's value at the oracle is at least the input's value less the owner's slippage. The oracle prices both sides from reviewed Chainlink rounds, read before the route. With several signed outputs, the value of everything that arrived is summed. Alternatives the owner can sign instead: a fixed minimum ("at least 250 received"), the vault's own quote for an ERC-4626 deposit, or no price check (below).
+- **Swap** (`generic.transform`): the output's value at the oracle is at least the input's value less the owner's slippage, with both sides priced before the route. With several signed outputs, the value of everything that arrived is summed. Alternatives the owner can sign instead: a fixed minimum ("at least 250 received"), the vault's own quote for an ERC-4626 deposit, or no price check (below).
 - **Transfer**: the amount reaches the one recipient the owner signed.
 - **Vault withdraw** (`generic.redeem`): the owner receives at least the vault's quote less the slippage, with an optional floor.
 - **Repay on Aave**: the debt fell. **Repay from collateral**: judged on the health factor before anything moves. A position already at the target is refused, and each firing must raise the health factor.
@@ -89,8 +91,8 @@ check.
 - **Agent key**: fire live mandates that name it, within their caps, venues,
   rules, windows and triggers, into the owners' own wallets. An enforcer's
   freeze stops it in one transaction, and each owner can revoke. The key is
-  held in Turnkey. The app's API key is a non-root Turnkey user whose policy
-  allows only `fire` on the two Shield cores on chain 196.
+  held in Turnkey, and the app signs through a non-root Turnkey user whose
+  policy limits it to `fire` on the Shield cores.
 - **Admin key**: control over future listings and fees, and nothing over live
   mandates or funds. The seat moves only in two steps (propose, then accept).
   It belongs behind a multisig before scale.
