@@ -10,6 +10,20 @@
         "timestamp": 1789638020290
       },
       {
+        "contract": "AaveV3AdapterV1",
+        "address": "0x78749f9bfb020358050a2eeb53ad5234c4b840b5",
+        "deployTx": "0x307db85f51e6835a72430abc9643fe4edd3c20c9f512f985ca5c803e14369f34",
+        "sourceCommit": "9acaa6f3efc438fd8e18b09df053ec10f13a9563",
+        "timestamp": 1790260917499
+      },
+      {
+        "contract": "ClaimExecutorV1",
+        "address": "0x2434ac952990c0c78940d92362354a26e673db0e",
+        "deployTx": "0xa5b9b987dacd6b7847d2bc736d5c373216f92a2695be4484eb716a210e8336dd",
+        "sourceCommit": "9acaa6f3efc438fd8e18b09df053ec10f13a9563",
+        "timestamp": 1790260917499
+      },
+      {
         "contract": "CompoundCondition",
         "address": "0xb58e1a61f7ccf358c2a7f78705c56644fc10d059",
         "deployTx": "0x8dc335171f25302b077047ef6f9fee3f75617955ff12a680c3bea692fb2d2b95",
@@ -24,11 +38,39 @@
         "timestamp": 1789638020290
       },
       {
+        "contract": "ExpressionEvaluator",
+        "address": "0xab964864f6436a15445279e41c7c99985b9eccb5",
+        "deployTx": "0x1d57093a84b838402b01ea9d118ed6032e926d77f7a928ab7d26251a6361a862",
+        "sourceCommit": "9acaa6f3efc438fd8e18b09df053ec10f13a9563",
+        "timestamp": 1790260917499
+      },
+      {
         "contract": "GenericExecutor",
         "address": "0x364efa85b3d2aa8a539db6856d1d2bf34b423654",
         "deployTx": "0x20d561e86a8a868f0faf1d5f8969bbe964231b4b42681bb030c2b0b570295c35",
         "sourceCommit": "3907f087ff0573410ea35448a347d2e70128d741",
         "timestamp": 1789638041299
+      },
+      {
+        "contract": "GenericExecutorV1",
+        "address": "0x41817086d841e146f52e95ba85c68de541654f18",
+        "deployTx": "0x60b34d4113aa4fb2cab8cadd46c91d1502a41a024a605db3cc863d3c7a67a4e8",
+        "sourceCommit": "9acaa6f3efc438fd8e18b09df053ec10f13a9563",
+        "timestamp": 1790260917499
+      },
+      {
+        "contract": "ShieldRegistryV1",
+        "address": "0xe87b50b7e3e996a0c60b4a24221fe44b4277272a",
+        "deployTx": "0x9c2efe14a0d72fcd78d1f9aeb9e1eba8f6e616a70734fd484b080de5af84b5bc",
+        "sourceCommit": "9acaa6f3efc438fd8e18b09df053ec10f13a9563",
+        "timestamp": 1790260917499
+      },
+      {
+        "contract": "ShieldV1",
+        "address": "0xd64807a7207d62d8f3e14ac1e05db9fd1f1500cb",
+        "deployTx": "0xd87b03ba5bd4568bd098989283a38e2ab7b297ea322293fa413aae2279d861af",
+        "sourceCommit": "9acaa6f3efc438fd8e18b09df053ec10f13a9563",
+        "timestamp": 1790260917499
       },
       {
         "contract": "SignoShield",
