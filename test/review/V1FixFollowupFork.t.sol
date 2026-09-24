@@ -184,7 +184,7 @@ contract V1FixFollowupForkTest is Test {
     /// R3 (fixed): the adapter refuses a suspended or revoked oracle.
     function _blockedOracleStopsFiring(bool permanent) internal {
         IShieldV1.MandateParams memory p = _params(RWC, A_XETH, 0.01e18, 0.02e18, "");
-        p.actionConfig = _rwcConfig(1e18);
+        p.actionConfig = _rwcConfig(10e18);
         bytes32 id = _register(p);
         uint256 sold = 0.0005e18;
         uint256 fair = _fairUsdt0(sold);

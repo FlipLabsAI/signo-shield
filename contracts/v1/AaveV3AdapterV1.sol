@@ -215,6 +215,14 @@ contract AaveV3AdapterV1 is IExecutorV1 {
         (,, address variableDebt) = _reserveTokens(c.debtAsset);
         uint256 debtBefore = IERC20(variableDebt).balanceOf(ctx.principal);
         if (debtBefore == 0) revert NoDebt();
+        // The core pulled the slice before this call, and Aave refuses a pull
+        // that leaves the owner under a health factor of 1, so near 1 one
+        // firing cannot reach the target. A firing runs only while the owner
+        // is under the target and must lift the health factor; the next
+        // firings step the rest (FLIP-280 round 11, found on the X Layer fork).
+        // forge-lint: disable-next-line(unused-return)
+        (,,,,, uint256 hfStart) = pool.getUserAccountData(ctx.principal);
+        if (hfStart >= c.targetHealthFactor) revert OutcomeFailed("health factor already at target");
         (uint256 sold, uint256 received) = _withdrawAndSwap(c, ctx.principal, route);
         if (received > debtBefore + (debtBefore * c.maxSlippageBps) / BPS) {
             revert OutcomeFailed("sold more collateral than the debt needs");
@@ -225,7 +233,7 @@ contract AaveV3AdapterV1 is IExecutorV1 {
         }
         // forge-lint: disable-next-line(unused-return)
         (,,,,, uint256 healthFactor) = pool.getUserAccountData(ctx.principal);
-        if (healthFactor < c.targetHealthFactor) revert OutcomeFailed("health factor below target");
+        if (healthFactor <= hfStart) revert OutcomeFailed("health factor did not rise");
         uint256 aTokenLeft = _returnBalance(IERC20(ctx.asset), ctx.principal);
         // forge-lint: disable-next-item(reentrancy-events)
         emit RepaidWithCollateral(

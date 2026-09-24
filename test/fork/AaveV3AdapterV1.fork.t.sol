@@ -272,7 +272,7 @@ contract AaveV3AdapterV1ForkTest is Test {
 
     function test_repayWithCollateral_partialSaleGoesBackIntoThePosition() public {
         IShieldV1.MandateParams memory p = _params(RWC, A_XETH, 0.01e18, 0.02e18, _hfBelow(1.6e18));
-        p.actionConfig = _rwcConfig(1e18);
+        p.actionConfig = _rwcConfig(10e18);
         bytes32 id = _register(p);
         uint256 sliver = 0.0005e18;
         uint256 aBefore = IERC20(A_XETH).balanceOf(principal);
@@ -290,7 +290,7 @@ contract AaveV3AdapterV1ForkTest is Test {
 
     function test_repayWithCollateral_suspendedRouterIsRefused() public {
         IShieldV1.MandateParams memory p = _params(RWC, A_XETH, 0.01e18, 0.02e18, _hfBelow(1.6e18));
-        p.actionConfig = _rwcConfig(1e18);
+        p.actionConfig = _rwcConfig(10e18);
         bytes32 id = _register(p);
         registry.setEnforcer(makeAddr("enforcer"), true);
         vm.prank(makeAddr("enforcer"));
@@ -319,5 +319,97 @@ contract AaveV3AdapterV1ForkTest is Test {
         vm.prank(principal);
         vm.expectRevert(abi.encodeWithSelector(AaveV3AdapterV1.ConfigInvalid.selector, "maxSlippageBps"));
         shield.registerMandate(p);
+    }
+
+    // ------------------------------------------------- round 11: steps near 1
+
+    /// Aave's HealthFactorLowerThanLiquidationThreshold(): an aToken transfer
+    /// that would leave the sender under a health factor of 1.
+    bytes4 internal constant AAVE_HF_BELOW_ONE = 0x6679996d;
+
+    /// Borrow 90% of what the position still allows: health factor near 1.1.
+    function _borrowToNearOne() internal {
+        // forge-lint: disable-next-line(unused-return)
+        (,, uint256 availableBase,,,) = pool.getUserAccountData(principal);
+        vm.prank(principal);
+        pool.borrow(USDT0, (availableBase * 90) / 10_000, 2, 0, principal); // base 8 decimals, USDT0 6
+    }
+
+    /// The slice that reaches `target` in one firing (sell c, repay c):
+    /// c >= (t*D - C*LT) / (t - LT), in xETH units.
+    function _sliceToTarget(uint256 target) internal view returns (uint256) {
+        (uint256 cBase, uint256 dBase,, uint256 ltBps,,) = pool.getUserAccountData(principal);
+        uint256 lt = ltBps * 1e14;
+        uint256 saleBase = (target * dBase - cBase * lt) / (target - lt);
+        return (saleBase * 1e18) / IAaveOracle(ORACLE).getAssetPrice(XETH);
+    }
+
+    /// The app's sizing (lib/shield/sizing.ts): the largest slice whose pull,
+    /// with its 0.1% fee reserve, leaves the owner at a health factor of 1.01.
+    function _pullLimitedSlice() internal view returns (uint256) {
+        // forge-lint: disable-next-line(unused-return)
+        (, uint256 dBase,,,, uint256 hf) = pool.getUserAccountData(principal);
+        uint256 units = (((hf - 1.01e18) * dBase) / 1e18) * 1e18 / IAaveOracle(ORACLE).getAssetPrice(XETH);
+        return (units * 10_000) / 10_010;
+    }
+
+    /// R11 (fixed): near a health factor of 1 the slice that reaches the
+    /// target cannot leave the position (Aave refuses the pull), and the
+    /// adapter refused any firing that stopped short of the target, so the
+    /// mandate never fired when the owner needed it most. Now each firing
+    /// lifts the health factor and the next firings step the rest.
+    function test_fixNearOneFiringsStepToTheTarget() public {
+        _borrowToNearOne();
+        assertLt(_healthFactor(principal), 1.2e18, "fixture near 1");
+        IShieldV1.MandateParams memory p = _params(RWC, A_XETH, 0.05e18, 0.2e18, _hfBelow(1.8e18));
+        p.actionConfig = _rwcConfig(1.8e18);
+        bytes32 id = _register(p);
+
+        uint256 oneShot = _sliceToTarget(1.8e18);
+        assertGt(oneShot, _pullLimitedSlice(), "one firing cannot reach the target");
+        bytes memory wholeRoute =
+            _swapCalldata(oneShot, (_fairUsdt0(oneShot) * 9_950) / 10_000, address(adapter));
+        vm.prank(agent);
+        vm.expectRevert(AAVE_HF_BELOW_ONE);
+        shield.fire(id, oneShot, wholeRoute);
+
+        uint256 firings;
+        while (_healthFactor(principal) < 1.8e18) {
+            uint256 before = _healthFactor(principal);
+            uint256 slice = _pullLimitedSlice();
+            uint256 amountIn = slice - 1_000;
+            bytes memory route =
+                _swapCalldata(amountIn, (_fairUsdt0(amountIn) * 9_950) / 10_000, address(adapter));
+            vm.prank(agent);
+            shield.fire(id, slice, route);
+            assertGt(_healthFactor(principal), before, "every firing lifts the health factor");
+            _assertNothingLeftBehind();
+            firings++;
+            assertLe(firings, 8, "the steps converge");
+        }
+        assertGt(firings, 1, "it took more than one firing");
+    }
+
+    /// R11: the target is a gate as well. At or over it the adapter refuses,
+    /// even when the owner's trigger does not read the health factor.
+    function test_fixAtTheTargetTheAdapterRefuses() public {
+        assertGt(_healthFactor(principal), 1.3e18, "fixture over the target");
+        IShieldV1.MandateParams memory p = _params(RWC, A_XETH, 0.01e18, 0.02e18, "");
+        p.actionConfig = _rwcConfig(1.2e18);
+        bytes32 id = _register(p);
+        uint256 sold = 0.0005e18;
+        bytes memory route = _swapCalldata(sold, _fairUsdt0(sold), address(adapter));
+        vm.prank(agent);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IShieldV1.OutcomeRejected.selector,
+                id,
+                IShieldV1.MandateReason.OUTCOME_FAILED,
+                abi.encodeWithSelector(
+                    AaveV3AdapterV1.OutcomeFailed.selector, "health factor already at target"
+                )
+            )
+        );
+        shield.fire(id, 0.008e18, route);
     }
 }

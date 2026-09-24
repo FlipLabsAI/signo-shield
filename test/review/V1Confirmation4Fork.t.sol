@@ -208,7 +208,7 @@ contract V1Confirmation4ForkTest is Test {
             : 0xb928a0678352005a2e51F614efD0b54C9830dB80;
         bytes32 descriptor = _bindRound(token, feed);
         IShieldV1.MandateParams memory p = _params(RWC, A_XETH, 0.01e18, 0.02e18, "");
-        p.actionConfig = _rwcConfig(1e18);
+        p.actionConfig = _rwcConfig(10e18);
         bytes32 id = _register(p);
         uint256 sold = 0.0005e18;
         bytes memory route = _swapCalldata(sold, _fairUsdt0(sold), address(adapter));
