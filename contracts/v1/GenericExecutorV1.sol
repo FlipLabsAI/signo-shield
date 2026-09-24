@@ -319,6 +319,10 @@ contract GenericExecutorV1 is IExecutorV1 {
     {
         if (d.subjectRule != IDescriptors.SubjectRule.PrincipalRequired) revert ConfigInvalid(field);
         if (d.argCount != 1 || d.subjectArg != 0) revert ConfigInvalid(field);
+        // An amount is never "infinite": the flag is for the owner's health-factor
+        // conditions only, so a flagged read cannot be a debt or collateral check
+        // (FLIP-280 G9-H1, round 10).
+        if (d.unboundedTop) revert ConfigInvalid(field);
         if (d.kind == IDescriptors.DescriptorKind.PerAddress && d.target != target) {
             revert ConfigInvalid(field);
         }

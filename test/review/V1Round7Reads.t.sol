@@ -258,6 +258,45 @@ contract V1Round7ReadsTest is V1ReviewBase {
         );
     }
 
+    /// Round 10 (the reviewer's G9-H1): a health-factor-shaped read is listed, but it can
+    /// never be an amount. As the repay collateral check or as a claimable read it is
+    /// refused at registration; the owner's health-factor condition keeps it.
+    function test_fixFlaggedReadIsRefusedAsCollateral() public {
+        R9HealthFactorPool pool = new R9HealthFactorPool();
+        bytes32 hfId = _healthFactor(pool);
+        GenericExecutorV1.Config memory c = _repayConfig();
+        c.collateralTarget = address(pool);
+        c.collateralDescriptor = hfId;
+        IShieldV1.MandateParams memory p = _genericParams(generic.ACTION_REPAY(), c);
+        vm.expectRevert(abi.encodeWithSelector(GenericExecutorV1.ConfigInvalid.selector, "repay:collateral"));
+        _register(p);
+        // The unflagged collateral read registers as before.
+        _register(_genericParams(generic.ACTION_REPAY(), _repayConfig()));
+    }
+
+    function test_fixFlaggedReadIsRefusedAsClaimable() public {
+        R9HealthFactorPool pool = new R9HealthFactorPool();
+        bytes32 hfId = _healthFactor(pool);
+        ClaimExecutorV1.Config memory c = _claimConfig();
+        c.claimable[0] =
+            ExprLib.Read(hfId, address(pool), abi.encode(address(0)), ExprLib.Subject.Principal, 18);
+        IShieldV1.MandateParams memory p = _claimParams(c);
+        vm.expectRevert(abi.encodeWithSelector(IEvaluatorV1.TreeInvalid.selector, "unboundedTop"));
+        _register(p);
+        _register(_claimParams(_claimConfig()));
+    }
+
+    function test_controlFlaggedReadStillServesTheOwnersHealthFactorCondition() public {
+        R9HealthFactorPool pool = new R9HealthFactorPool();
+        bytes32 hfId = _healthFactor(pool);
+        pool.setHealthFactor(type(uint256).max);
+        assertTrue(
+            evaluator.judgeTrigger(
+                _mathTree(ExprLib.Kind.SUB, 1.5e18, hfId, address(pool)), principal, new int256[](0), 0
+            )
+        );
+    }
+
     /// Round 9: only Aave's exact "no debt" value (type(uint256).max) reads as infinite.
     /// A health factor that is merely above the int256 range is refused like any read.
     function test_fixOnlyTheExactNoDebtMarkerIsInfinite() public {

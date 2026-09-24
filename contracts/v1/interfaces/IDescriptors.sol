@@ -47,7 +47,8 @@ interface IDescriptors {
         // registry refuses the flag anywhere else): Aave reports "no debt" as
         // exactly type(uint256).max, which reads as the top of the int256 range,
         // i.e. infinite. Any other value above the range is refused, here and on
-        // every other descriptor: two amounts must never read as equal (round 9).
+        // every other descriptor, and the executors refuse a flagged read wherever
+        // it would be an amount: two amounts must never read as equal (rounds 9-10).
         bool unboundedTop;
     }
 

@@ -360,6 +360,12 @@ library ExprLib {
     ///      in `args` (the executor writes the owner in at firing, see `readAbout`).
     function checkRecipeRead(Read memory r, IDescriptors catalog) internal view {
         if (r.subject != Subject.Principal) revert IEvaluatorV1.TreeInvalid("subject");
+        // A recipe read is an amount (a claimable reward), never "infinite": the
+        // flag is for the owner's health-factor conditions only (FLIP-280 G9-H1,
+        // round 10).
+        // forge-lint: disable-next-line(calls-loop,unused-return)
+        (IDescriptors.Descriptor memory d,,) = catalog.descriptorOf(r.descriptor);
+        if (d.unboundedTop) revert IEvaluatorV1.TreeInvalid("unboundedTop");
         _checkRead(r, 0, catalog, address(0), true);
     }
 
