@@ -1,5 +1,7 @@
 # Signo Shield: trust boundaries
 
+> **Shield v1** (deployed 24 Sep 2026) has its own page: [TRUST-V1.md](TRUST-V1.md). This page describes v0.1, which stays live for existing mandates.
+
 What each party can and cannot do, stated so it can be checked against the
 code. Public code is inspectable evidence, not an audit claim: the contracts
 have had two internal reviews with every finding fixed and pinned by a test
