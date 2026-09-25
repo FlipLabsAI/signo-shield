@@ -89,8 +89,10 @@ prepare a mandate proposal that the owner then reviews and signs in the
 Signo application. Builds 3452 to 3508, 17 and 18 September. Since 22
 September an assistant with no API key can also draft an agent or a
 mandate. The owner opens an agent draft on the setup page, or a mandate on
-its review page, and signs it there. Builds 3538 to 3552. Mandates drafted
-this way register on the v0.1 core until v1 proposals are built.
+its review page, and signs it there. Builds 3538 to 3552. Since build 4370
+(25 September) a mandate drafted this way registers on the v1 core, and the
+wallet does not have to hold the budget when the draft is made: each firing
+checks the balance it needs.
 
 **Runs the same conditions for alerts and for execution.** A price threshold,
 a health factor, a yield, a schedule: one condition engine, read from the
