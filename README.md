@@ -17,8 +17,7 @@ the Shield. The contract enforces the **bound**; the agent decides the
   transaction reverts and nothing moves.
 
 **Status.** Shield v1 is live on X Layer (chain 196) since 24 September 2026.
-In the Signo app, Execute (the feature built on it) is for partners only for
-now. The contracts have had fifteen review rounds, not an external audit.
+The contracts have had fifteen review rounds, not an external audit.
 
 ## One sentence, one mandate
 
@@ -101,7 +100,7 @@ Sourcify:
 
 Every address, with its deploy transaction and source commit, is in
 [`deployments/manifest.json`](deployments/manifest.json). The v0.1 contracts
-stay deployed beside v1 for mandates signed before it.
+stay deployed beside v1.
 
 ## Documents
 

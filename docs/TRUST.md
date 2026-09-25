@@ -29,8 +29,8 @@ Sourcify and on the X Layer block explorer. The manifest is in `deployments/mani
 | AaveV3AdapterV1 | `0x78749F9bfB020358050a2EeB53aD5234C4B840b5` |
 | ClaimExecutorV1 | `0x2434AC952990C0C78940D92362354A26E673DB0E` |
 
-The first-generation (v0.1) contracts stay deployed beside v1 for mandates
-signed before it; their addresses are in the manifest.
+The first-generation (v0.1) contracts stay deployed beside v1; their
+addresses are in the manifest.
 
 ## The design in five rules
 
