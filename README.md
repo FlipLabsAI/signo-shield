@@ -19,6 +19,8 @@ the Shield. The contract enforces the **bound**; the agent decides the
 **Status.** Shield v1 is live on X Layer (chain 196) since 24 September 2026.
 The contracts have had fifteen review rounds, not an external audit.
 
+**Launch film.** [signo-launch-16x9.mp4](media/signo-launch-16x9.mp4) is AI generated, picture and music.
+
 ## One sentence, one mandate
 
 An owner types this into Signo:
