@@ -17,7 +17,8 @@ the Shield. The contract enforces the **bound**; the agent decides the
   transaction reverts and nothing moves.
 
 **Status.** Shield v1 is live on X Layer (chain 196) since 24 September 2026.
-The contracts have had fifteen review rounds, not an external audit.
+The contracts went through 15 review passes, including passes by an external
+reviewer. They have not been formally audited.
 
 **Launch film.** [signo-launch-16x9.mp4](media/signo-launch-16x9.mp4) is AI generated, picture and music.
 
@@ -104,6 +105,18 @@ Every address, with its deploy transaction and source commit, is in
 [`deployments/manifest.json`](deployments/manifest.json). The v0.1 contracts
 stay deployed beside v1.
 
+## Mainnet canary
+
+An automated test runs real mandates on X Layer mainnet from a team test wallet.
+It registers each mandate, lets the live Signo app fire it, and reads the result
+from the chain: the token that arrived, the amount spent as a share of the
+balance, and the text of the owner's notice. It also checks that only the
+owner's wallet can pause, change or delete an Execute agent. It then revokes
+the mandate and removes the approval. It runs daily and after each app release
+that changes Execute. The first funded mainnet run is planned for
+27 September 2026. Each run is recorded, with its transaction links, in
+[`docs/CANARY.md`](docs/CANARY.md).
+
 ## Documents
 
 | Document | What it covers |
@@ -112,6 +125,7 @@ stay deployed beside v1.
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How v1 works: the contracts, the mandate, the firing, the executors, triggers and outcomes, emergency controls |
 | [`docs/TRUST.md`](docs/TRUST.md) | Who can do what, what each action checks, what a leaked key can do, known limits |
 | [`docs/APP-SIDE.md`](docs/APP-SIDE.md) | What the Signo app does around the contracts, when it was built, and every mainnet firing |
+| [`docs/CANARY.md`](docs/CANARY.md) | Each mainnet canary run: date, app build, scenarios, result and transaction links |
 | [`docs/TESTS.md`](docs/TESTS.md) | The 499 tests, and what each suite proves |
 | [`docs/REUSE.md`](docs/REUSE.md) | Third-party code and its licences |
 

@@ -7,12 +7,13 @@ can act for you, but only through a mandate you signed. The contract checks
 every firing, and the worst an agent can do is spend what you allowed, on the
 one action you allowed, through the venues you allowed.
 
-Status: public code is evidence, not an audit claim. The v1 contracts went
-through fifteen review rounds (an internal author and an independent
-reviewer; the story is in [`DESIGN-HISTORY.md`](DESIGN-HISTORY.md)). Every
-finding was fixed and pinned by a test, except one accepted limit of swaps
-with no price check, described below. The final review found no open high
-or critical item. Nobody outside the team has audited the contracts.
+Status: the public code is evidence, not an audit claim. The v1 contracts
+went through 15 review passes, by the internal author and an external
+reviewer. The story is in [`DESIGN-HISTORY.md`](DESIGN-HISTORY.md). Every
+finding was fixed and pinned by a test, or kept by a written decision. The
+accepted limit of swaps with no price check is described below. The final
+review found no open high or critical item. The contracts have not been
+formally audited. A mainnet canary runs daily ([`CANARY.md`](CANARY.md)).
 `forge lint` and `forge fmt` are clean.
 
 ## Deployed on X Layer (chain 196)
@@ -101,7 +102,7 @@ check.
   policy limits it to `fire` on the Shield cores.
 - **Admin key**: control over future listings and fees, and nothing over live
   mandates or funds. The seat moves only in two steps (propose, then accept).
-  It belongs behind a multisig before scale.
+  A 2 of 3 multisig for this seat is planned. It is not deployed yet.
 - **Enforcer key**: the power to stop things, never to move or loosen.
 - **Owner key**: the owner's own funds, as always. The Shield adds no exposure
   beyond the allowance the owner granted, and that allowance is spendable
@@ -124,4 +125,4 @@ freeze on chain.
   it must turn false before it can fire again.
 - Oracle-priced tokens need 18 decimals or fewer.
 - Swaps with no price check are bounded by the caps only (see above).
-- Not externally audited.
+- Not formally audited.
