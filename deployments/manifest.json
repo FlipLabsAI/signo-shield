@@ -79,6 +79,50 @@
         "sourceCommit": "3907f087ff0573410ea35448a347d2e70128d741",
         "timestamp": 1789638020290
       }
+    ],
+    "42161": [
+      {
+        "contract": "AaveV3AdapterV1",
+        "address": "0xe6f6d73c782fb6263f04bb5966af7661b9ebe9d9",
+        "deployTx": "0x6a938ebe038d4c3231a75b2afbaac298727e38dbbb69100905e4e636815f05e9",
+        "sourceCommit": "f3aa7d3d5d6b919e648a66b8fb9092259c442aa8",
+        "timestamp": 1790793916113
+      },
+      {
+        "contract": "ClaimExecutorV1",
+        "address": "0x9331264a9e1c0573d920cd8403031cc9761ac60a",
+        "deployTx": "0x46590e9aa3c52bb0330686cbb7230938b0fe95fd6ef545b2d9abf3450d0bc25d",
+        "sourceCommit": "f3aa7d3d5d6b919e648a66b8fb9092259c442aa8",
+        "timestamp": 1790793916113
+      },
+      {
+        "contract": "ExpressionEvaluator",
+        "address": "0xc428a88a92ecec99414152ad2a5fd4244b222b15",
+        "deployTx": "0xc459701a1074c1c6eaccf6394544357ffe2aaf20d719c8ecd13070b57e42fe74",
+        "sourceCommit": "f3aa7d3d5d6b919e648a66b8fb9092259c442aa8",
+        "timestamp": 1790793916113
+      },
+      {
+        "contract": "GenericExecutorV1",
+        "address": "0xdda03e096eaa3ac649965b62f02007970cf22836",
+        "deployTx": "0x1c09e65a2df0d2762b9fb79421faf449df90e6f58f85d79225bec08c2e91f139",
+        "sourceCommit": "f3aa7d3d5d6b919e648a66b8fb9092259c442aa8",
+        "timestamp": 1790793916113
+      },
+      {
+        "contract": "ShieldRegistryV1",
+        "address": "0xe0377c8c1742fcbe885e99d8d746f56ee7982f6f",
+        "deployTx": "0x08903d365f77c7312f1f80f916b4f704f63b9fafacdcbe2c2ceaa4ca4e25258d",
+        "sourceCommit": "f3aa7d3d5d6b919e648a66b8fb9092259c442aa8",
+        "timestamp": 1790793916113
+      },
+      {
+        "contract": "ShieldV1",
+        "address": "0xc9f83d96ee711c06de80a532785d3baea966de97",
+        "deployTx": "0x7c7abc4ed80cf3c2ab49948ebdb93fce4b96296a07f55498b3d86274d52217e5",
+        "sourceCommit": "f3aa7d3d5d6b919e648a66b8fb9092259c442aa8",
+        "timestamp": 1790793916113
+      }
     ]
   }
 }
