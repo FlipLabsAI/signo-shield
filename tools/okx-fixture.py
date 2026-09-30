@@ -11,6 +11,15 @@ Needs OKX_DEX_API_KEY, OKX_DEX_API_SECRET and OKX_DEX_API_PASSPHRASE in the
 environment (never printed). Usage:
 
     python3 tools/okx-fixture.py --adapter 0x... --amount-in 7900000000000000
+
+Other chains (30 Sep 2026, the Arbitrum sandbox test): pass --chain, --from,
+--to and --rpc (an Arbitrum RPC; its eth_blockNumber is the L2 block the test
+forks at):
+
+    python3 tools/okx-fixture.py --chain 42161 --rpc $ARBITRUM_RPC_URL \
+      --from 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1 \
+      --to 0xaf88d065e77c8cC2239327C5EDb3A432268e5831 \
+      --adapter 0x... --amount-in 7900000000000000
 """
 from __future__ import annotations
 
@@ -56,8 +65,8 @@ def okx(path: str, params: dict) -> dict:
     return body["data"][0]
 
 
-def block_number() -> int:
-    req = urllib.request.Request(RPC, data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_blockNumber", "params": []}).encode(), headers={"Content-Type": "application/json"})
+def block_number(rpc: str = "") -> int:
+    req = urllib.request.Request(rpc or RPC, data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_blockNumber", "params": []}).encode(), headers={"Content-Type": "application/json"})
     return int(json.load(urllib.request.urlopen(req, timeout=20))["result"], 16)
 
 
@@ -66,13 +75,17 @@ if __name__ == "__main__":
     ap.add_argument("--adapter", required=True, help="the adapter address the fork test deploys (see test_fixtureMatchesTheDeployedAdapter)")
     ap.add_argument("--amount-in", required=True, type=int, help="xETH to sell, in wei; must be below the aToken slice the test fires")
     ap.add_argument("--slippage-percent", default="1")
+    ap.add_argument("--chain", default="196", help="OKX chainIndex (196 X Layer, 42161 Arbitrum One)")
+    ap.add_argument("--from", dest="from_token", default=XETH)
+    ap.add_argument("--to", dest="to_token", default=USDT0)
+    ap.add_argument("--rpc", default="", help="the chain's RPC for the block number (default: X Layer)")
     args = ap.parse_args()
 
-    block = block_number()
+    block = block_number(args.rpc)
     swap = okx("/api/v6/dex/aggregator/swap", {
-        "chainIndex": "196",
-        "fromTokenAddress": XETH,
-        "toTokenAddress": USDT0,
+        "chainIndex": args.chain,
+        "fromTokenAddress": args.from_token,
+        "toTokenAddress": args.to_token,
         "amount": str(args.amount_in),
         "slippagePercent": args.slippage_percent,
         "userWalletAddress": args.adapter,
