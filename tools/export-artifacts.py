@@ -19,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import pathlib
 import subprocess
@@ -28,6 +29,9 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "out"
 ABI_DIR = ROOT / "abi"
 MANIFEST = ROOT / "deployments" / "manifest.json"
+# Verified corrections to what a broadcast recorded, one record per run file,
+# matched by the file's hash (see tools/verify-deployment.py).
+PROVENANCE = ROOT / "deployments" / "provenance.json"
 # Only contracts we author. Test helpers and forge-std are not part of the
 # public surface and must not leak into abi/.
 SOURCE_DIRS = ("contracts/",)
@@ -74,9 +78,28 @@ def export_abis() -> list[str]:
     return written
 
 
+def provenance_by_run_hash() -> dict[str, dict]:
+    """The verified provenance records, keyed by the sha256 of their run file.
+
+    A record applies only to the exact broadcast it was verified against: a
+    new broadcast on the same chain has another hash and gets no record.
+    """
+    if not PROVENANCE.is_file():
+        return {}
+    records = {}
+    for rec in json.loads(PROVENANCE.read_text()).get("runs", []):
+        run = ROOT / rec["run"]
+        digest = hashlib.sha256(run.read_bytes()).hexdigest() if run.is_file() else None
+        if digest != rec.get("runSha256"):
+            sys.exit(f"{PROVENANCE.relative_to(ROOT)}: {rec['run']} does not match its recorded hash")
+        records[digest] = rec
+    return records
+
+
 def export_deployments() -> int:
     """Fold every broadcast run into the manifest, newest wins per (chain, contract)."""
     broadcast = ROOT / "broadcast"
+    provenance = provenance_by_run_hash()
     manifest: dict[str, list[dict]] = {}
     if MANIFEST.is_file():
         try:
@@ -88,6 +111,7 @@ def export_deployments() -> int:
         for run in sorted(broadcast.rglob("run-latest.json")):
             data = json.loads(run.read_text())
             chain = str(data.get("chain", "unknown"))
+            record = provenance.get(hashlib.sha256(run.read_bytes()).hexdigest())
             for tx in data.get("transactions", []):
                 if tx.get("transactionType") != "CREATE":
                     continue
@@ -101,6 +125,11 @@ def export_deployments() -> int:
                     "sourceCommit": full_sha(data.get("commit")) or source_commit(),
                     "timestamp": data.get("timestamp"),
                 }
+                # sourceCommit stays what the broadcast recorded; the script
+                # that actually ran is added beside it, with its evidence.
+                if record:
+                    entry["deployScriptCommit"] = record["deployScriptCommit"]
+                    entry["provenance"] = record["note"]
                 rows = [r for r in manifest.get(chain, []) if r.get("contract") != entry["contract"]]
                 rows.append(entry)
                 manifest[chain] = sorted(rows, key=lambda r: r.get("contract") or "")

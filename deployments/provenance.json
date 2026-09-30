@@ -1,0 +1,72 @@
+{
+  "$comment": "Verified corrections to what a Foundry broadcast recorded. Each record is checked by tools/verify-deployment.py and applies only to the run file with this exact hash. tools/export-artifacts.py --deployments copies deployScriptCommit and the note into the manifest; sourceCommit stays what the broadcast recorded.",
+  "runs": [
+    {
+      "run": "broadcast/DeployV1.s.sol/42161/run-1790793916113.json",
+      "runSha256": "29233d36253e7e18ae753c3ce78bd672524f0a7dd602ae5b028538d632461b1a",
+      "chain": 42161,
+      "broadcastCommit": "f3aa7d3",
+      "deployScriptCommit": "fb2d7e047c60bee178e24de314a265b6b135e319",
+      "parameters": {
+        "SHIELD_OWNER": "0x0330Bda68a6254e7a71222A381A40Db60c13D9aa",
+        "SHIELD_FEE_BPS": "10"
+      },
+      "note": "Broadcast from f3aa7d3 with script/DeployV1.s.sol modified in the working tree; that script is committed as fb2d7e0. Verified: a replay at fb2d7e0 on a fork one block before the deployment reproduces all 40 transactions, and every created contract's runtime code equals the fb2d7e0 build. Evidence: deployments/provenance.json.",
+      "verification": {
+        "tool": "tools/verify-deployment.py",
+        "forkBlock": 510428808,
+        "forkBlockHash": "0x16827a6dad7c06bcc700ef22bd2501a451344fa9e55fa9b2d30dcb8434f30512",
+        "firstDeployBlock": 510428809,
+        "transactionsMatched": 40,
+        "contracts": [
+          {
+            "contract": "ShieldRegistryV1",
+            "address": "0xe0377c8c1742fcbe885e99d8d746f56ee7982f6f",
+            "runtimeMatch": "exact, immutables masked"
+          },
+          {
+            "contract": "ShieldV1",
+            "address": "0xc9f83d96ee711c06de80a532785d3baea966de97",
+            "runtimeMatch": "exact, immutables masked"
+          },
+          {
+            "contract": "ExpressionEvaluator",
+            "address": "0xc428a88a92ecec99414152ad2a5fd4244b222b15",
+            "runtimeMatch": "exact, immutables masked"
+          },
+          {
+            "contract": "GenericExecutorV1",
+            "address": "0xdda03e096eaa3ac649965b62f02007970cf22836",
+            "runtimeMatch": "exact, immutables masked"
+          },
+          {
+            "contract": "DisposableCloneV1",
+            "address": "0x1b5bf54041454830f7cbd9423a74f11127393d2b",
+            "runtimeMatch": "exact, immutables masked"
+          },
+          {
+            "contract": "AaveV3AdapterV1",
+            "address": "0xe6f6d73c782fb6263f04bb5966af7661b9ebe9d9",
+            "runtimeMatch": "exact, immutables masked"
+          },
+          {
+            "contract": "ClaimExecutorV1",
+            "address": "0x9331264a9e1c0573d920cd8403031cc9761ac60a",
+            "runtimeMatch": "exact, immutables masked"
+          },
+          {
+            "contract": "DisposableCloneV1",
+            "address": "0x50de65356638a42115db07a2c1bf9fc7334ae5cd",
+            "runtimeMatch": "exact, immutables masked"
+          }
+        ],
+        "verifiedAt": "2026-09-30T19:44:00+00:00",
+        "control": {
+          "scriptCommit": "f3aa7d3",
+          "result": "refused: replay produced 20 transactions, the broadcast has 40",
+          "meaning": "the check tells the two scripts apart; the recorded commit alone does not reproduce this deployment"
+        }
+      }
+    }
+  ]
+}
