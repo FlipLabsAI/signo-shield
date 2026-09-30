@@ -174,6 +174,77 @@ contract DeployV1 is Script {
             );
             _pendleClaim(shield, PENDLE_USDG_MARKET);
         }
+        if (block.chainid == ARBITRUM_ONE) _listArbitrum(shield);
+    }
+
+    // ------------------------------------------------------------- Arbitrum
+
+    /// @dev Arbitrum One (FLIP-221 / FLIP-233, 30 Sep 2026). Read from the chain
+    ///      that day: the Aave V3 pool's oracle (ADDRESSES_PROVIDER →
+    ///      getPriceOracle), and for each reserve the Chainlink proxy Aave
+    ///      prices it with. Aave prices the stables through capped adapters
+    ///      that have no round; their fresh round is the Chainlink feed under
+    ///      the cap (ASSET_TO_USD_AGGREGATOR). Chainlink lists these feeds with
+    ///      a 24 h heartbeat, so the same 25 h freshness as X Layer.
+    address public constant ARB_AAVE_ORACLE = 0xb56c2F0B653B2e0b10C9b928C8580Ac5Df02C7C7;
+    address public constant ARB_WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
+    address public constant ARB_WBTC = 0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f;
+    address public constant ARB_USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
+    address public constant ARB_USDC_E = 0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8;
+    address public constant ARB_USDT0 = 0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9;
+    address public constant ARB_DAI = 0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1;
+    address public constant ARB_ARB = 0x912CE59144191C1204E64559FE8253a0e49E6548;
+    address public constant ARB_LINK = 0xf97f4df75117a78c1A5a0DBb814Af92458539FB4;
+    address public constant ARB_AAVE = 0xba5DdD1f9d7F570dc94a51479a000E3BCE967196;
+    address public constant ARB_FEED_ETH = 0xbD41b1548a5A06544cBcf87c0c54864312842C00;
+    address public constant ARB_FEED_BTC = 0xDe4Af8b4747192Ea29339D0FeB36d9830d399134;
+    address public constant ARB_FEED_USDC = 0xDbFF913E9058C1E60446150D23Bb0fFE9144d531;
+    address public constant ARB_FEED_USDT = 0x21E1a03da332F9277A6839d1EF182d07644d1875;
+    address public constant ARB_FEED_DAI = 0x368B55bEb0d85aBe2bD04C7cba5Bd640A53fCF37;
+    address public constant ARB_FEED_ARB = 0x339a66699167D8bc7105C4B9772492D2576E5183;
+    address public constant ARB_FEED_LINK = 0x2C1C5eaB455A91cEAD280B12650faaA7bfDd59e6;
+    address public constant ARB_FEED_AAVE = 0xf97eEAac36bdd096bb2445c7582F9095bfCE04C7;
+    /// @dev Chainlink's L2 Sequencer Uptime Status Feed on Arbitrum One: answer 0 = up, 1 = down.
+    address public constant ARB_SEQUENCER_UPTIME = 0xFdB631F5EE196F0ed6FAa767959853A9F217697D;
+
+    function _listArbitrum(ShieldRegistryV1 shield) internal {
+        _log("aave.price", shield.listDescriptor(_price(ARB_AAVE_ORACLE)));
+        _feed(shield, "feed.eth", ARB_WETH, ARB_FEED_ETH, FEED_MAX_AGE);
+        _feed(shield, "feed.btc", ARB_WBTC, ARB_FEED_BTC, FEED_MAX_AGE);
+        _feed(shield, "feed.usdc", ARB_USDC, ARB_FEED_USDC, FEED_MAX_AGE);
+        _feed(shield, "feed.usdc.e", ARB_USDC_E, ARB_FEED_USDC, FEED_MAX_AGE);
+        _feed(shield, "feed.usdt", ARB_USDT0, ARB_FEED_USDT, FEED_MAX_AGE);
+        _feed(shield, "feed.dai", ARB_DAI, ARB_FEED_DAI, FEED_MAX_AGE);
+        _feed(shield, "feed.arb", ARB_ARB, ARB_FEED_ARB, FEED_MAX_AGE);
+        _feed(shield, "feed.link", ARB_LINK, ARB_FEED_LINK, FEED_MAX_AGE);
+        _feed(shield, "feed.aave", ARB_AAVE, ARB_FEED_AAVE, FEED_MAX_AGE);
+        // "The sequencer is up" as a read a mandate's condition can require
+        // (EQ(read, 0)). It is evaluated on chain when the condition includes
+        // it; the one-hour grace after a restart needs a clock node the
+        // expression language does not have yet (FLIP-233 follow-up).
+        _log("arbitrum.sequencerUp", shield.listDescriptor(sequencerUp(ARB_SEQUENCER_UPTIME)));
+    }
+
+    /// @dev The uptime feed's answer (word 1 of latestRoundData), signed, zero allowed:
+    ///      not a price, so no round rule and no positivity.
+    function sequencerUp(address feed) public pure returns (IDescriptors.Descriptor memory) {
+        return IDescriptors.Descriptor({
+            kind: IDescriptors.DescriptorKind.PerAddress,
+            target: feed,
+            selector: bytes4(keccak256("latestRoundData()")),
+            argCount: 0,
+            subjectArg: -1,
+            subjectRule: IDescriptors.SubjectRule.None,
+            word: 1,
+            isSigned: true,
+            mustBePositive: false,
+            decimals: 0,
+            freshness: IDescriptors.Freshness.None,
+            maxAge: 0,
+            gasStipend: 160_000,
+            copyBytes: 64,
+            unboundedTop: false
+        });
     }
 
     /// @dev Pendle's USDG market on X Layer (expiry 29 Oct 2026; not a proxy). Its reward

@@ -33,6 +33,27 @@ Sourcify and on the X Layer block explorer. The manifest is in `deployments/mani
 The first-generation (v0.1) contracts stay deployed beside v1; their
 addresses are in the manifest.
 
+## Deployed on Arbitrum One (chain 42161)
+
+The same source (contracts unchanged since `9acaa6f`; broadcast from `f3aa7d3`),
+deployed 30 Sep 2026. The pending owner is the same admin as on X Layer; the
+handover is accepted on chain. Listed: the Aave V3 pool and oracle, nine
+Chainlink price rounds (WETH, WBTC, USDC, USDC.e, USD₮0, DAI, ARB, LINK, AAVE;
+25 h freshness), and a read of Chainlink's sequencer uptime feed ("the
+sequencer is up") a mandate's condition can require. The grace period after a
+sequencer restart needs a clock node the expression language does not have
+yet; until then it is a known limitation. No enforcer is set yet.
+
+| Contract | Address |
+| --- | --- |
+| ShieldV1 (core) | `0xc9f83d96ee711C06dE80A532785d3BaEA966de97` |
+| ShieldRegistryV1 | `0xE0377C8C1742FCbe885E99d8d746F56eE7982f6F` |
+| ExpressionEvaluator | `0xc428a88A92Ecec99414152Ad2A5fd4244b222B15` |
+| GenericExecutorV1 | `0xDdA03e096Eaa3AC649965B62F02007970cf22836` |
+| AaveV3AdapterV1 | `0xE6f6d73c782fb6263F04bB5966af7661b9ebE9d9` |
+| ClaimExecutorV1 | `0x9331264a9e1C0573D920cD8403031cC9761AC60A` |
+
+
 ## The design in five rules
 
 1. **The owner signs the whole envelope.** A mandate pins the agent, the

@@ -16,7 +16,8 @@ the Shield. The contract enforces the **bound**; the agent decides the
   no calldata parser to fool. If the result breaks the mandate, the whole
   transaction reverts and nothing moves.
 
-**Status.** Shield v1 is live on X Layer (chain 196) since 24 September 2026.
+**Status.** Shield v1 is live on X Layer (chain 196) since 24 September 2026,
+and on Arbitrum One (chain 42161) since 30 September 2026.
 The contracts went through 15 review passes, including passes by an external
 reviewer. They have not been formally audited.
 
@@ -100,6 +101,18 @@ Sourcify:
 | GenericExecutorV1 | `0x41817086D841E146F52E95BA85C68DE541654f18` |
 | AaveV3AdapterV1 | `0x78749F9bfB020358050a2EeB53aD5234C4B840b5` |
 | ClaimExecutorV1 | `0x2434AC952990C0C78940D92362354A26E673DB0E` |
+
+Shield v1 on Arbitrum One (chain 42161), same contracts, deployed 30 Sep 2026
+(catalog and limitations in [`docs/TRUST.md`](docs/TRUST.md)):
+
+| Contract | Address |
+| --- | --- |
+| ShieldV1 (core) | `0xc9f83d96ee711C06dE80A532785d3BaEA966de97` |
+| ShieldRegistryV1 | `0xE0377C8C1742FCbe885E99d8d746F56eE7982f6F` |
+| ExpressionEvaluator | `0xc428a88A92Ecec99414152Ad2A5fd4244b222B15` |
+| GenericExecutorV1 | `0xDdA03e096Eaa3AC649965B62F02007970cf22836` |
+| AaveV3AdapterV1 | `0xE6f6d73c782fb6263F04bB5966af7661b9ebE9d9` |
+| ClaimExecutorV1 | `0x9331264a9e1C0573D920cD8403031cC9761AC60A` |
 
 Every address, with its deploy transaction and source commit, is in
 [`deployments/manifest.json`](deployments/manifest.json). The v0.1 contracts
