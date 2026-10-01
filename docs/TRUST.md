@@ -36,8 +36,8 @@ addresses are in the manifest.
 ## Deployed on Arbitrum One (chain 42161)
 
 The same source (contracts unchanged since `9acaa6f`; broadcast from `f3aa7d3`),
-deployed 30 Sep 2026. The pending owner is the same admin as on X Layer; the
-handover is accepted on chain. Listed: the Aave V3 pool and oracle, nine
+deployed 30 Sep 2026. The owner is the same admin as on X Layer; the admin
+accepted the handover on chain. Listed: the Aave V3 pool and oracle, nine
 Chainlink price rounds (WETH, WBTC, USDC, USDC.e, USD₮0, DAI, ARB, LINK, AAVE;
 25 h freshness), and a read of Chainlink's sequencer uptime feed ("the
 sequencer is up") a mandate's condition can require. The grace period after a
@@ -141,7 +141,8 @@ freeze on chain.
 
 ## Known limits
 
-- X Layer only. The app signs one DEX aggregator as its only swap venue.
+- X Layer and Arbitrum One only. On each chain the app signs one DEX aggregator
+  as its only swap venue.
 - One asset (the token sold) per mandate. A trigger fires once per crossing:
   it must turn false before it can fire again.
 - Oracle-priced tokens need 18 decimals or fewer.

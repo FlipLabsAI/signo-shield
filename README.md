@@ -126,8 +126,9 @@ from the chain: the token that arrived, the amount spent as a share of the
 balance, and the text of the owner's notice. It also checks that only the
 owner's wallet can pause, change or delete an Execute agent. It then revokes
 the mandate and removes the approval. It runs daily and after each app release
-that changes Execute. The first funded mainnet run is planned for
-27 September 2026. Each run is recorded, with its transaction links, in
+that changes Execute. Funded runs started on 27 September 2026. On Arbitrum One
+the Aave supply scenario ran once on 1 October 2026, the chain's first mainnet
+firing. Each run is recorded, with its transaction links, in
 [`docs/CANARY.md`](docs/CANARY.md).
 
 ## Documents
