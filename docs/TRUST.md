@@ -48,7 +48,7 @@ sequencer is up").
 owner signs. The Shield re-checks it on chain at every firing, so no agent
 acts while the sequencer is down, including through a transaction forced in
 from L1. A mandate whose own condition the chain cannot read still carries
-this check. Mandates signed before that date do not carry it.
+this check.
 
 The grace period after a sequencer restart (waiting before acting on prices
 that may be stale) needs a clock node the expression language does not have
