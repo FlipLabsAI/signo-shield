@@ -40,8 +40,18 @@ deployed 30 Sep 2026. The owner is the same admin as on X Layer; the admin
 accepted the handover on chain. Listed: the Aave V3 pool and oracle, nine
 Chainlink price rounds (WETH, WBTC, USDC, USDC.e, USD₮0, DAI, ARB, LINK, AAVE;
 25 h freshness), and a read of Chainlink's sequencer uptime feed ("the
-sequencer is up") a mandate's condition can require. The grace period after a
-sequencer restart needs a clock node the expression language does not have
+sequencer is up").
+
+**Every Signo agent on Arbitrum checks that the sequencer is up.** Since
+1 October 2026 the Signo app adds "the sequencer is up" (the uptime feed reads
+0) to the trigger of every Arbitrum mandate it prepares. It is part of what the
+owner signs. The Shield re-checks it on chain at every firing, so no agent
+acts while the sequencer is down, including through a transaction forced in
+from L1. A mandate whose own condition the chain cannot read still carries
+this check. Mandates signed before that date do not carry it.
+
+The grace period after a sequencer restart (waiting before acting on prices
+that may be stale) needs a clock node the expression language does not have
 yet; until then it is a known limitation. No enforcer is set yet.
 
 | Contract | Address |
