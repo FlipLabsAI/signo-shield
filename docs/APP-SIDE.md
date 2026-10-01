@@ -16,7 +16,8 @@ application's.
 The application drives two cores. The first core (v0.1, `SignoShield`) went
 live on 16 September. The v1 core (`ShieldV1` with its registry, evaluator
 and executors) went live on 24 September. The application picks the core per
-chain, and v1 is switched on for X Layer. The first group below applies to
+chain. v1 is switched on for X Layer (24 September) and for Arbitrum One
+(1 October, build 4993). The first group below applies to
 both cores. The second group is v1 only.
 
 ### Both cores
@@ -202,6 +203,7 @@ first mainnet firing was a small smoke test (below). 22 to 24 September.
 | 23 Sep | 3579, and the v1 branch | A firing resized by the owner's instruction gets calldata for that amount. On the v1 branch: v1 artifacts pinned and the signed-settings encoders checked byte for byte against the contracts' own vectors; every action compiled for v1; the v1 setup screen and the review check; register, amend and record on the v1 core; the execute tick fires v1 mandates with a live venue check; the one-deploy guard |
 | 24 Sep | 3580 to 3591, and the v1 branch | Any token by address; several outputs and the agent's pick; Unpriced swaps with the price-impact stop; repay from collateral in steps; fixes from the review passes; artifacts at each contract round |
 | 24 Sep | 3592 to 3603 | v1 on X Layer mainnet (3592; 3593 fixed the database deploy typecheck); price triggers on the v0.1 core (3596); setup polish (3595, 3600); price triggers typed on the setup screen pinned on chain (3601); each condition and the wallet balance reach the agent's decision (3602); condition options read as conditions (3603) |
+| 30 Sep to 1 Oct | 4993 to 4996 | Arbitrum One: v1 deployed (30 Sep) and switched on in the application (4993) with its catalog, the check of the deployed contracts against the chain, the Turnkey rules for Arbitrum and a cancel gas limit per chain; the canary condition in USD value (4994); the setup page, the assistant tools and the docs name both chains (4995, 4996) |
 
 The application's `main` branch carried 170 commits from 16 September 12:05
 to 21 September 11:17, 93 of them on the paths above. From 21 September
@@ -234,8 +236,9 @@ page used a narrower set of files, so the two tables do not subtract.
 ## What it has done on mainnet
 
 Every firing below was sized and sent by the application through a deployed
-Shield core on X Layer (chain 196), with no person in the loop after the
-owner signed the mandate. All were mined.
+Shield core on X Layer (chain 196) or Arbitrum One (chain 42161), with no
+person in the loop after the owner signed the mandate. All were mined. The
+daily canary's firings are listed in [`CANARY.md`](CANARY.md).
 
 ### v0.1 core
 
@@ -267,6 +270,21 @@ at 15:25.
 The registration was `0x9784ed8820d1060c3cfc897881ca74a6c7e2a0b678b9a381071bfab55188d228`
 (916,714 gas). Through block 71,507,517 these are the only mandate
 transactions on the v1 core.
+
+### v1 core, Arbitrum One
+
+The first firing on Arbitrum One, by the canary's test wallet. The wallet
+approved exactly the budget plus the fee and registered an Aave supply
+mandate (1 USDC per firing and in total) at 06:25:41; the application's agent
+fired it at 06:25:50. The canary then revoked the mandate.
+
+| When (UTC) | Path | Spent | Received | Gas | Transaction |
+| --- | --- | --- | --- | --- | --- |
+| 2026-10-01 06:25 | Aave v3 supply through the adapter | 1.001 USDC (1 supplied, 0.001 fee) | aArbUSDCn for 1 USDC | 429,034 | `0x561ff49be2b3160697275b8781492e1f190dfc8a96c54dc30fe3edde67e9b6cc` |
+
+The approval was `0x8f112ec6c627bf1ab702083c0b13cbb2e6083f27df963a4e10e90e1726e527ae` (55,709 gas), the registration
+`0xd93aef0e5521c592ed2b962e2beacd462957efd765a89e0aeac04b4bb19d49cc` (305,376 gas) and the revoke
+`0x9ca66552c2d244f434a476414938ec7189efaed87f43d705061cd451a0d2bbc6` (31,269 gas).
 
 ## Where the line is
 
