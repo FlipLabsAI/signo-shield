@@ -98,7 +98,7 @@ yet; until then it is a known limitation. No enforcer is set yet.
 | Party | Can | Cannot |
 | --- | --- | --- |
 | **Owner** (the wallet that signs) | register, amend and revoke their own permissions; set every number in them; change the agent by amendment; revoke the token allowance at any time | change a permission's executor, evaluator, action, asset or funding mode after registration (that is a new permission); touch anyone else's permission |
-| **Agent** (a key held in Turnkey) | call `fire` on a permission that names it, for an amount within the caps, while the trigger holds, with a route through the signed venues | send the output anywhere but the owner; call or approve an unsigned contract; exceed a cap; fire after expiry, revocation, a freeze or a halt; hold the owner's tokens |
+| **Agent** (a key held in Google Cloud KMS) | call `fire` on a permission that names it, for an amount within the caps, while the trigger holds, with a route through the signed venues | send the output anywhere but the owner; call or approve an unsigned contract; exceed a cap; fire after expiry, revocation, a freeze or a halt; hold the owner's tokens |
 | **Admin** (registry owner, `Ownable2Step`) | list executors, evaluators, reads, price rounds and claim rules for new permissions; set the fee and fee recipient; appoint enforcers; execute a restoration an enforcer approved, 24 h after it was queued | move funds; change or revoke a live permission; raise a live permission's fee; lift a freeze or halt on its own |
 | **Enforcer** | freeze and unfreeze an agent; halt an executor or evaluator; suspend a venue; approve a restoration; revoke a venue, a read or a claim rule for good | anything that moves funds; lift a halt or a suspension without the admin and the 24 h delay; undo a revocation |
 | **Executors** | run one firing for the core, in a sandbox, and revert unless the action's check passes | be called by anyone but the core; keep tokens or approvals between firings |
@@ -128,9 +128,13 @@ check.
 
 - **Agent key**: fire live permissions that name it, within their caps, venues,
   rules, windows and triggers, into the owners' own wallets. An enforcer's
-  freeze stops it in one transaction, and each owner can revoke. The key is
-  held in Turnkey, and the app signs through a non-root Turnkey user whose
-  policy limits it to `fire` on the Shield cores.
+  freeze stops it in one transaction, and each owner can revoke. Since
+  1 October 2026 the key (`0x6735ADe192A1Dce20E058A41D6365F8568C75706`) is
+  held in Google Cloud KMS, in a hardware security module it never leaves.
+  Only Signo's production deployment can ask it to sign. Google does not
+  check what it signs, so the contract's checks above are what bound it.
+  The earlier agent key, `0x4eA690C26A7C499f8ABd39cf0546901c0635db75` (held
+  in Turnkey), is retired: Signo no longer fires permissions that name it.
 - **Admin key**: control over future listings and fees, and nothing over live
   permissions or funds. The seat moves only in two steps (propose, then accept).
   A 2 of 3 multisig for this seat is planned. It is not deployed yet.
@@ -146,7 +150,7 @@ contract does not trust those decisions; it checks them. Before each firing,
 the app reads every signed venue's code and configuration and refuses a
 venue that changed since review. The signer simulates each firing before it
 sends it and keeps one transaction in flight per agent. It can be stopped by
-a kill switch read fail-closed, by revoking the key at Turnkey, or by a
+a kill switch read fail-closed, by disabling the key in Google Cloud KMS, or by a
 freeze on chain.
 
 ## Known limits
