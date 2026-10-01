@@ -1,7 +1,7 @@
 # Signo Shield v1: architecture
 
 Shield v1 lets an owner give an agent a bounded job on the owner's wallet. The
-owner signs a mandate from their own wallet. The mandate names the agent, the
+owner signs a permission from their own wallet. The permission names the agent, the
 action, the token the action may spend, the caps, the validity window, the
 exact contracts the action may call, the rule that judges the result, and
 optionally a trigger and an outcome check. The agent decides when to fire,
@@ -20,7 +20,7 @@ design got here is in [`DESIGN-HISTORY.md`](DESIGN-HISTORY.md).
 
 | Contract | Job | Runtime size |
 | --- | --- | --- |
-| `ShieldV1` | The core. Holds every mandate, pulls only the mandate's asset within the caps, hands it to the executor, measures what left the owner, settles the fee, judges the outcome. | 17,436 bytes |
+| `ShieldV1` | The core. Holds every permission, pulls only the permission's asset within the caps, hands it to the executor, measures what left the owner, settles the fee, judges the outcome. | 17,436 bytes |
 | `ShieldRegistryV1` | Executor and evaluator listings, the read catalog (descriptors), price rounds, claim rules, and the emergency controls. | 12,282 bytes |
 | `ExpressionEvaluator` + `ExprLib` | Judges trigger and outcome trees over listed reads. Stateless; every function is a view. | 11,706 bytes |
 | `GenericExecutorV1` | Funded actions that know no protocol: transform (swap, deposit), transfer, redeem, repay. Runs the agent's calls in a sandbox. | 24,452 bytes |
@@ -40,7 +40,7 @@ firing. The registry's owner is also the core's admin (`ShieldV1.onlyAdmin`
 reads `registry.owner()`), so there is one admin. Every contract is immutable.
 A change is a new version.
 
-## The mandate
+## The permission
 
 The owner calls `ShieldV1.registerMandate(MandateParams)`. The fields are in
 `IShieldV1.MandateParams`:
@@ -57,10 +57,10 @@ The owner calls `ShieldV1.registerMandate(MandateParams)`. The fields are in
 | `action`, `actionConfig` | The action (for example `generic.transform`) and its signed configuration: venues, outputs, the rate rule, slippage, price rules. The executor validates it (`validateConfig`). |
 | `trigger`, `outcome` | Optional expression trees, validated by the evaluator. |
 
-At registration the core also stamps the current `feeBps` into the mandate
+At registration the core also stamps the current `feeBps` into the permission
 and keeps it for life, and it captures the values that the trees' `SIGNED`
 nodes name (`ExpressionEvaluator.capture`). A trigger such as "8 % below the
-price at signing" compares a live read with that captured value. The mandate
+price at signing" compares a live read with that captured value. The permission
 id is `keccak256(chainid, core, principal, nonce)`.
 
 **Amendment** (`ShieldV1.amendMandate`, owner only). The executor, the
@@ -90,7 +90,7 @@ runs them:
    funding `NONE` only `AMOUNT_NOT_ZERO`; for funding `PULL`: `ZERO_AMOUNT`,
    `OVER_TX_CAP`, `OVER_CUMULATIVE_CAP` (the amount plus the worst-case fee
    must fit what is left), `INSUFFICIENT_ALLOWANCE`, `INSUFFICIENT_BALANCE`.
-2. **Trigger.** If the mandate has one, `judgeTrigger` must return true, else
+2. **Trigger.** If the permission has one, `judgeTrigger` must return true, else
    `TRIGGER_NOT_MET`. Nothing has moved yet.
 3. **Snapshots, before any pull.** The outcome's `BEFORE` values
    (`ExpressionEvaluator.snapshot`) and the executor's own mandatory
@@ -111,7 +111,7 @@ runs them:
    each transfer, so the core can be one unit short; that unit comes off the
    fee, never off the owner's refund.) The used budget is corrected to the
    real spend plus fee.
-7. **Outcome.** If the mandate has one, `judgeOutcome` runs on the owner's
+7. **Outcome.** If the permission has one, `judgeOutcome` runs on the owner's
    final state, else `OutcomeRejected(..., OUTCOME_FAILED, "")`.
 8. **Receipt.** `MandateFired(mandateId, agent, executor, action, amount,
    spent, fee)`.
@@ -156,7 +156,7 @@ the owner's outcome tree is judged by the core in addition.
 ### The sandbox
 
 `GenericExecutorV1` and `ClaimExecutorV1` run every firing in a fresh
-`DisposableCloneV1`, deployed at a deterministic address per mandate and
+`DisposableCloneV1`, deployed at a deterministic address per permission and
 firing (`nextClone` predicts it, so a route can be quoted for it). For the
 generic executor, the route is `abi.encode(Call[])`, at most 16 calls and
 8,192 bytes (`_decodeRoute`). For each call, `_runSandbox` requires that:
@@ -260,7 +260,7 @@ firing.
 
 ### Claim (`claim.collect`, `ClaimExecutorV1`)
 
-Funding `NONE`: nothing is pulled and the agent sends no route. The mandate
+Funding `NONE`: nothing is pulled and the agent sends no route. The permission
 signs up to eight listed claim rules and up to eight reward tokens. At a
 firing the executor builds each claim call itself from its rule, with the
 owner's address written into the owner arguments, and runs it in a sandbox. A
@@ -287,7 +287,7 @@ contract that answers a standard interface such as `balanceOf`), the
 selector, which argument is the account, which return word is the value, its
 signedness and decimals, the freshness rule, and the gas and copy bounds. A
 descriptor's id is the hash of its contents, so nothing can be replaced under
-an id. The admin lists descriptors for new mandates; delisting stops new
+an id. The admin lists descriptors for new permissions; delisting stops new
 registrations only; an enforcer's revocation stops every firing that reads
 through it. A read about an account must name the owner, unless the tree
 names another account on purpose (`SubjectMismatch`). A `Shape` read pins the
@@ -320,8 +320,8 @@ In `ShieldRegistryV1`:
 
 | Control | Who | Effect | Restore |
 | --- | --- | --- | --- |
-| `freezeAgent` | enforcer | the agent cannot fire any mandate | `unfreezeAgent`, enforcer |
-| `halt` | enforcer | every mandate that pins this executor or evaluator stops | enforcer `queueUnhalt`, then admin `executeUnhalt` 24 hours later |
+| `freezeAgent` | enforcer | the agent cannot fire any permission | `unfreezeAgent`, enforcer |
+| `halt` | enforcer | every permission that pins this executor or evaluator stops | enforcer `queueUnhalt`, then admin `executeUnhalt` 24 hours later |
 | `suspend` | enforcer | no executor calls, approves or reads through this address | enforcer `queueLift`, then admin `executeLift` 24 hours later |
 | `revoke` | enforcer | the same, permanently | none |
 | `revokeDescriptor`, `revokeClaimRule` | enforcer | no firing reads through it or makes that claim | none |
@@ -330,20 +330,20 @@ A new halt or suspension increases its epoch and cancels a queued
 restoration (`RESTORE_DELAY = 24 hours`). The admin is the registry owner
 through `Ownable2Step`: ownership moves in two steps and cannot be renounced,
 and the admin cannot be an enforcer. The admin lists executors, evaluators,
-descriptors, claim rules and price rounds for new mandates, appoints
+descriptors, claim rules and price rounds for new permissions, appoints
 enforcers, and sets the fee (at most 10 %, `MAX_FEE_BPS`) and the fee
-recipient on the core. A fee change reaches new mandates only. `DeployV1`
+recipient on the core. A fee change reaches new permissions only. `DeployV1`
 sets the fee at 10 basis points by default (`SHIELD_FEE_BPS`). With no fee
 recipient set, no fee is charged.
 
 ## Limits
 
-- One asset per mandate: the only token the core pulls.
+- One asset per permission: the only token the core pulls.
 - A transform delivers `tokenOut` and at most four further outputs.
 - Under the oracle rule, every priced token has 18 decimals or fewer.
 - Under `Unpriced`, the caps are the whole loss bound.
 - At most 16 calls and 16 venue pairs per firing; 16 reads and 64 nodes per
-  tree; 8 claim rules and 8 reward tokens per claim mandate.
+  tree; 8 claim rules and 8 reward tokens per claim permission.
 - The contract has no cooldown. The Signo app fires a trigger once per
   crossing: the condition must turn false before the app fires it again.
 - `GenericExecutorV1` is 124 bytes under the contract size limit, so a new

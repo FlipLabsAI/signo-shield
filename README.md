@@ -2,9 +2,10 @@
 
 Let an AI agent act on your wallet, inside limits you signed on chain.
 
-The owner signs a **mandate**: which agent, which action, which asset, how
+The owner signs a **permission** (the contracts call it a mandate:
+`registerMandate`, `MandateFired`, `mandateId`): which agent, which action, which asset, how
 much per firing and in total, until when, through which venues, when it may
-fire, and what result counts as success. The agent fires the mandate through
+fire, and what result counts as success. The agent fires the permission through
 the Shield. The contract enforces the **bound**; the agent decides the
 **action** inside it.
 
@@ -13,7 +14,7 @@ the Shield. The contract enforces the **bound**; the agent decides the
 - A generic firing runs in a fresh single-use sandbox that can call only
   the venues the owner signed, and sweeps everything back to the owner.
 - The result is measured on the owner's own balances and positions. There is
-  no calldata parser to fool. If the result breaks the mandate, the whole
+  no calldata parser to fool. If the result breaks the permission, the whole
   transaction reverts and nothing moves.
 
 **Status.** Shield v1 is live on X Layer (chain 196) since 24 September 2026,
@@ -23,7 +24,7 @@ reviewer. They have not been formally audited.
 
 **Launch film.** [signo-launch-16x9.mp4](media/signo-launch-16x9.mp4) is AI generated, picture and music.
 
-## One sentence, one mandate
+## One sentence, one permission
 
 An owner types this into Signo:
 
@@ -31,7 +32,7 @@ An owner types this into Signo:
 > quarter of my USD₮0 into USDC if the peg broke, otherwise into the coin
 > that crossed its line.
 
-The app compiles it into one mandate, and the owner signs it once:
+The app compiles it into one permission, and the owner signs it once:
 
 - **When** (checked on chain, from Chainlink feeds): USD₮0 below $0.99, or
   ETH below its line, or BTC below its line. The app turns "loses its peg"
@@ -57,7 +58,7 @@ sequenceDiagram
     participant X as GenericExecutorV1
     participant C as Sandbox (one per firing)
     participant O as Owner's wallet
-    A->>S: fire(mandate, amount, route)
+    A->>S: fire(permission, amount, route)
     S->>S: checks in a fixed order (agent, halts, window, caps, allowance)
     S->>E: trigger holds?
     S->>X: snapshot the "before" values
@@ -120,12 +121,12 @@ stay deployed beside v1.
 
 ## Mainnet canary
 
-An automated test runs real mandates on X Layer mainnet from a team test wallet.
-It registers each mandate, lets the live Signo app fire it, and reads the result
+An automated test runs real permissions on X Layer mainnet from a team test wallet.
+It registers each permission, lets the live Signo app fire it, and reads the result
 from the chain: the token that arrived, the amount spent as a share of the
 balance, and the text of the owner's notice. It also checks that only the
 owner's wallet can pause, change or delete an Execute agent. It then revokes
-the mandate and removes the approval. It runs daily and after each app release
+the permission and removes the approval. It runs daily and after each app release
 that changes Execute. Funded runs started on 27 September 2026. On Arbitrum One
 the Aave supply scenario ran once on 1 October 2026, the chain's first mainnet
 firing. Each run is recorded, with its transaction links, in
@@ -136,7 +137,7 @@ firing. Each run is recorded, with its transaction links, in
 | Document | What it covers |
 | --- | --- |
 | [`docs/DESIGN-HISTORY.md`](docs/DESIGN-HISTORY.md) | How the design got here in nine days: v0.1, the generic executor, why v1, and what each of the fifteen review rounds changed |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How v1 works: the contracts, the mandate, the firing, the executors, triggers and outcomes, emergency controls |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How v1 works: the contracts, the permission, the firing, the executors, triggers and outcomes, emergency controls |
 | [`docs/TRUST.md`](docs/TRUST.md) | Who can do what, what each action checks, what a leaked key can do, known limits |
 | [`docs/APP-SIDE.md`](docs/APP-SIDE.md) | What the Signo app does around the contracts, when it was built, and every mainnet firing |
 | [`docs/CANARY.md`](docs/CANARY.md) | Each mainnet canary run: date, app build, scenarios, result and transaction links |

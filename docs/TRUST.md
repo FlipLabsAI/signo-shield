@@ -3,7 +3,7 @@
 This page says what each party can and cannot do in Shield v1, so it can be
 checked against the code. How v1 works is in
 [`ARCHITECTURE.md`](ARCHITECTURE.md). The short version: an AI agent
-can act for you, but only through a mandate you signed. The contract checks
+can act for you, but only through a permission you signed. The contract checks
 every firing, and the worst an agent can do is spend what you allowed, on the
 one action you allowed, through the venues you allowed.
 
@@ -44,10 +44,10 @@ sequencer is up").
 
 **Every Signo agent on Arbitrum checks that the sequencer is up.** Since
 1 October 2026 the Signo app adds "the sequencer is up" (the uptime feed reads
-0) to the trigger of every Arbitrum mandate it prepares. It is part of what the
+0) to the trigger of every Arbitrum permission it prepares. It is part of what the
 owner signs. The Shield re-checks it on chain at every firing, so no agent
 acts while the sequencer is down, including through a transaction forced in
-from L1. A mandate whose own condition the chain cannot read still carries
+from L1. A permission whose own condition the chain cannot read still carries
 this check.
 
 The grace period after a sequencer restart (waiting before acting on prices
@@ -66,7 +66,7 @@ yet; until then it is a known limitation. No enforcer is set yet.
 
 ## The design in five rules
 
-1. **The owner signs the whole envelope.** A mandate pins the agent, the
+1. **The owner signs the whole envelope.** A permission pins the agent, the
    action, the asset, the per-firing and lifetime caps, the validity window,
    the exact venues (contract and approval pairs), the rule that judges the
    result, and optionally a trigger and an outcome check. The agent chooses
@@ -97,13 +97,13 @@ yet; until then it is a known limitation. No enforcer is set yet.
 
 | Party | Can | Cannot |
 | --- | --- | --- |
-| **Owner** (the wallet that signs) | register, amend and revoke their own mandates; set every number in them; change the agent by amendment; revoke the token allowance at any time | change a mandate's executor, evaluator, action, asset or funding mode after registration (that is a new mandate); touch anyone else's mandate |
-| **Agent** (a key held in Turnkey) | call `fire` on a mandate that names it, for an amount within the caps, while the trigger holds, with a route through the signed venues | send the output anywhere but the owner; call or approve an unsigned contract; exceed a cap; fire after expiry, revocation, a freeze or a halt; hold the owner's tokens |
-| **Admin** (registry owner, `Ownable2Step`) | list executors, evaluators, reads, price rounds and claim rules for new mandates; set the fee and fee recipient; appoint enforcers; execute a restoration an enforcer approved, 24 h after it was queued | move funds; change or revoke a live mandate; raise a live mandate's fee; lift a freeze or halt on its own |
+| **Owner** (the wallet that signs) | register, amend and revoke their own permissions; set every number in them; change the agent by amendment; revoke the token allowance at any time | change a permission's executor, evaluator, action, asset or funding mode after registration (that is a new permission); touch anyone else's permission |
+| **Agent** (a key held in Turnkey) | call `fire` on a permission that names it, for an amount within the caps, while the trigger holds, with a route through the signed venues | send the output anywhere but the owner; call or approve an unsigned contract; exceed a cap; fire after expiry, revocation, a freeze or a halt; hold the owner's tokens |
+| **Admin** (registry owner, `Ownable2Step`) | list executors, evaluators, reads, price rounds and claim rules for new permissions; set the fee and fee recipient; appoint enforcers; execute a restoration an enforcer approved, 24 h after it was queued | move funds; change or revoke a live permission; raise a live permission's fee; lift a freeze or halt on its own |
 | **Enforcer** | freeze and unfreeze an agent; halt an executor or evaluator; suspend a venue; approve a restoration; revoke a venue, a read or a claim rule for good | anything that moves funds; lift a halt or a suspension without the admin and the 24 h delay; undo a revocation |
 | **Executors** | run one firing for the core, in a sandbox, and revert unless the action's check passes | be called by anyone but the core; keep tokens or approvals between firings |
 | **Evaluator** | judge a trigger or outcome tree over listed reads | write state or hold tokens; treat an unreadable value as "true" (an unreadable read reverts) |
-| **Anyone** | read every mandate; call `canFireBy` | everything else |
+| **Anyone** | read every permission; call `canFireBy` | everything else |
 
 ## What each action checks
 
@@ -126,22 +126,22 @@ check.
 
 ## What a leaked key can do
 
-- **Agent key**: fire live mandates that name it, within their caps, venues,
+- **Agent key**: fire live permissions that name it, within their caps, venues,
   rules, windows and triggers, into the owners' own wallets. An enforcer's
   freeze stops it in one transaction, and each owner can revoke. The key is
   held in Turnkey, and the app signs through a non-root Turnkey user whose
   policy limits it to `fire` on the Shield cores.
 - **Admin key**: control over future listings and fees, and nothing over live
-  mandates or funds. The seat moves only in two steps (propose, then accept).
+  permissions or funds. The seat moves only in two steps (propose, then accept).
   A 2 of 3 multisig for this seat is planned. It is not deployed yet.
 - **Enforcer key**: the power to stop things, never to move or loosen.
 - **Owner key**: the owner's own funds, as always. The Shield adds no exposure
   beyond the allowance the owner granted, and that allowance is spendable
-  only through the owner's own mandates.
+  only through the owner's own permissions.
 
 ## Off-chain, for completeness
 
-The agent decides when to fire and how much, within the mandate. The
+The agent decides when to fire and how much, within the permission. The
 contract does not trust those decisions; it checks them. Before each firing,
 the app reads every signed venue's code and configuration and refuses a
 venue that changed since review. The signer simulates each firing before it
@@ -153,7 +153,7 @@ freeze on chain.
 
 - X Layer and Arbitrum One only. On each chain the app signs one DEX aggregator
   as its only swap venue.
-- One asset (the token sold) per mandate. A trigger fires once per crossing:
+- One asset (the token sold) per permission. A trigger fires once per crossing:
   it must turn false before it can fire again.
 - Oracle-priced tokens need 18 decimals or fewer.
 - Swaps with no price check are bounded by the caps only (see above).

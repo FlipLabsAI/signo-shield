@@ -38,30 +38,30 @@ is simulated before it is sent, one transaction is in flight per agent,
 retries are bounded, receipts are reconciled into a ledger, and there is a
 kill switch plus an environment hard stop. Builds 3388 to 3394, 16 September.
 
-**Keeps a copy of every mandate from the chain, not from itself.** The
-application's record of a mandate is written only from a chain read and
+**Keeps a copy of every permission from the chain, not from itself.** The
+application's record of a permission is written only from a chain read and
 re-read on a schedule; every difference is surfaced, never absorbed. A v1
-mandate is read from the core its record names. Build 3395, 16 September;
+permission is read from the core its record names. Build 3395, 16 September;
 v1 on 24 September.
 
-**Fires mandates when their conditions hold.** An agent armed by an on-chain
-mandate checks its condition on an hourly tick, batched per chain, sizes a
+**Fires permissions when their conditions hold.** An agent armed by an on-chain
+permission checks its condition on an hourly tick, batched per chain, sizes a
 firing from the live position, builds the calldata (for a swap, through the
-DEX aggregator, checked against the venue pinned in the mandate), sends it
+DEX aggregator, checked against the venue pinned in the permission), sends it
 through the signer, decodes the receipt into the run record, and tells the
 owner. One retry per failure; then the owner is told the run has stopped.
-Builds 3400 to 3478, 16 to 18 September. The same tick fires v1 mandates
+Builds 3400 to 3478, 16 to 18 September. The same tick fires v1 permissions
 beside v0.1 ones, each core with its own batch, signer and receipt profile
 (built 23 September, live 24 September).
 
-**Lets an owner create, review, sign, change and revoke a mandate.** The
+**Lets an owner create, review, sign, change and revoke a permission.** The
 agent builder has an Execute mode: the owner describes the action, the
-application compiles it into exactly one enforceable mandate, a question, or
-a refusal, shows the review (what the mandate enforces: when, then, and the
+application compiles it into exactly one enforceable permission, a question, or
+a refusal, shows the review (what the permission enforces: when, then, and the
 constraints), and hands the registration to the owner's wallet to sign.
-Limits can be changed in place; deleting the agent revokes the mandate from
+Limits can be changed in place; deleting the agent revokes the permission from
 the wallet; the revoke screen reads and shows the remaining allowance. Tier 1
-mandates (transfer, swap, vault deposit) and scheduled execution (the clock
+permissions (transfer, swap, vault deposit) and scheduled execution (the clock
 as a condition) are built the same way. Builds 3423 to 3535, 17 to 21
 September.
 
@@ -85,13 +85,13 @@ carries a Prepare link with the same action filled in, so the owner can
 sign it by hand. Reverts and signer failures also alert the team. Builds
 3560 and 3565, 22 September.
 
-**Prepares mandates through MCP and a partner API.** An outside agent can
-prepare a mandate proposal that the owner then reviews and signs in the
+**Prepares permissions through MCP and a partner API.** An outside agent can
+prepare a permission proposal that the owner then reviews and signs in the
 Signo application. Builds 3452 to 3508, 17 and 18 September. Since 22
 September an assistant with no API key can also draft an agent or a
-mandate. The owner opens an agent draft on the setup page, or a mandate on
+permission. The owner opens an agent draft on the setup page, or a permission on
 its review page, and signs it there. Builds 3538 to 3552. Since build 4370
-(25 September) a mandate drafted this way registers on the v1 core, and the
+(25 September) a permission drafted this way registers on the v1 core, and the
 wallet does not have to hold the budget when the draft is made: each firing
 checks the balance it needs.
 
@@ -134,10 +134,10 @@ vault, outputs and claim market. Any difference blocks signing. Amendments
 get the same check. 23 and 24 September.
 
 **Signs the venues and watches them.** The owner keeps or removes venues in
-the builder, and the kept ones are signed into the mandate. A daily job
+the builder, and the kept ones are signed into the permission. A daily job
 reads each reviewed venue's upgrade facts (implementation slot, owner,
 facets, allowlist, code hash), keeps a baseline, and alerts the team on a
-change. A mandate that can route through a changed venue is blocked until a
+change. A permission that can route through a changed venue is blocked until a
 person acknowledges the change. Just before each v1 firing, the venues it
 names are read again, because the daily job can be a day late. A swap tries
 the venues the owner kept, in order, and skips one under review. Builds 3557
@@ -147,7 +147,7 @@ to 3564 (22 September) and the v1 tick (24 September).
 pastes a contract address. The application reads a pasted token on chain
 (decimals, symbol, total supply) and refuses a contract that does not answer
 as a token. A swap may name up to five tokens it may buy ("xETH or xBTC").
-The mandate signs all of them, and the agent picks one at the firing. 24
+The permission signs all of them, and the agent picks one at the firing. 24
 September.
 
 **Signs a swap with no price check only when there is no feed.** A swap whose
@@ -159,12 +159,12 @@ aggregator quote with more than 15 % price impact, or with no impact figure,
 and tells the owner why. That check is off-chain, not in the contract. 23
 and 24 September.
 
-**Lets the agent choose inside the mandate.** At a firing, the agent's
+**Lets the agent choose inside the permission.** At a firing, the agent's
 decision sees the owner's instruction, the envelope, each condition of the
 trigger with its reading and whether it holds, the wallet balance, and the
-tokens the mandate may buy. It picks the output and the amount within the
+tokens the permission may buy. It picks the output and the amount within the
 caps. The route is quoted for that token, and the route builder refuses a
-token the mandate does not sign. A swap whose outputs share a symbol is
+token the permission does not sign. A swap whose outputs share a symbol is
 refused at setup, so the agent never has to guess between them. The owner's
 message leads with the condition that held and names the token and the
 amount that arrived, read from the receipt. Builds 3583 and 3602, 24
@@ -188,19 +188,19 @@ first mainnet firing was a small smoke test (below). 22 to 24 September.
 
 | Dates | Builds | What landed |
 | --- | --- | --- |
-| 15 Sep | 3353 to 3384 | Terms for delegated execution under a mandate; the mandate authorization design request |
-| 16 Sep | 3385 to 3401 | X Layer support in the product; the contracts pinned from this repository; the signer service; mandate persistence and reconciliation; the execution branch |
+| 15 Sep | 3353 to 3384 | Terms for delegated execution under a permission; the permission authorization design request |
+| 16 Sep | 3385 to 3401 | X Layer support in the product; the contracts pinned from this repository; the signer service; permission persistence and reconciliation; the execution branch |
 | 16 Sep | 3416 to 3422 | The application side of the generic executor: sizing with fee room, calldata builders, receipt decoding, the ERC-4626 rule |
-| 17 Sep | 3423 to 3438 | The mandate core and compile step; Execute in the builder with review and signing; Execute agents in the list; attempts in history; limits changed in place; delete revokes; the redeployed contracts pinned; hourly batched ticks |
-| 17 Sep | 3439 to 3462 | Check action; Describe-it fast path; scheduled execution; Tier 1 mandates in the builder; limits copy; MCP mandate proposals; prompt-injection hardening of the chat surfaces |
+| 17 Sep | 3423 to 3438 | The permission core and compile step; Execute in the builder with review and signing; Execute agents in the list; attempts in history; limits changed in place; delete revokes; the redeployed contracts pinned; hourly batched ticks |
+| 17 Sep | 3439 to 3462 | Check action; Describe-it fast path; scheduled execution; Tier 1 permissions in the builder; limits copy; MCP permission proposals; prompt-injection hardening of the chat surfaces |
 | 17 to 18 Sep | 3464 to 3478 | Owner notices rewritten; one retry then stop; the model-composed notice |
 | 18 Sep | 3479 to 3508 | Agents page polish; execution notices on the home surface; revoke screen; price thresholds as conditions; the price cron retired; partner Prepare agents; keyless agent drafts |
 | 19 to 21 Sep | 3511 to 3526 | Planner fixes found through real runs; the agent sizes its own firing and explains; per-member re-fire notices; builder polish |
-| 21 Sep | 3527 to 3535 | Execute setup polish: expiry as a date in UTC, a back button that always works, the action first in the mandate box, the agent summary as When, Then, Notifies |
-| 22 Sep | 3538 to 3552 | Keyless agent and mandate drafts over MCP, claimed on the setup page; the Shield reads in the public API spec |
+| 21 Sep | 3527 to 3535 | Execute setup polish: expiry as a date in UTC, a back button that always works, the action first in the permission box, the agent summary as When, Then, Notifies |
+| 22 Sep | 3538 to 3552 | Keyless agent and permission drafts over MCP, claimed on the setup page; the Shield reads in the public API spec |
 | 22 Sep | 3544 to 3547 | Conditions: a gas-price trigger; a bare level takes its direction from the live reading; AND and OR grouping kept in the condition text |
 | 22 Sep | 3557 to 3567 | Daily venue watch with a per-firing block; one failed-firing message per episode with a Prepare link; a team alert on reverts; the v1 trigger compiler (expression encoder, catalog ids, plan to tree); allowed venues in the builder and review behind the per-chain v1 switch |
-| 23 Sep | 3579, and the v1 branch | A firing resized by the owner's instruction gets calldata for that amount. On the v1 branch: v1 artifacts pinned and the signed-settings encoders checked byte for byte against the contracts' own vectors; every action compiled for v1; the v1 setup screen and the review check; register, amend and record on the v1 core; the execute tick fires v1 mandates with a live venue check; the one-deploy guard |
+| 23 Sep | 3579, and the v1 branch | A firing resized by the owner's instruction gets calldata for that amount. On the v1 branch: v1 artifacts pinned and the signed-settings encoders checked byte for byte against the contracts' own vectors; every action compiled for v1; the v1 setup screen and the review check; register, amend and record on the v1 core; the execute tick fires v1 permissions with a live venue check; the one-deploy guard |
 | 24 Sep | 3580 to 3591, and the v1 branch | Any token by address; several outputs and the agent's pick; Unpriced swaps with the price-impact stop; repay from collateral in steps; fixes from the review passes; artifacts at each contract round |
 | 24 Sep | 3592 to 3603 | v1 on X Layer mainnet (3592; 3593 fixed the database deploy typecheck); price triggers on the v0.1 core (3596); setup polish (3595, 3600); price triggers typed on the setup screen pinned on chain (3601); each condition and the wallet balance reach the agent's decision (3602); condition options read as conditions (3603) |
 | 30 Sep to 1 Oct | 4993 to 4996 | Arbitrum One: v1 deployed (30 Sep) and switched on in the application (4993) with its catalog, the check of the deployed contracts against the chain, the Turnkey rules for Arbitrum and a cancel gas limit per chain; the canary condition in USD value (4994); the setup page, the assistant tools and the docs name both chains (4995, 4996) |
@@ -217,11 +217,11 @@ At `main` on 24 September 18:58, build 3603.
 | Area | Files | Lines |
 | --- | --- | --- |
 | Signer and chain port | 8 | 1,318 |
-| Mandates and the compile step, shared by both cores | 19 | 3,816 |
+| Permissions and the compile step, shared by both cores | 19 | 3,816 |
 | v1 compile, trigger compiler, review check and encoders | 13 | 1,919 |
-| Execution branch, decision, sizing, notices, venue watch, and the mandate and run tables | 23 | 5,076 |
+| Execution branch, decision, sizing, notices, venue watch, and the permission and run tables | 23 | 5,076 |
 | HTTP routes | 12 | 799 |
-| Mandate screens | 11 | 2,137 |
+| Permission screens | 11 | 2,137 |
 | Condition engine (shared with alerts) | 2 | 2,679 |
 | Pinned artifacts generated from this repository (v0.1 and v1) | 2 | 7,549 |
 | Tests and fixtures on the above | 50 | 6,709 |
@@ -237,7 +237,7 @@ page used a narrower set of files, so the two tables do not subtract.
 
 Every firing below was sized and sent by the application through a deployed
 Shield core on X Layer (chain 196) or Arbitrum One (chain 42161), with no
-person in the loop after the owner signed the mandate. All were mined. The
+person in the loop after the owner signed the permission. All were mined. The
 daily canary's firings are listed in [`CANARY.md`](CANARY.md).
 
 ### v0.1 core
@@ -248,7 +248,7 @@ daily canary's firings are listed in [`CANARY.md`](CANARY.md).
 | 2026-09-17 08:35 | Tier 1 generic swap through the aggregator router, oracle rule | 0.012012 xETH | 538,845 | `0x8ce580ab7a85d009e8d8d7d76e7474bec16890f211676336c7e24009b97a3bfb` |
 | 2026-09-17 08:36 | Tier 1 generic swap through the aggregator router, oracle rule | 1.001 USD₮0 | 571,190 | `0x6c2b72ca1b627c2633d32cf202bc64181deacf4857f046c86b2fc68e215bd9f0` |
 | 2026-09-17 17:42 | Tier 2 Aave v3 supply through the adapter | 0.01001 xETH | 362,907 | `0xbef78b6900a4cfe557db99b9622b53c27d40d2a5d459b10aa32699147a55340e` |
-| 2026-09-18 06:42 | Tier 2 Aave v3 supply through the adapter, the mandate's last slice | 0.00099 xETH | 287,118 | `0x9e79833d01d9cf0684950623d97576f1960e4122d183a35d56526d75e42e878e` |
+| 2026-09-18 06:42 | Tier 2 Aave v3 supply through the adapter, the permission's last slice | 0.00099 xETH | 287,118 | `0x9e79833d01d9cf0684950623d97576f1960e4122d183a35d56526d75e42e878e` |
 
 For scale, ordinary swaps through the same aggregator router on X Layer over
 sixty blocks on 18 September ranged from 182,343 to 1,484,630 gas with a
@@ -260,7 +260,7 @@ difference is the price of generality.
 ### v1 core
 
 The smoke test after the v1 deployment. The owner's wallet registered a
-swap mandate from WOKB to USD₮0 at 15:24; the application's agent fired it
+swap permission from WOKB to USD₮0 at 15:24; the application's agent fired it
 at 15:25.
 
 | When (UTC) | Path | Spent | Received | Gas | Transaction |
@@ -268,15 +268,15 @@ at 15:25.
 | 2026-09-24 15:25 | Generic swap on the v1 core: a fresh sandbox, the aggregator router, output swept to the owner | 0.001001 WOKB (0.001 sold, 0.000001 fee) | 0.119465 USD₮0 | 706,590 | `0x68500884cebae48760de3e193081ec08a83d38940369a7ef44d3fed72426f4e1` |
 
 The registration was `0x9784ed8820d1060c3cfc897881ca74a6c7e2a0b678b9a381071bfab55188d228`
-(916,714 gas). Through block 71,507,517 these are the only mandate
+(916,714 gas). Through block 71,507,517 these are the only permission
 transactions on the v1 core.
 
 ### v1 core, Arbitrum One
 
 The first firing on Arbitrum One, by the canary's test wallet. The wallet
 approved exactly the budget plus the fee and registered an Aave supply
-mandate (1 USDC per firing and in total) at 06:25:41; the application's agent
-fired it at 06:25:50. The canary then revoked the mandate.
+permission (1 USDC per firing and in total) at 06:25:41; the application's agent
+fired it at 06:25:50. The canary then revoked the permission.
 
 | When (UTC) | Path | Spent | Received | Gas | Transaction |
 | --- | --- | --- | --- | --- | --- |
