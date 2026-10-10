@@ -8,8 +8,7 @@ every firing, and the worst an agent can do is spend what you allowed, on the
 one action you allowed, through the venues you allowed.
 
 Status: the public code is evidence, not an audit claim. The v1 contracts
-went through 15 review passes, by the internal author and an external
-reviewer. The story is in [`DESIGN-HISTORY.md`](DESIGN-HISTORY.md). Every
+went through 15 review passes. The story is in [`DESIGN-HISTORY.md`](DESIGN-HISTORY.md). Every
 finding was fixed and pinned by a test, or kept by a written decision. The
 accepted limit of swaps with no price check is described below. The final
 review found no open high or critical item. The contracts have not been

@@ -6,7 +6,7 @@ tests. This page tells how the design moved from the first version to the
 second: what we built, what each review and each real firing taught us, and
 what we changed because of it. Commit hashes let a reader check every step.
 
-Times are UTC. "We" is the Flip Labs team. "The reviewer" is an independent
+Times are UTC. "We" is the Flip Labs team. "The reviewer" is a separate
 review pass that read the code against its specification and wrote Foundry
 tests for every gap it found.
 
@@ -52,7 +52,7 @@ typed reason. The admin cannot renounce (`ced2033`, `0963aa6`).
 
 **03:16, deployed to X Layer** (`673a74a`).
 
-**07:23, the independent review.** The Shield now charges the larger of the
+**07:23, the review.** The Shield now charges the larger of the
 adapter's report and the owner's measured balance drop, so a listed adapter
 can under-report but never under-charge. The fee's worst case leaves the
 owner before the adapter runs, so every outcome check sees the final state.

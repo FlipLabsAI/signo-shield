@@ -178,7 +178,7 @@ firings step to the target. On an X Layer fork the health factor went 1.134,
 target. When a firing stops short of the target, the message says so. 24
 September.
 
-**Was reviewed before it was switched on.** An independent reviewer checked
+**Was reviewed before it was switched on.** A review checked
 the v1 application changes in several passes, with tests written in the
 application's own framework. Each finding was fixed with a test or deferred
 in writing. v1 was switched on for X Layer after the last pass, and its

@@ -19,8 +19,8 @@ the Shield. The contract enforces the **bound**; the agent decides the
 
 **Status.** Shield v1 is live on X Layer (chain 196) since 24 September 2026,
 and on Arbitrum One (chain 42161) since 30 September 2026.
-The contracts went through 15 review passes, including passes by an external
-reviewer. They have not been formally audited.
+The contracts went through 15 review passes. They have not been formally
+audited.
 
 **Launch film.** [signo-launch-16x9.mp4](media/signo-launch-16x9.mp4) is AI generated, picture and music.
 
@@ -162,7 +162,7 @@ If you cloned without `--recursive`:
 git submodule update --init --recursive
 ```
 
-`forge test` runs 499 tests: unit suites, the independent reviewer's suites
+`forge test` runs 499 tests: unit suites, the review suites
 under `test/review/`, and fork suites against real Aave V3 markets, real
 Chainlink rounds, a real aggregator route and a real Pendle reward claim on
 X Layer, plus Arbitrum One and Ethereum mainnet for v0.1. The fork suites
@@ -182,7 +182,7 @@ contracts/core/        v0.1: the Shield, the condition modules and their interfa
 contracts/executors/   v0.1: the generic executor and its sandbox
 contracts/adapters/    v0.1: the pinned Aave V3 adapter
 test/v1/               v1 unit suites
-test/review/           the independent reviewer's suites, imported as written
+test/review/           the review suites, imported as written
 test/fork/             pinned-chain suites, v0.1 and v1
 test/                  v0.1 unit suites and mocks
 script/                deploy scripts (DeployV1 for v1) and the v0.1 register-and-fire demo

@@ -19,7 +19,7 @@ reverted. The fork suites read public archive endpoints at pinned blocks
 | Generic executor, X Layer | `test/fork/GenericExecutorV1*.fork.t.sol` | 10 | The real Aave pool, a real aggregator route replayed from the sandbox, several outputs with real tokens and real price rounds |
 | Claims, X Layer | `test/fork/ClaimExecutorV1.pendle.fork.t.sol` | 3 | A real Pendle reward claim |
 | Deployment script | `test/fork/DeployV1.fork.t.sol` | 1 | `DeployV1.s.sol` end to end on the X Layer fork, then the hand-off |
-| Review rounds | `test/review/V1*.t.sol` | 189 | The independent reviewer's own tests, imported as written |
+| Review rounds | `test/review/V1*.t.sol` | 189 | The review rounds' own tests, imported as written |
 
 ### How review findings become tests
 
