@@ -18,8 +18,9 @@ It also checks, on the live app, that only the owner's wallet can pause,
 change or delete an agent that executes, and that nobody else can link a new
 permission to an agent.
 
-It runs daily and after each app release that changes Execute. A failed run
-is reported to the team at once.
+It runs live once a day. After each app release that changes Execute it runs
+dry: it compiles every scenario on the live routes and signs nothing. A failed
+run is reported to the team at once.
 
 ## Runs
 

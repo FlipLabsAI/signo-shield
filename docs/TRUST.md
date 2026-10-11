@@ -51,7 +51,8 @@ this check.
 
 The grace period after a sequencer restart (waiting before acting on prices
 that may be stale) needs a clock node the expression language does not have
-yet; until then it is a known limitation. No enforcer is set yet.
+yet; until then it is a known limitation. The enforcer is the same key as on
+X Layer, appointed on 1 October 2026.
 
 | Contract | Address |
 | --- | --- |
