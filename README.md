@@ -212,7 +212,7 @@ Stated plainly, so provenance can be read without asking.
 
 **Pre-existed.** The first design idea (bounded execution checked by
 post-conditions, a disposable sandbox, one generic condition module, pinned
-adapters as the exception) was worked out by Flip Labs before this
+adapters as the exception) was worked out by the Signo team before this
 repository was started. The off-chain half that the contracts serve also
 pre-existed: the Signo app, its intent schema, its encoder catalogue and its
 alerting. They are not in this repository.

@@ -6,7 +6,7 @@ tests. This page tells how the design moved from the first version to the
 second: what we built, what each review and each real firing taught us, and
 what we changed because of it. Commit hashes let a reader check every step.
 
-Times are UTC. "We" is the Flip Labs team. "The reviewer" is a separate
+Times are UTC. "We" is the Signo team. "The reviewer" is a separate
 review pass that read the code against its specification and wrote Foundry
 tests for every gap it found.
 
