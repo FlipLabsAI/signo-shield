@@ -22,7 +22,7 @@ and on Arbitrum One (chain 42161) since 30 September 2026.
 The contracts went through 15 review passes. They have not been formally
 audited.
 
-**Launch film.** [signo-launch-16x9.mp4](media/signo-launch-16x9.mp4) is AI generated, picture and music.
+**App.** The Shield powers Execute agents in Signo: [signo.fi](https://signo.fi).
 
 ## One sentence, one permission
 
