@@ -329,7 +329,8 @@ In `ShieldRegistryV1`:
 A new halt or suspension increases its epoch and cancels a queued
 restoration (`RESTORE_DELAY = 24 hours`). The admin is the registry owner
 through `Ownable2Step`: ownership moves in two steps and cannot be renounced,
-and the admin cannot be an enforcer. The admin lists executors, evaluators,
+and the admin cannot be an enforcer. On both chains the registry owner is a
+2 of 3 Safe ([`TRUST.md`](TRUST.md)). The admin lists executors, evaluators,
 descriptors, claim rules and price rounds for new permissions, appoints
 enforcers, and sets the fee (at most 10 %, `MAX_FEE_BPS`) and the fee
 recipient on the core. A fee change reaches new permissions only. `DeployV1`

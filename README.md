@@ -117,7 +117,9 @@ Shield v1 on Arbitrum One (chain 42161), same contracts, deployed 30 Sep 2026
 
 Every address, with its deploy transaction and source commit, is in
 [`deployments/manifest.json`](deployments/manifest.json). The v0.1 contracts
-stay deployed beside v1.
+stay deployed beside v1, retired: no new v0.1 permission can be registered.
+The admin on both chains is a 2 of 3 Safe
+([`deployments/README.md`](deployments/README.md)).
 
 ## Mainnet canary
 

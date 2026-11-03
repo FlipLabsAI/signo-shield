@@ -30,7 +30,10 @@ Sourcify and on the X Layer block explorer. The manifest is in `deployments/mani
 | ClaimExecutorV1 | `0x2434AC952990C0C78940D92362354A26E673DB0E` |
 
 The first-generation (v0.1) contracts stay deployed beside v1; their
-addresses are in the manifest.
+addresses are in the manifest. They are retired: on 3 November 2026 their
+adapters were delisted, so no new v0.1 permission can be registered. The last
+open v0.1 permission cannot fire, because its owner's token allowance to the
+core is zero. Their ownership moved to the same Safe as v1 (below).
 
 ## Deployed on Arbitrum One (chain 42161)
 
@@ -99,7 +102,7 @@ X Layer, appointed on 1 October 2026.
 | --- | --- | --- |
 | **Owner** (the wallet that signs) | register, amend and revoke their own permissions; set every number in them; change the agent by amendment; revoke the token allowance at any time | change a permission's executor, evaluator, action, asset or funding mode after registration (that is a new permission); touch anyone else's permission |
 | **Agent** (a key held in Google Cloud KMS) | call `fire` on a permission that names it, for an amount within the caps, while the trigger holds, with a route through the signed venues | send the output anywhere but the owner; call or approve an unsigned contract; exceed a cap; fire after expiry, revocation, a freeze or a halt; hold the owner's tokens |
-| **Admin** (registry owner, `Ownable2Step`) | list executors, evaluators, reads, price rounds and claim rules for new permissions; set the fee and fee recipient; appoint enforcers; execute a restoration an enforcer approved, 24 h after it was queued | move funds; change or revoke a live permission; raise a live permission's fee; lift a freeze or halt on its own |
+| **Admin** (registry owner: a 2 of 3 Safe, `Ownable2Step`) | list executors, evaluators, reads, price rounds and claim rules for new permissions; set the fee and fee recipient; appoint enforcers; execute a restoration an enforcer approved, 24 h after it was queued | move funds; change or revoke a live permission; raise a live permission's fee; lift a freeze or halt on its own |
 | **Enforcer** | freeze and unfreeze an agent; halt an executor or evaluator; suspend a venue; approve a restoration; revoke a venue, a read or a claim rule for good | anything that moves funds; lift a halt or a suspension without the admin and the 24 h delay; undo a revocation |
 | **Executors** | run one firing for the core, in a sandbox, and revert unless the action's check passes | be called by anyone but the core; keep tokens or approvals between firings |
 | **Evaluator** | judge a trigger or outcome tree over listed reads | write state or hold tokens; treat an unreadable value as "true" (an unreadable read reverts) |
@@ -137,7 +140,11 @@ check.
   in Turnkey), is retired: Signo no longer fires permissions that name it.
 - **Admin key**: control over future listings and fees, and nothing over live
   permissions or funds. The seat moves only in two steps (propose, then accept).
-  A 2 of 3 multisig for this seat is planned. It is not deployed yet.
+  Since 3 November 2026 the seat is a 2 of 3 Safe,
+  `0xFC6EFFC12D8CF67eD135090C6c530FD72b204172`, at the same address on X Layer
+  and Arbitrum. One leaked signer key cannot use it: every admin change needs
+  two of the three signers. The handover transactions are in
+  [`deployments/README.md`](../deployments/README.md).
 - **Enforcer key**: the power to stop things, never to move or loosen.
 - **Owner key**: the owner's own funds, as always. The Shield adds no exposure
   beyond the allowance the owner granted, and that allowance is spendable
