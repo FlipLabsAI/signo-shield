@@ -39,28 +39,29 @@ tree with uncommitted changes. That is a red flag on anything published.
 
 ## Admin
 
-The admin of every Shield contract on X Layer and Arbitrum is a 2 of 3 Safe,
-`0xFC6EFFC12D8CF67eD135090C6c530FD72b204172` (Safe 1.5.0, the same address on X Layer
-and Arbitrum). That covers both v1 registries (each v1 core reads its
-registry's `owner()`) and the three v0.1 cores on X Layer. The Safe took over
-from the deploy owner `0x0330Bda68a6254e7a71222A381A40Db60c13D9aa` on
-3 November 2026 through `Ownable2Step`: `transferOwnership` from the deploy
-owner, then `acceptOwnership` from the Safe with two signatures.
+The admin of every Shield contract is a 2 of 3 Safe,
+`0xFC6EFFC12D8CF67eD135090C6c530FD72b204172` (Safe 1.5.0, the same address on X Layer,
+Arbitrum, and BNB Chain). That covers the three v1 registries (each v1 core
+reads its registry's `owner()`) and the three v0.1 cores on X Layer. The Safe
+took over from the deploy owner `0x0330Bda68a6254e7a71222A381A40Db60c13D9aa`
+through `Ownable2Step`: `transferOwnership` from the deploy owner, then
+`acceptOwnership` from the Safe with two signatures. X Layer and Arbitrum
+moved on 3 November 2026, and BNB Chain on 25 November 2026.
 
 | Chain | Contracts | Accepted by the Safe |
 | --- | --- | --- |
 | X Layer (196) | registry `0xE87b50B7E3e996a0C60B4a24221FE44B4277272A`; v0.1 cores `0x8a07b505da63f2fd0a17beb78e906f2f9b42b4b4`, `0x9331264a9e1c0573d920cd8403031cc9761ac60a`, `0xc9f83d96ee711c06de80a532785d3baea966de97` | `0x1cba96643759bd8def3da66511c717ee4e88975b2f045eb6257bcce1b7b92f89` (one batch) |
 | Arbitrum One (42161) | registry `0xE0377C8C1742FCbe885E99d8d746F56eE7982f6F` | `0x8774064818db206d728223cf09c72893d95805cada3e4550b273bbf3aea4e2c6` |
+| BNB Chain (56) | registry `0xE0377C8C1742FCbe885E99d8d746F56eE7982f6F` | `0xd5af1c1203534f7034dafd1f637b7aa9d2757d678d589c2eacc8933bc19bb5af` |
 
 On Arbitrum, `0x9331…c60a` and `0xc9f8…de97` are v1 contracts (the
 ClaimExecutorV1 and the ShieldV1 core). Only the X Layer contracts at those
 addresses are v0.1.
 
-**BNB Chain (56): not handed over yet.** The registry
-`0xE0377C8C1742FCbe885E99d8d746F56eE7982f6F` (deployed 25 November 2026) is
-still owned by the deploy key `0xD56f87d6F4cbA5611A7C0954949Ff2EAa81bf4F9`.
-Its `pendingOwner` is the deploy owner `0x0330Bda68a6254e7a71222A381A40Db60c13D9aa`,
-which has not accepted yet. The Safe is not deployed on BNB Chain.
+On BNB Chain the deploy key `0xD56f87d6F4cbA5611A7C0954949Ff2EAa81bf4F9`
+offered the seat to the deploy owner, which accepted it and offered it to the
+Safe. The Safe was added on BNB Chain from its existing setup (same signers,
+2 of 3, same address).
 
 `provenance.json` keeps `SHIELD_OWNER` as the deploy-time input. The live owner
 is the Safe.
