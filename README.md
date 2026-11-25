@@ -18,7 +18,9 @@ the Shield. The contract enforces the **bound**; the agent decides the
   transaction reverts and nothing moves.
 
 **Status.** Shield v1 is live on X Layer (chain 196) since 24 September 2026,
-and on Arbitrum One (chain 42161) since 30 September 2026.
+on Arbitrum One (chain 42161) since 30 September 2026, and on BNB Chain
+(chain 56) since 25 November 2026. On BNB Chain, Execute is open to the Signo
+team only for now.
 The contracts went through 15 review passes. They have not been formally
 audited.
 
@@ -115,11 +117,53 @@ Shield v1 on Arbitrum One (chain 42161), same contracts, deployed 30 Sep 2026
 | AaveV3AdapterV1 | `0xE6f6d73c782fb6263F04bB5966af7661b9ebE9d9` |
 | ClaimExecutorV1 | `0x9331264a9e1C0573D920cD8403031cC9761AC60A` |
 
+Shield v1 on BNB Chain (chain 56), same contracts, source commit `1254105`,
+deployed 25 Nov 2026. The deployer's first transaction on BNB Chain was the
+first deploy, as on Arbitrum, so the addresses are the same:
+
+| Contract | Address |
+| --- | --- |
+| ShieldV1 (core) | `0xc9f83d96ee711C06dE80A532785d3BaEA966de97` |
+| ShieldRegistryV1 | `0xE0377C8C1742FCbe885E99d8d746F56eE7982f6F` |
+| ExpressionEvaluator | `0xc428a88A92Ecec99414152Ad2A5fd4244b222B15` |
+| GenericExecutorV1 | `0xDdA03e096Eaa3AC649965B62F02007970cf22836` |
+| AaveV3AdapterV1 | `0xE6f6d73c782fb6263F04bB5966af7661b9ebE9d9` |
+| ClaimExecutorV1 | `0x9331264a9e1C0573D920cD8403031cC9761AC60A` |
+
+On BNB Chain the Shield acts on the Aave V3 pool (supply, and repay from the
+wallet). Its conditions read the BNB Chain Aave health factor and the
+Chainlink prices of BNB, BTC, ETH, USDT, USDC, FDUSD and CAKE.
+
 Every address, with its deploy transaction and source commit, is in
 [`deployments/manifest.json`](deployments/manifest.json). The v0.1 contracts
 stay deployed beside v1, retired: no new v0.1 permission can be registered.
-The admin on both chains is a 2 of 3 Safe
+The admin on X Layer and Arbitrum is a 2 of 3 Safe. On BNB Chain the deploy
+key is still the admin, and its handover is pending
 ([`deployments/README.md`](deployments/README.md)).
+
+### Atlas on BNB Chain: built in, waiting for mainnet access
+
+The BNB Chain Shield can read [Atlas](https://atlasoracle.io) price feeds on
+chain. The registry lists three Atlas reads: BNB/USD, BTC/USD and ETH/USD, at
+18 decimals and at most 10 minutes old (listing transactions
+[`0x0c8a50a0…de5f`](https://bscscan.com/tx/0x0c8a50a0aa5fffd883058789695f497c1ba4b3d70a8699a0e13668e6bf1bde5f),
+[`0xdd5f688e…ba05`](https://bscscan.com/tx/0xdd5f688e02d1d98796fcc906e9c323e219331792016288f7ebf72e352f26ba05),
+[`0x81dd030c…f274`](https://bscscan.com/tx/0x81dd030cb085a389ba325db07694346422d3ecd860ae8152a3996950baf5f274)).
+
+- **Mainnet: waiting for permission.** Atlas's mainnet feeds answer a
+  contract only when it is on Atlas's allowlist. We have asked Atlas to add
+  the BNB Chain evaluator `0xc428a88A92Ecec99414152Ad2A5fd4244b222B15`. Atlas
+  allowlists on testnet only for now. Until Atlas adds the evaluator, the
+  Signo app writes BNB Chain price conditions with Chainlink. When Atlas adds
+  it, the app turns Atlas on with one switch (`ATLAS_EVALUATOR_ALLOWLISTED`);
+  the contracts do not change.
+- **Testnet: live.** On BNB testnet (chain 97) the Shield read an Atlas
+  BNB/USD feed during a real firing: "when BNB is above $100, send 0.001 WBNB"
+  fired, and "when BNB is above $1,000,000" was refused on chain. Transactions
+  and addresses: [`docs/DEMO-BNB-TESTNET-ATLAS.md`](docs/DEMO-BNB-TESTNET-ATLAS.md).
+- **Tested on a fork of BNB Chain mainnet.** With the evaluator added to the
+  allowlist on the fork, a USDT supply to Aave fired behind an Atlas condition
+  ([`test/fork/DeployV1.bnb.fork.t.sol`](test/fork/DeployV1.bnb.fork.t.sol)).
 
 ## Mainnet canary
 
@@ -133,7 +177,11 @@ release that changes Execute it runs dry: it compiles every scenario on the live
 routes and signs nothing. Funded runs started on 27 September 2026. On Arbitrum One
 the Aave supply scenario ran once on 1 October 2026, the chain's first mainnet
 firing. Each run is recorded, with its transaction links, in
-[`docs/CANARY.md`](docs/CANARY.md).
+[`docs/CANARY.md`](docs/CANARY.md). On BNB Chain an Aave supply ran once on
+25 November 2026, the chain's first mainnet firing: when BNB was above $100
+(Chainlink), the live Signo agent supplied 1 USDT to Aave, plus the 0.001 USDT
+fee
+([`0xc0cdf431…da66`](https://bscscan.com/tx/0xc0cdf431a6257f31db3c37d7887afd34d7b579eb3dbbc70ed752aa2ac3dcda66)).
 
 ## Documents
 
@@ -144,6 +192,7 @@ firing. Each run is recorded, with its transaction links, in
 | [`docs/TRUST.md`](docs/TRUST.md) | Who can do what, what each action checks, what a leaked key can do, known limits |
 | [`docs/APP-SIDE.md`](docs/APP-SIDE.md) | What the Signo app does around the contracts, when it was built, and every mainnet firing |
 | [`docs/CANARY.md`](docs/CANARY.md) | Each mainnet canary run: date, app build, scenarios, result and transaction links |
+| [`docs/DEMO-BNB-TESTNET-ATLAS.md`](docs/DEMO-BNB-TESTNET-ATLAS.md) | The BNB testnet demo: the Shield reads an Atlas price feed on chain during a firing |
 | [`docs/TESTS.md`](docs/TESTS.md) | The 499 tests, and what each suite proves |
 | [`docs/REUSE.md`](docs/REUSE.md) | Third-party code and its licences |
 
