@@ -16,18 +16,13 @@ interface IWBNB {
     function deposit() external payable;
 }
 
-interface IAtlasAllowlist {
-    function isAuthorizedCaller(address caller) external view returns (bool);
-}
-
 /// A demo on BNB testnet (chain 97) for BNB Hack Bangkok (FLIP-668): the Shield
 /// reads the Atlas BNB/USD feed on chain and acts only when the condition holds.
 ///
-/// Atlas feeds answer only allowlisted contract callers (`OnlyAuthorizedCallerAllowed`),
-/// on testnet too (read 25 Nov 2026), and Atlas allowlists on testnet only for now.
-/// From the deployer's nonce 0 the evaluator lands at the mainnet address,
-/// 0xc428a88A92Ecec99414152Ad2A5fd4244b222B15, so one allowlist request covers both.
-/// Until Atlas adds it to the testnet feed, registration reverts (it reads the tree).
+/// Atlas's mainnet feeds answer only allowlisted contract callers
+/// (`OnlyAuthorizedCallerAllowed`), and so does the testnet feed on Atlas's
+/// public page (0xb3d1…256F). Atlas gave the team three testnet feeds with no
+/// allowlist (Eason, 25 Nov 2026); this demo reads their BNB/USD feed.
 ///
 /// Not a production deployment: the core, the evaluator and the generic
 /// executor only (Aave is not on BNB testnet), owned by the deployer, and NOT in
@@ -41,8 +36,11 @@ interface IAtlasAllowlist {
 ///   forge script script/DemoAtlasBnbTestnet.s.sol --rpc-url <BNB testnet RPC> --broadcast
 contract DemoAtlasBnbTestnet is Script {
     uint256 public constant BNB_TESTNET = 97;
-    /// atlasoracle.io/feeds/633, platform 293 (BNB testnet): BNB/USD, 18 decimals, 60 s heartbeat.
-    address public constant ATLAS_BNB_USD_TESTNET = 0xb3d1614Bf894E68ADd1EA50CA250C152BAd5256F;
+    /// Atlas SingleFeed BNB/USD on BNB testnet, open to any caller: 18 decimals.
+    address public constant ATLAS_BNB_USD_TESTNET = 0x3957d289ee9C38272377786787ea34F9dd29788D;
+    /// The same open feeds for BTC/USD and ETH/USD (not used by this demo).
+    address public constant ATLAS_BTC_USD_TESTNET = 0x83B2F2c20df36F166cF5b3f017204cbB7BABcAD0;
+    address public constant ATLAS_ETH_USD_TESTNET = 0x35369dEcD8c662954B3D24acc2A862C708A34fD2;
     address public constant WBNB_TESTNET = 0xae13d989daC2f0dEbFf460aC112a837C89BAa7cd;
     bytes32 public constant TRANSFER = keccak256("generic.transfer");
     uint16 public constant FEE_BPS = 10;
@@ -67,14 +65,8 @@ contract DemoAtlasBnbTestnet is Script {
         require(block.chainid == BNB_TESTNET, "BNB testnet only");
         address deployer = vm.rememberKey(vm.envUint("DEMO_DEPLOYER_KEY"));
         address principal = vm.rememberKey(vm.envUint("DEMO_PRINCIPAL_KEY"));
-        // The evaluator is the deployer's third creation from here. Spend no gas
-        // before Atlas has allowlisted it: registration would revert.
-        address evaluator = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 2);
-        console.log("evaluator will be  ", evaluator);
-        require(
-            IAtlasAllowlist(ATLAS_BNB_USD_TESTNET).isAuthorizedCaller(evaluator),
-            "Atlas has not allowlisted the evaluator on the testnet feed yet"
-        );
+        // forge simulates every step before it broadcasts any: a read the feed
+        // refuses fails the run before gas is spent.
         d = demo(deployer, principal, vm.envAddress("DEMO_RECIPIENT"));
     }
 

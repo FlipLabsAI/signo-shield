@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-/// The BNB testnet demo against a fork of BNB testnet (chain 97). The Atlas
-/// testnet feed refuses a contract caller that is not on its allowlist, as on
-/// mainnet. From the team deployer's nonce 0 the evaluator lands at the mainnet
-/// address 0xc428…2B15. Once Atlas allowlists the evaluator (written into the
-/// fork's storage here, the state Atlas's own setAuthorizedCallers call would leave),
-/// the permission whose condition holds sends 0.001 WBNB with the 10 bps fee on
-/// top, and the one whose condition does not hold is refused.
+/// The BNB testnet demo against a fork of BNB testnet (chain 97). Atlas's open
+/// testnet feeds answer a contract caller with no allowlist entry (the feed on
+/// Atlas's public page does not: OnlyAuthorizedCallerAllowed, as on mainnet).
+/// The permission whose condition holds sends 0.001 WBNB with the 10 bps fee
+/// on top, and the one whose condition does not hold is refused.
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {DemoAtlasBnbTestnet} from "script/DemoAtlasBnbTestnet.s.sol";
@@ -15,18 +13,16 @@ import {IDescriptors} from "contracts/v1/interfaces/IDescriptors.sol";
 import {IShieldV1} from "contracts/v1/interfaces/IShieldV1.sol";
 
 interface IAtlasFeed {
-    function isAuthorizedCaller(address caller) external view returns (bool);
     function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80);
     function decimals() external view returns (uint8);
+    function description() external view returns (string memory);
 }
 
 contract DemoAtlasBnbTestnetForkTest is Test {
-    address internal constant DEPLOYER = 0xD56f87d6F4cbA5611A7C0954949Ff2EAa81bf4F9;
-    address internal constant EVALUATOR = 0xc428a88A92Ecec99414152Ad2A5fd4244b222B15;
-    bytes32 internal constant IMPL_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+    /// The feed on atlasoracle.io/feeds/633 for BNB testnet: allowlisted callers only.
+    address internal constant ATLAS_PAGE_BNB_USD = 0xb3d1614Bf894E68ADd1EA50CA250C152BAd5256F;
 
     DemoAtlasBnbTestnet internal script;
-    IAtlasFeed internal feed;
     address internal deployer;
     address internal principal;
     address internal recipient;
@@ -38,51 +34,44 @@ contract DemoAtlasBnbTestnetForkTest is Test {
         if (pinned == 0) vm.createSelectFork(rpc);
         else vm.createSelectFork(rpc, pinned);
         script = new DemoAtlasBnbTestnet();
-        feed = IAtlasFeed(script.ATLAS_BNB_USD_TESTNET());
+        // Fresh keys: after the real run the team deployer's addresses are taken on the fork.
+        deployer = makeAddr("deployer");
         principal = makeAddr("principal");
         recipient = makeAddr("recipient");
-        // A fresh deployer: after the real run the team deployer's addresses
-        // are taken on the fork, so the flow runs from another key.
-        deployer = makeAddr("deployer");
         vm.deal(deployer, 0.05 ether);
     }
 
-    function test_theTestnetFeedRefusesAContractNotOnItsAllowlist() public {
+    function test_theOpenFeedsAnswerAContractAt18DecimalsAndFresh() public view {
         assertEq(block.chainid, 97);
-        assertEq(
-            vm.computeCreateAddress(DEPLOYER, 2), EVALUATOR, "the evaluator lands at the mainnet address"
-        );
+        address[3] memory feeds =
+            [script.ATLAS_BNB_USD_TESTNET(), script.ATLAS_BTC_USD_TESTNET(), script.ATLAS_ETH_USD_TESTNET()];
+        string[3] memory names = ["SingleFeed BNB/USD", "SingleFeed BTC/USD", "SingleFeed ETH/USD"];
+        for (uint256 i = 0; i < feeds.length; i++) {
+            IAtlasFeed feed = IAtlasFeed(feeds[i]);
+            assertEq(feed.description(), names[i]);
+            assertEq(feed.decimals(), 18);
+            // This test contract is a contract caller with no allowlist entry.
+            (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) =
+                feed.latestRoundData();
+            assertGt(answer, 0, "positive");
+            assertLe(block.timestamp - updatedAt, 600, "fresh within the read's ten heartbeats");
+            assertGe(answeredInRound, roundId);
+        }
+    }
+
+    function test_theFeedOnAtlasPageRefusesAContractNotOnItsAllowlist() public {
         vm.expectRevert(bytes4(keccak256("OnlyAuthorizedCallerAllowed()")));
-        feed.latestRoundData();
-    }
-
-    function test_theFeedIsAtlasBnbUsdAt18DecimalsAndFresh() public {
-        _allowOnAtlas(address(this));
-        assertEq(feed.decimals(), 18);
-        (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) = feed.latestRoundData();
-        assertGt(answer, 100e18, "BNB above $100");
-        assertLt(answer, 100_000e18, "and a sane price");
-        assertLe(block.timestamp - updatedAt, 600, "fresh within the read's ten heartbeats");
-        assertGe(answeredInRound, roundId);
-    }
-
-    function test_beforeTheAllowlistRegistrationReverts() public {
-        if (feed.isAuthorizedCaller(vm.computeCreateAddress(deployer, 2))) return;
-        vm.expectRevert();
-        script.demo(deployer, principal, recipient);
+        IAtlasFeed(ATLAS_PAGE_BNB_USD).latestRoundData();
     }
 
     function test_firesWhenAtlasSaysBnbIsAbove100_andRefusesAbove1M() public {
-        address evaluator = vm.computeCreateAddress(deployer, 2);
-        _allowOnAtlas(evaluator);
         DemoAtlasBnbTestnet.Demo memory d = script.demo(deployer, principal, recipient);
-        assertEq(address(d.evaluator), evaluator);
 
         (IDescriptors.Descriptor memory desc, bool listed, bool revoked) =
             d.registry.descriptorOf(d.atlasRead);
         assertTrue(listed);
         assertFalse(revoked);
-        assertEq(desc.target, address(feed));
+        assertEq(desc.target, script.ATLAS_BNB_USD_TESTNET());
         assertEq(desc.decimals, 18);
 
         uint256 amount = script.AMOUNT();
@@ -107,17 +96,5 @@ contract DemoAtlasBnbTestnetForkTest is Test {
         vm.prank(deployer);
         vm.expectRevert();
         d.shield.fire(d.fires, amount, "");
-    }
-
-    /// @dev Allowlist `caller` on the fork: set the slot(s) `isAuthorizedCaller(caller)`
-    ///      reads, other than the proxy's implementation slot.
-    function _allowOnAtlas(address caller) internal {
-        vm.record();
-        feed.isAuthorizedCaller(caller);
-        (bytes32[] memory reads,) = vm.accesses(address(feed));
-        for (uint256 i = 0; i < reads.length; i++) {
-            if (reads[i] != IMPL_SLOT) vm.store(address(feed), reads[i], bytes32(uint256(1)));
-        }
-        assertTrue(feed.isAuthorizedCaller(caller), "allowlisted on the fork");
     }
 }
