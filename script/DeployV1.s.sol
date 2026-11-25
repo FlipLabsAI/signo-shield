@@ -25,6 +25,7 @@ import {IShieldRegistryV1} from "contracts/v1/interfaces/IShieldRegistryV1.sol";
 contract DeployV1 is Script {
     uint256 internal constant XLAYER = 196;
     uint256 internal constant ARBITRUM_ONE = 42_161;
+    uint256 internal constant BNB_CHAIN = 56;
     /// @dev Freshness of the X Layer Chainlink rounds: the published 24 h
     ///      heartbeat plus one hour for an update that lands late.
     uint32 internal constant FEED_MAX_AGE = 25 hours;
@@ -175,6 +176,7 @@ contract DeployV1 is Script {
             _pendleClaim(shield, PENDLE_USDG_MARKET);
         }
         if (block.chainid == ARBITRUM_ONE) _listArbitrum(shield);
+        if (block.chainid == BNB_CHAIN) _listBnb(shield);
     }
 
     // ------------------------------------------------------------- Arbitrum
@@ -245,6 +247,64 @@ contract DeployV1 is Script {
             copyBytes: 64,
             unboundedTop: false
         });
+    }
+
+    // ------------------------------------------------------------ BNB Chain
+
+    /// @dev BNB Chain (FLIP-668, 25 Nov 2026). Read from the chain that day:
+    ///      the Aave V3 pool's oracle (ADDRESSES_PROVIDER 0xff75…Ba6D →
+    ///      getPriceOracle), and for each reserve the Chainlink-shaped feed
+    ///      Aave prices it with. The stables are priced through capped
+    ///      adapters with no round; their fresh round is the feed under the
+    ///      cap (ASSET_TO_USD_AGGREGATOR). Same 25 h freshness as the other
+    ///      chains (FDUSD/USD updates about once a day). wstETH is left out:
+    ///      Aave prices it through a ratio adapter with no single round.
+    ///      BNB Chain has no sequencer, so no uptime read.
+    address public constant BNB_AAVE_ORACLE = 0x39bc1bfDa2130d6Bb6DBEfd366939b4c7aa7C697;
+    address public constant BNB_WBNB = 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c;
+    address public constant BNB_BTCB = 0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c;
+    address public constant BNB_ETH = 0x2170Ed0880ac9A755fd29B2688956BD959F933F8;
+    address public constant BNB_USDC = 0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d;
+    address public constant BNB_USDT = 0x55d398326f99059fF775485246999027B3197955;
+    address public constant BNB_FDUSD = 0xc5f0f7b66764F6ec8C8Dff7BA683102295E16409;
+    address public constant BNB_CAKE = 0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82;
+    address public constant BNB_FEED_BNB = 0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE;
+    address public constant BNB_FEED_BTC = 0x264990fbd0A4796A3E3d8E37C4d5F87a3aCa5Ebf;
+    address public constant BNB_FEED_ETH = 0x9ef1B8c0E4F7dc8bF5719Ea496883DC6401d5b2e;
+    address public constant BNB_FEED_USDC = 0x51597f405303C4377E36123cBc172b13269EA163;
+    address public constant BNB_FEED_USDT = 0xB97Ad0E74fa7d920791E90258A6E2085088b4320;
+    address public constant BNB_FEED_FDUSD = 0x390180e80058A8499930F0c13963AD3E0d86Bfc9;
+    address public constant BNB_FEED_CAKE = 0xB6064eD41d4f67e353768aA239cA86f4F73665a1;
+    /// @dev Atlas push feeds (atlasoracle.io/feeds 633, 626, 632): Chainlink-shaped
+    ///      `latestRoundData`, 18 decimals, a 60 s heartbeat. Listed as reads a
+    ///      condition can name ("BNB price below $500"), not bound as the fresh
+    ///      round of a token: the post-condition prices outputs with the feeds
+    ///      Aave uses above, so the two never disagree inside one check.
+    address public constant ATLAS_BNB_USD = 0x9C0517F5b4c8657c7F18D68d2d79e2b3b1cd6438;
+    address public constant ATLAS_BTC_USD = 0x4f6c53fb9CdD46269d24bCa4E68bB680879132fc;
+    address public constant ATLAS_ETH_USD = 0x7942b8DD9f552c57Eb94D16ea8215aEf6CAc948f;
+    /// @dev Ten heartbeats: an Atlas price older than this is not "the price now".
+    uint32 internal constant ATLAS_MAX_AGE = 10 minutes;
+
+    function _listBnb(ShieldRegistryV1 shield) internal {
+        _log("aave.price", shield.listDescriptor(_price(BNB_AAVE_ORACLE)));
+        _feed(shield, "feed.bnb", BNB_WBNB, BNB_FEED_BNB, FEED_MAX_AGE);
+        _feed(shield, "feed.btc", BNB_BTCB, BNB_FEED_BTC, FEED_MAX_AGE);
+        _feed(shield, "feed.eth", BNB_ETH, BNB_FEED_ETH, FEED_MAX_AGE);
+        _feed(shield, "feed.usdc", BNB_USDC, BNB_FEED_USDC, FEED_MAX_AGE);
+        _feed(shield, "feed.usdt", BNB_USDT, BNB_FEED_USDT, FEED_MAX_AGE);
+        _feed(shield, "feed.fdusd", BNB_FDUSD, BNB_FEED_FDUSD, FEED_MAX_AGE);
+        _feed(shield, "feed.cake", BNB_CAKE, BNB_FEED_CAKE, FEED_MAX_AGE);
+        _log("atlas.bnb", shield.listDescriptor(atlasRound(ATLAS_BNB_USD)));
+        _log("atlas.btc", shield.listDescriptor(atlasRound(ATLAS_BTC_USD)));
+        _log("atlas.eth", shield.listDescriptor(atlasRound(ATLAS_ETH_USD)));
+    }
+
+    /// @dev An Atlas round read: the Chainlink round shape at 18 decimals and
+    ///      the Atlas freshness window.
+    function atlasRound(address feed) public pure returns (IDescriptors.Descriptor memory desc) {
+        desc = _round(feed, ATLAS_MAX_AGE);
+        desc.decimals = 18;
     }
 
     /// @dev Pendle's USDG market on X Layer (expiry 29 Oct 2026; not a proxy). Its reward
@@ -398,6 +458,7 @@ contract DeployV1 is Script {
     function _poolFor(uint256 chainId) internal view returns (address) {
         if (chainId == XLAYER) return 0xE3F3Caefdd7180F884c01E57f65Df979Af84f116;
         if (chainId == ARBITRUM_ONE) return 0x794a61358D6845594F94dc1DB02A252b5b4814aD;
+        if (chainId == BNB_CHAIN) return 0x6807dc923806fE8Fd134338EABCA509979a7e0cB;
         return vm.envOr("AAVE_V3_POOL", address(0));
     }
 }

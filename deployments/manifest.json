@@ -135,6 +135,50 @@
         "deployScriptCommit": "fb2d7e047c60bee178e24de314a265b6b135e319",
         "provenance": "Broadcast from f3aa7d3 with script/DeployV1.s.sol modified in the working tree; that script is committed as fb2d7e0. Verified: a replay at fb2d7e0 on a fork one block before the deployment reproduces all 40 transactions, and every created contract's runtime code equals the fb2d7e0 build. Evidence: deployments/provenance.json."
       }
+    ],
+    "56": [
+      {
+        "contract": "AaveV3AdapterV1",
+        "address": "0xe6f6d73c782fb6263f04bb5966af7661b9ebe9d9",
+        "deployTx": "0xbcbb9ab9d1428ab01b8d0c6a7b1a9a15fb00712c90d226d1ece9bc24c8a1443c",
+        "sourceCommit": "12541056c8bd2aa50105baedc0ec95f10fc4f7ad",
+        "timestamp": 1795604033248
+      },
+      {
+        "contract": "ClaimExecutorV1",
+        "address": "0x9331264a9e1c0573d920cd8403031cc9761ac60a",
+        "deployTx": "0xd54d68103294a13ac283e7c004e195e719fa6cd8350750b887b2767c13871c70",
+        "sourceCommit": "12541056c8bd2aa50105baedc0ec95f10fc4f7ad",
+        "timestamp": 1795604033248
+      },
+      {
+        "contract": "ExpressionEvaluator",
+        "address": "0xc428a88a92ecec99414152ad2a5fd4244b222b15",
+        "deployTx": "0xadf86ab8d39cb825c92b4e16355b44af3faf1bea4c9222d8f3c912d8775540bc",
+        "sourceCommit": "12541056c8bd2aa50105baedc0ec95f10fc4f7ad",
+        "timestamp": 1795604033248
+      },
+      {
+        "contract": "GenericExecutorV1",
+        "address": "0xdda03e096eaa3ac649965b62f02007970cf22836",
+        "deployTx": "0x4b59dd0d9f9b07e87ff60568430ce2c21192b55b964d4008086018684bdbe7b5",
+        "sourceCommit": "12541056c8bd2aa50105baedc0ec95f10fc4f7ad",
+        "timestamp": 1795604033248
+      },
+      {
+        "contract": "ShieldRegistryV1",
+        "address": "0xe0377c8c1742fcbe885e99d8d746f56ee7982f6f",
+        "deployTx": "0x4316ad526e9d83ab5958d9c75408c80fc3068d2a7d3eb59beff56f7dca23f144",
+        "sourceCommit": "12541056c8bd2aa50105baedc0ec95f10fc4f7ad",
+        "timestamp": 1795604033248
+      },
+      {
+        "contract": "ShieldV1",
+        "address": "0xc9f83d96ee711c06de80a532785d3baea966de97",
+        "deployTx": "0x6341954403b81e7193610e43d72334d0fd377dfd65b4e1e75b78bc49c8491bce",
+        "sourceCommit": "12541056c8bd2aa50105baedc0ec95f10fc4f7ad",
+        "timestamp": 1795604033248
+      }
     ]
   }
 }
