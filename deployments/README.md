@@ -39,7 +39,7 @@ tree with uncommitted changes. That is a red flag on anything published.
 
 ## Admin
 
-The admin of every Shield contract is a 2 of 3 Safe,
+The admin of every Shield contract on X Layer and Arbitrum is a 2 of 3 Safe,
 `0xFC6EFFC12D8CF67eD135090C6c530FD72b204172` (Safe 1.5.0, the same address on X Layer
 and Arbitrum). That covers both v1 registries (each v1 core reads its
 registry's `owner()`) and the three v0.1 cores on X Layer. The Safe took over
@@ -55,6 +55,12 @@ owner, then `acceptOwnership` from the Safe with two signatures.
 On Arbitrum, `0x9331…c60a` and `0xc9f8…de97` are v1 contracts (the
 ClaimExecutorV1 and the ShieldV1 core). Only the X Layer contracts at those
 addresses are v0.1.
+
+**BNB Chain (56): not handed over yet.** The registry
+`0xE0377C8C1742FCbe885E99d8d746F56eE7982f6F` (deployed 25 November 2026) is
+still owned by the deploy key `0xD56f87d6F4cbA5611A7C0954949Ff2EAa81bf4F9`.
+Its `pendingOwner` is the deploy owner `0x0330Bda68a6254e7a71222A381A40Db60c13D9aa`,
+which has not accepted yet. The Safe is not deployed on BNB Chain.
 
 `provenance.json` keeps `SHIELD_OWNER` as the deploy-time input. The live owner
 is the Safe.
