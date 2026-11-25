@@ -141,8 +141,8 @@ check.
 - **Admin key**: control over future listings and fees, and nothing over live
   permissions or funds. The seat moves only in two steps (propose, then accept).
   Since 3 November 2026 the seat is a 2 of 3 Safe,
-  `0xFC6EFFC12D8CF67eD135090C6c530FD72b204172`, at the same address on X Layer
-  and Arbitrum. One leaked signer key cannot use it: every admin change needs
+  `0xFC6EFFC12D8CF67eD135090C6c530FD72b204172`, at the same address on X Layer,
+  Arbitrum, and BNB Chain (BNB Chain since 25 November 2026). One leaked signer key cannot use it: every admin change needs
   two of the three signers. The handover transactions are in
   [`deployments/README.md`](../deployments/README.md).
 - **Enforcer key**: the power to stop things, never to move or loosen.

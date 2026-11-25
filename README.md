@@ -137,8 +137,7 @@ Chainlink prices of BNB, BTC, ETH, USDT, USDC, FDUSD and CAKE.
 Every address, with its deploy transaction and source commit, is in
 [`deployments/manifest.json`](deployments/manifest.json). The v0.1 contracts
 stay deployed beside v1, retired: no new v0.1 permission can be registered.
-The admin on X Layer and Arbitrum is a 2 of 3 Safe. On BNB Chain the deploy
-key is still the admin, and its handover is pending
+The admin on all three chains is the same 2 of 3 Safe
 ([`deployments/README.md`](deployments/README.md)).
 
 ### Atlas on BNB Chain: built in, waiting for mainnet access
